@@ -1,0 +1,73 @@
+{
+  "name": "aio-installation-check",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "client/aio-installation-check/src",
+  "projectType": "application",
+  "tags": ["lang:typescript", "scope:cli", "scope:aio"],
+  "targets": {
+    "prepare-native-toolchain": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/scripts/prepare-native-toolchain.mjs",
+        "{projectRoot}/scripts/build-perry.mjs",
+        "{projectRoot}/scripts/native-toolchain-cache-key.mjs",
+        { "runtime": "node client/aio-installation-check/scripts/native-toolchain-cache-key.mjs" }
+      ],
+      "outputs": [
+        "{projectRoot}/.native-toolchain/.managed",
+        "{projectRoot}/.native-toolchain/perry",
+        "{projectRoot}/.native-toolchain/cargo/bin",
+        "{projectRoot}/.native-toolchain/rustup"
+      ],
+      "options": {
+        "command": "node scripts/prepare-native-toolchain.mjs",
+        "cwd": "client/aio-installation-check"
+      }
+    },
+    "build-native": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["prepare-native-toolchain"],
+      "cache": false,
+      "outputs": [
+        "{projectRoot}/dist/perry",
+        "{projectRoot}/dist/native/aio-installation-check"
+      ],
+      "options": {
+        "command": "node scripts/build-perry.mjs",
+        "cwd": "client/aio-installation-check"
+      }
+    },
+    "native-verify": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build-native"],
+      "cache": false,
+      "options": {
+        "command": "node scripts/verify-native-terminal.mjs",
+        "cwd": "client/aio-installation-check"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run --config vitest.config.ts && node --test scripts/*.test.mjs",
+        "cwd": "client/aio-installation-check"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --project tsconfig.json --noEmit",
+        "cwd": "client/aio-installation-check"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "inputs": ["uiSource", "eslintConfig", "{projectRoot}/scripts/**/*.mjs"],
+      "options": {
+        "command": "eslint \"client/aio-installation-check/src/**/*.{ts,tsx}\" \"client/aio-installation-check/scripts/**/*.mjs\"",
+        "cwd": "."
+      }
+    }
+  }
+}
