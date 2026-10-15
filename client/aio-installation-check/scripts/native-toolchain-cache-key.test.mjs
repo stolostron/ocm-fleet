@@ -7,6 +7,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { fs } from "zx";
+
 import { nativeToolchainCacheKey } from "./native-toolchain-cache-key.mjs";
 
 test("fingerprint tracks exact npm pin, host ABI, and canonical location", async (t) => {
@@ -92,4 +94,54 @@ test("CLI emits one JSON fingerprint independent of working directory", async ()
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, "");
   assert.deepEqual(JSON.parse(result.stdout), await nativeToolchainCacheKey());
+});
+
+test("Linux fingerprint tracks remapped host libraries for discovered and managed LLVM without writing adapters", async (t) => {
+  const root = await fsFixture(t);
+  const prefix = path.join(root, ".native-toolchain/llvm");
+  const config = path.join(prefix, "bin/llvm-config");
+  const archive = path.join(prefix, "lib/libLLVMCore.a");
+  const host = path.join(root, "host/libzstd.so");
+  await fs.outputFile(config, "config");
+  await fs.chmod(config, 0o755);
+  await fs.outputFile(archive, "LLVM archive");
+  await fs.outputFile(host, "host shared");
+  const run = async (_command, args) => {
+    const responses = {
+      "--version": "22.1.8",
+      "--prefix": prefix,
+      "--libdir": path.dirname(archive),
+      "--libfiles": archive,
+      "--system-libs": "/foreign/libzstd.a -lz",
+      "-print-file-name=libzstd.so": host,
+    };
+    return responses[args[0]];
+  };
+  const options = { platform: "linux", env: { PATH: "" }, run };
+  const managed = await nativeToolchainCacheKey(root, options);
+  assert.equal(managed.llvm.systemLibraryRemapping[0].file, host);
+  assert.match(managed.llvm.adapterSha256, /^[a-f0-9]{64}$/);
+  assert.equal(
+    await fs.pathExists(
+      path.join(root, ".native-toolchain/llvm-config-adapter"),
+    ),
+    false,
+  );
+  await fs.appendFile(host, "new SDK");
+  const changed = await nativeToolchainCacheKey(root, options);
+  assert.notDeepEqual(changed.llvm, managed.llvm);
+  const explicit = await nativeToolchainCacheKey(root, {
+    ...options,
+    env: { PATH: "", LLVM_SYS_221_PREFIX: prefix },
+  });
+  assert.deepEqual(explicit.llvm, changed.llvm);
+  await fs.writeJson(path.join(prefix, ".aio-llvm.json"), {
+    sha256: "pinned-bundle",
+  });
+  const pinned = await nativeToolchainCacheKey(root, options);
+  await fs.utimes(archive, new Date(0), new Date(0));
+  assert.deepEqual(
+    (await nativeToolchainCacheKey(root, options)).llvm,
+    pinned.llvm,
+  );
 });

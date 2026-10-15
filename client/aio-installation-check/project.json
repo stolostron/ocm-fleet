@@ -11,6 +11,7 @@
       "inputs": [
         "{projectRoot}/scripts/prepare-native-toolchain.mjs",
         "{projectRoot}/scripts/prepare-linux-toolchain.mjs",
+        "{projectRoot}/scripts/llvm-config-adapter.mjs",
         "{projectRoot}/scripts/build-perry.mjs",
         "{projectRoot}/scripts/native-toolchain-cache-key.mjs",
         {
@@ -23,7 +24,8 @@
         "{projectRoot}/.native-toolchain/cargo/bin",
         "{projectRoot}/.native-toolchain/rustup",
         "{projectRoot}/.native-toolchain/compiler",
-        "{projectRoot}/.native-toolchain/llvm"
+        "{projectRoot}/.native-toolchain/llvm",
+        "{projectRoot}/.native-toolchain/llvm-config-adapter"
       ],
       "options": {
         "command": "node scripts/prepare-native-toolchain.mjs",
