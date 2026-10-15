@@ -8,6 +8,7 @@ import { fs } from "zx";
 import {
   compilerEnvironmentIdentity,
   discoverLLVM,
+  inspectLLVM,
 } from "./prepare-linux-toolchain.mjs";
 import { runCommand } from "./prepare-native-toolchain.mjs";
 
@@ -31,7 +32,22 @@ export async function nativeToolchainCacheKey(
   if (platform === "linux") {
     key.compilerEnvironment = compilerEnvironmentIdentity(env);
     try {
-      key.llvm = (await discoverLLVM(env, run))?.identity ?? null;
+      let llvm = await discoverLLVM(env, run);
+      const managedConfig = path.join(
+        root,
+        ".native-toolchain/llvm/bin/llvm-config",
+      );
+      // The managed bundle is intentionally absent from the caller's PATH.
+      // Inspect it read-only so host SDK upgrades invalidate restored compilers.
+      if (!llvm && (await fs.pathExists(managedConfig))) {
+        const bundle = await fs
+          .readJson(path.join(root, ".native-toolchain/llvm/.aio-llvm.json"))
+          .catch(() => null);
+        llvm = await inspectLLVM(managedConfig, env, run, {
+          archiveSha256: bundle?.sha256,
+        });
+      }
+      key.llvm = llvm?.identity ?? null;
     } catch (error) {
       key.llvm = { invalid: error.message };
     }

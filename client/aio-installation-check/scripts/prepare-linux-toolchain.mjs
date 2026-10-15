@@ -4,8 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { fileURLToPath } from "node:url";
 
 import { fs } from "zx";
+
+const adapterScript = fileURLToPath(
+  new URL("./llvm-config-adapter.mjs", import.meta.url),
+);
 
 // Release API digests verified with gh api repos/llvm/llvm-project/releases/tags/llvmorg-22.1.8.
 const llvmBundles = {
@@ -85,7 +90,81 @@ function llvmEnvironment(env, prefix, libdir = path.join(prefix, "lib")) {
   };
 }
 
-async function inspectLLVM(config, env, run) {
+class MissingSystemLibraryError extends Error {}
+
+async function regularFile(file) {
+  try {
+    return (await fs.stat(file)).isFile();
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
+    throw error;
+  }
+}
+
+// Read-only and injectable for discovery, cache fingerprinting and host tests.
+// Never repair an installed LLVM distribution or a global library directory.
+export async function resolveSystemLibraries(output, { env, run }) {
+  const remapping = [];
+  for (const token of output.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? []) {
+    const original = token.replace(/^(?:"(.*)"|'(.*)')$/, "$1$2");
+    if (
+      !path.isAbsolute(original) ||
+      remapping.some((entry) => entry.original === original)
+    )
+      continue;
+    if (await regularFile(original)) continue;
+    const match = /^lib([A-Za-z0-9_+.-]+?)(?:\.a|\.so(?:\.\d+)*)$/.exec(
+      path.basename(original),
+    );
+    const name = match?.[1];
+    const compiler = env.CC || "cc";
+    let file;
+    let failure;
+    if (name) {
+      for (const extension of ["so", "a"]) {
+        try {
+          const candidate = (
+            await run(compiler, [`-print-file-name=lib${name}.${extension}`], {
+              env,
+            })
+          ).trim();
+          // GCC echoes the filename when it cannot find it. A directory or a
+          // dangling symlink is not proof that the native SDK is installed.
+          if (path.isAbsolute(candidate) && (await regularFile(candidate))) {
+            file = candidate;
+            break;
+          }
+        } catch (error) {
+          failure = error.message;
+        }
+      }
+    }
+    if (!file) {
+      const packages = {
+        zstd: "libzstd-devel",
+        z: "zlib-devel",
+        xml2: "libxml2-devel",
+        tinfo: "ncurses-devel",
+        ffi: "libffi-devel",
+        edit: "libedit-devel",
+      };
+      throw new MissingSystemLibraryError(
+        `LLVM system library ${original} is missing; ${compiler} could not locate ${name ? `lib${name}.so or lib${name}.a` : "a supported host library"}. Install the native C compiler/linker SDK${packages[name] ? ` (Fedora: dnf install ${packages[name]})` : " and the matching development package"}, then retry.${failure ? ` Compiler search: ${failure}` : ""}`,
+      );
+    }
+    const info = await fs.stat(file);
+    remapping.push({
+      original,
+      name,
+      file,
+      size: info.size,
+      mtimeMs: info.mtimeMs,
+    });
+  }
+  return remapping;
+}
+
+export async function inspectLLVM(config, env, run, { archiveSha256 } = {}) {
   // The loader may need this before llvm-config itself can run.
   const initialEnv = llvmEnvironment(env, path.dirname(path.dirname(config)));
   const query = async (...args) =>
@@ -110,6 +189,11 @@ async function inspectLLVM(config, env, run) {
     if (!info.isFile()) throw new Error(`LLVM library missing: ${file}`);
     libraries.push({ file, size: info.size, mtimeMs: info.mtimeMs });
   }
+  const systemLibraries = await query("--system-libs", "--link-static");
+  const systemLibraryRemapping = await resolveSystemLibraries(systemLibraries, {
+    env: initialEnv,
+    run,
+  });
   return {
     identity: {
       config: await fs.realpath(config),
@@ -117,8 +201,19 @@ async function inspectLLVM(config, env, run) {
       prefix,
       libdir,
       version,
-      libraries,
-      systemLibraries: await query("--system-libs", "--link-static"),
+      // Nx restores the checksum-pinned bundle with fresh timestamps. Host SDK
+      // remappings below retain their stats, even when LLVM itself is pinned.
+      libraries: archiveSha256
+        ? libraries.map(({ file, size }) => ({ file, size }))
+        : libraries,
+      ...(archiveSha256 ? { archiveSha256 } : {}),
+      systemLibraries,
+      ...(systemLibraryRemapping.length
+        ? {
+            systemLibraryRemapping,
+            adapterSha256: await sha256(adapterScript),
+          }
+        : {}),
     },
     env: llvmEnvironment(env, prefix, libdir),
   };
@@ -143,13 +238,95 @@ export async function discoverLLVM(env, run) {
       if (!(await executable(config))) continue;
       try {
         return await inspectLLVM(config, env, run);
-      } catch {
+      } catch (error) {
+        // Downloading another LLVM cannot install a missing host SDK.
+        if (error instanceof MissingSystemLibraryError) throw error;
         // Unversioned LLVM may be another major, or a development install may
         // be incomplete. Continue discovery, then use the verified local bundle.
       }
     }
   }
   return undefined;
+}
+
+async function prepareLLVMAdapter(llvm, managed) {
+  const remapping = llvm.identity.systemLibraryRemapping;
+  if (!remapping?.length) return llvm;
+  const directory = path.join(managed, "llvm-config-adapter");
+  const config = {
+    config: llvm.identity.config,
+    prefix: llvm.identity.prefix,
+    adapterSha256: llvm.identity.adapterSha256,
+    remapping,
+  };
+  let reusable = false;
+  try {
+    reusable =
+      JSON.stringify(await fs.readJson(path.join(directory, "config.json"))) ===
+        JSON.stringify(config) &&
+      (await executable(path.join(directory, "bin/llvm-config"))) &&
+      (await sha256(path.join(directory, "bin/llvm-config"))) ===
+        config.adapterSha256;
+  } catch {
+    /* Missing/corrupt adapter is recreated from the tracked script. */
+  }
+  if (!reusable) {
+    const stage = await fs.mkdtemp(path.join(managed, "llvm-adapter-"));
+    try {
+      await fs.ensureDir(path.join(stage, "bin"));
+      for (const name of await fs.readdir(path.join(config.prefix, "bin"))) {
+        // llvm-sys tries versioned config names before llvm-config. Do not
+        // expose any entry point that would bypass our validated remapping.
+        if (/^llvm(?:-config|\d+-config)/.test(name)) continue;
+        await fs.symlink(
+          path.join(config.prefix, "bin", name),
+          path.join(stage, "bin", name),
+        );
+      }
+      for (const name of ["lib", "lib64", "include"]) {
+        const target = path.join(config.prefix, name);
+        if (await fs.pathExists(target))
+          await fs.symlink(target, path.join(stage, name));
+      }
+      await fs.copyFile(adapterScript, path.join(stage, "bin/llvm-config"));
+      await fs.chmod(path.join(stage, "bin/llvm-config"), 0o755);
+      // Ensure extensionless llvm-config runs as ESM on supported Node versions.
+      await fs.writeJson(path.join(stage, "package.json"), { type: "module" });
+      await fs.writeJson(path.join(stage, "config.json"), config, {
+        spaces: 2,
+      });
+      await fs.remove(directory);
+      await fs.rename(stage, directory);
+    } finally {
+      await fs.remove(stage);
+    }
+  }
+  const libraryDirs = [
+    ...new Set(remapping.map(({ file }) => path.dirname(file))),
+  ];
+  return {
+    ...llvm,
+    env: {
+      ...llvm.env,
+      LLVM_SYS_221_PREFIX: directory,
+      // Keep real clang/opt first; llvm-sys uses its explicit managed prefix.
+      PATH: [
+        ...new Set([
+          path.join(llvm.identity.prefix, "bin"),
+          path.join(directory, "bin"),
+          ...llvm.env.PATH.split(path.delimiter),
+        ]),
+      ]
+        .filter(Boolean)
+        .join(path.delimiter),
+      LIBRARY_PATH: [...libraryDirs, llvm.env.LIBRARY_PATH]
+        .filter(Boolean)
+        .join(path.delimiter),
+      LD_LIBRARY_PATH: [llvm.env.LD_LIBRARY_PATH, ...libraryDirs]
+        .filter(Boolean)
+        .join(path.delimiter),
+    },
+  };
 }
 
 export async function prepareLLVM({
@@ -170,30 +347,20 @@ export async function prepareLLVM({
       `Linux LLVM bootstrap does not support ${arch}; supported architectures: x64, arm64.`,
     );
   const discovered = await discoverLLVM(env, run);
-  if (discovered) return discovered;
+  if (discovered) return prepareLLVMAdapter(discovered, managed);
   const destination = path.join(managed, "llvm");
   const marker = path.join(destination, ".aio-llvm.json");
-  const inspectInstalled = async () => {
-    const llvm = await inspectLLVM(
-      path.join(destination, "bin/llvm-config"),
-      env,
-      run,
-    );
-    // Nx restores files with fresh timestamps. For our checksum-pinned bundle,
-    // identify the release by its digest and library sizes, not restore times.
-    llvm.identity.archiveSha256 = bundle.sha256;
-    llvm.identity.libraries = llvm.identity.libraries.map(({ file, size }) => ({
-      file,
-      size,
-    }));
-    return llvm;
-  };
+  const inspectInstalled = () =>
+    inspectLLVM(path.join(destination, "bin/llvm-config"), env, run, {
+      archiveSha256: bundle.sha256,
+    });
   try {
     const installed = await fs.readJson(marker);
     if (JSON.stringify(installed) === JSON.stringify(bundle)) {
-      return await inspectInstalled();
+      return await prepareLLVMAdapter(await inspectInstalled(), managed);
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof MissingSystemLibraryError) throw error;
     /* Interrupted installs are rebuilt into a new staging directory. */
   }
   const temporary = await fs.mkdtemp(path.join(managed, "llvm-install-"));
@@ -210,11 +377,17 @@ export async function prepareLLVM({
     await run("tar", ["-xJf", archive, "-C", stage, "--strip-components=1"], {
       env,
     });
-    await inspectLLVM(path.join(stage, "bin/llvm-config"), env, run);
+    try {
+      await inspectLLVM(path.join(stage, "bin/llvm-config"), env, run);
+    } catch (error) {
+      if (!(error instanceof MissingSystemLibraryError)) throw error;
+      // The checksum and LLVM archives are valid. Keep this large download;
+      // host SDK validation below still fails, but retries can reuse LLVM.
+    }
     await fs.writeJson(path.join(stage, ".aio-llvm.json"), bundle);
     await fs.remove(destination);
     await fs.rename(stage, destination);
-    return await inspectInstalled();
+    return await prepareLLVMAdapter(await inspectInstalled(), managed);
   } catch (error) {
     throw new Error(
       `LLVM 22 preparation failed: ${error.message}. Official bundle needs tar/xz and a compatible glibc/native SDK; alternatively install LLVM 22 development libraries (including static libraries) on PATH.`,
