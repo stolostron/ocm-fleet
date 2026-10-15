@@ -14,7 +14,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { prepareNativeToolchain } from "./prepare-native-toolchain.mjs";
+import {
+  prepareNativeToolchain,
+  runCommand,
+  validatePerrySource,
+} from "./prepare-native-toolchain.mjs";
 
 async function fixture(t) {
   const root = await realpath(
@@ -73,7 +77,7 @@ async function fixture(t) {
     calls.push({ download: url });
     await writeFile(file, "fake installer");
   };
-  const prepare = () =>
+  const prepare = (options = {}) =>
     prepareNativeToolchain(root, {
       run,
       download,
@@ -85,11 +89,15 @@ async function fixture(t) {
         RUSTUP_HOME: "/global/rustup",
         PERRY_WORKSPACE_ROOT: "/external/perry",
         PERRY_NO_AUTO_OPTIMIZE: "",
+        PERRY_BUILD_COMMIT: "forged",
+        GIT_DIR: "/external/git",
       },
+      ...options,
     });
   return {
     root,
     calls,
+    run,
     prepare,
     setWrongTag: () => {
       wrongTag = true;
@@ -149,6 +157,11 @@ test("cold setup follows npm/source pins, isolates every child, then reuses inst
     );
     assert.equal(call.env.PERRY_NO_TELEMETRY, "1");
     assert.equal(Object.hasOwn(call.env, "PERRY_NO_AUTO_OPTIMIZE"), false);
+    assert.equal(Object.hasOwn(call.env, "PERRY_BUILD_COMMIT"), false);
+    assert.equal(
+      Object.keys(call.env).some((key) => key.startsWith("GIT_")),
+      false,
+    );
   }
   const count = f.calls.length;
   await f.prepare();
@@ -162,6 +175,78 @@ test("cold setup follows npm/source pins, isolates every child, then reuses inst
           call.args[0] !== "toolchain",
       ),
   );
+});
+
+test("real Git status permits only managed root target symlink, not arbitrary untracked source or target links", async (t) => {
+  const f = await fixture(t);
+  const prepared = await f.prepare();
+  const source = prepared.root;
+  const options = { cwd: source, env: prepared.env };
+  // No commits needed: ignore fixture manifests so real Git status isolates
+  // target/'s directory-only ignore behavior and other untracked source files.
+  await writeFile(
+    path.join(source, ".gitignore"),
+    "/.gitignore\n/Cargo.toml\n/Cargo.lock\n/crates/\n/external-tools.json\n/target/\n",
+  );
+  runCommand("git", ["init", "--quiet"], options);
+  assert.equal(
+    runCommand(
+      "git",
+      ["status", "--porcelain", "--untracked-files=normal"],
+      options,
+    ).trim(),
+    "?? target",
+  );
+  const runners = { status: runCommand };
+  const run = (command, args, execution) =>
+    (runners[args[0]] ?? f.run)(command, args, execution);
+  const validate = () =>
+    validatePerrySource(source, prepared.version, run, prepared.env);
+  await validate();
+  runners.status = () => " M target\n";
+  await assert.rejects(validate(), /modified or untracked/);
+  runners.status = runCommand;
+  await f.prepare({ run });
+  await writeFile(path.join(source, "intruder.rs"), "untracked source");
+  await assert.rejects(validate(), /untracked source/);
+  await rm(path.join(source, "intruder.rs"));
+  const target = path.join(source, "target");
+  await rm(target);
+  await symlink("../elsewhere", target);
+  await assert.rejects(validate(), /Unexpected native target symlink/);
+  await rm(target);
+  await writeFile(target, "not managed link");
+  await assert.rejects(validate(), /untracked source/);
+  await rm(target);
+  await mkdir(target);
+  await validate();
+});
+
+test("Linux delegates compiler preparation with same validated source and Rust; macOS never source-builds compiler", async (t) => {
+  const f = await fixture(t);
+  let linuxCalls = 0;
+  const prepareLinux = async (options) => {
+    linuxCalls++;
+    assert.equal(options.source, path.join(f.root, ".native-toolchain/perry"));
+    assert.equal(options.rustToolchain, "nightly-2026-08-20");
+    assert.equal(options.env.PERRY_BUILD_COMMIT, undefined);
+    await options.validateSource();
+    return {
+      compiler: "/managed/compiler/perry",
+      env: { ...options.env, LD_LIBRARY_PATH: "/llvm/lib" },
+    };
+  };
+  const result = await f.prepare({
+    platform: "linux",
+    arch: "x64",
+    libc: "2.43",
+    prepareLinux,
+  });
+  assert.equal(result.compiler, "/managed/compiler/perry");
+  assert.equal(result.env.LD_LIBRARY_PATH, "/llvm/lib");
+  await f.prepare({ prepareLinux });
+  assert.equal(linuxCalls, 1);
+  assert.equal(f.calls.filter((call) => call.args?.[0] === "build").length, 0);
 });
 
 test("rejects wrong or modified reused source before running Rust", async (t) => {

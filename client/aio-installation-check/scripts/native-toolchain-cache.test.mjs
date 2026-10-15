@@ -62,6 +62,11 @@ test("actual Nx cache restores source/Git/Rust while preserving uncached warm ar
   await chmod(path.join(managed, "cargo/bin/rustup"), 0o755);
   await symlink("rustup", path.join(managed, "cargo/bin/cargo"));
   await fixture("rustup/toolchains/pinned/bin/rustc", "compiler");
+  await fixture("compiler/perry", "source compiler");
+  await chmod(path.join(managed, "compiler/perry"), 0o755);
+  await fixture("compiler/provenance.json", "source + LLVM provenance");
+  await fixture("llvm/lib/libLLVM.so.22.1", "LLVM shared library");
+  await symlink("libLLVM.so.22.1", path.join(managed, "llvm/lib/libLLVM.so"));
   await fixture("build/warm.a", "keep build");
   await fixture("cargo/registry/warm.crate", "keep registry");
   await symlink("../build", path.join(managed, "perry/target"));
@@ -92,7 +97,14 @@ test("actual Nx cache restores source/Git/Rust while preserving uncached warm ar
       "../build",
     );
     // Remove only fixture setup outputs, leaving downstream build state warm.
-    for (const relative of [".managed", "perry", "cargo/bin", "rustup"]) {
+    for (const relative of [
+      ".managed",
+      "perry",
+      "cargo/bin",
+      "rustup",
+      "compiler",
+      "llvm",
+    ]) {
       await rm(path.join(managed, relative), { recursive: true, force: true });
     }
     for (let repeat = 0; repeat < 2; repeat++) {
@@ -112,6 +124,22 @@ test("actual Nx cache restores source/Git/Rust while preserving uncached warm ar
       assert.equal(
         await readFile(path.join(managed, ".managed"), "utf8"),
         "owned",
+      );
+      assert.equal(
+        await readFile(path.join(managed, "compiler/perry"), "utf8"),
+        "source compiler",
+      );
+      assert.equal(
+        await readFile(path.join(managed, "compiler/provenance.json"), "utf8"),
+        "source + LLVM provenance",
+      );
+      assert.equal(
+        (await stat(path.join(managed, "compiler/perry"))).mode & 0o111,
+        0o111,
+      );
+      assert.equal(
+        await readFile(path.join(managed, "llvm/lib/libLLVM.so"), "utf8"),
+        "LLVM shared library",
       );
       assert.equal(
         await readlink(path.join(managed, "cargo/bin/cargo")),

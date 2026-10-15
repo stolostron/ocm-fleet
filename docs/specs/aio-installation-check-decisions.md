@@ -9,7 +9,7 @@ in the [AIO installation-check specification](./aio-installation-check.md).
 
 | Decision | Rationale | Current status |
 | --- | --- | --- |
-| Distribute the utility as a native executable | Host readiness must be checkable before users install Node.js. Node guidance is for `fleetctl`, not a prerequisite for checking or launching AIO. | PoC executable builds and runs on macOS. Running with Node absent from `PATH` and Linux builds remain to be verified. |
+| Distribute the utility as a native executable | Host readiness must be checkable before users install Node.js. Node guidance is for `fleetctl`, not a prerequisite for checking or launching AIO. | PoC executable builds and runs on macOS. Fedora 44 ARM64 build and readiness smoke check passed; Linux x86_64, full Linux runtime checks, and running with Node absent from `PATH` remain to be verified. |
 | Use Perry 0.5.1520 for the PoC native build | Perry successfully compiles the TypeScript/Ink dependency graph used by this utility. ScriptC 0.3.1 currently cannot compile the required Ink/React graph and runtime call shapes. | Validated PoC path; compiler for a distributed product remains a release decision. |
 | Keep Ink/React as the UI layer | `fleetctl` already uses Ink and React. Using the same presentation technology keeps FleetShift CLIs aligned and allows future component reuse without tying `fleetctl` to Perry. | Both CLIs use Ink/React; packages currently maintain their own app-specific components. |
 | Keep keyboard/input transport separate from rendering | Perry's live Ink `render`/`useInput` path did not reliably repaint or clean up terminal state in repeated interactive flows. | AIO redraws bounded Ink-rendered frames from a small terminal input transport. |
@@ -29,7 +29,7 @@ their own builds, and release packaging, architecture coverage, and execution
 with Node absent from `PATH` remain to be validated. Native here means “no
 separately installed Node.js required to invoke the built utility”; it does not
 mean “one binary works on every operating system” or “the build needs no
-toolchain.”
+toolchain.” Builds target the host CPU architecture and, on Linux, its glibc/distribution baseline; release portability requires separate validation.
 
 ## Why ScriptC did not become the PoC compiler
 
@@ -101,11 +101,15 @@ The application logic, checks, UI, and orchestration are TypeScript. Rust is a b
 
 `build-native` depends on `prepare-native-toolchain`, which manages the ignored package-local `.native-toolchain/{perry,cargo,rustup}` directories. It clones the tag matching the exact `@perryts/perry` npm devDependency pin (currently `v0.5.1520`) and installs Rustup and the pinned toolchain noninteractively with the minimal profile. This requires no manual checkout, Rust installation, `.env` setup, or Rust exports, and does not change shell profiles or global Rust installations.
 
-The published Perry npm package does not include every prebuilt support archive needed for this feature set. The compiler remains the npm-provided binary; it is not built from source. Perry uses the matching checkout and managed Rust/Cargo toolchain to build feature-matched runtime, standard-library, and native extension support archives on demand, including the `net` support needed by the socket probe, then links the application into the executable.
+The published Perry npm package does not include every prebuilt support archive needed for this feature set. Perry uses the matching checkout and managed Rust/Cargo toolchain to build feature-matched runtime, standard-library, and native extension support archives on demand, including the `net` support needed by the socket probe, then links the application into the executable.
 
-The setup target has `cache: true`, with `.native-toolchain` as its output. Cache keys include the setup/build scripts, Perry pin, host platform, architecture, OS release, libc, and absolute project path. `build-native` remains `cache: false`; Perry/Cargo archives and compiler caches are reused for incremental builds. Build subprocesses use managed Rust/Cargo homes, force Perry telemetry off, and remove `PERRY_NO_AUTO_OPTIMIZE` entirely: its presence, even with an empty value, disables the coherent `net`/`ws` archive rebuild.
+Linux builds the compiler from that same clean pinned Git checkout with `cargo build --locked --profile perry-dev -p perry --no-default-features --features dev-cli`; other platforms retain the npm compiler. The Linux npm 0.5.1520 compiler embeds runtime source hash `src:85ccd72f…`, while the clean tag yields `src:1764a5ba…`. This content mismatch is not caused by npm hoisting. Building both compiler and support archives from the same checkout preserves compatibility checks without source-stamp overrides or bypasses.
 
-Git, Node.js with npm, workspace dependencies, and a platform C/linker toolchain and SDK remain prerequisites. The macOS build used Xcode Command Line Tools; Linux's exact tool package set is not verified. The intended user entrypoint is the produced executable, not Cargo. Missing `objcopy`/`llvm-objcopy` causes non-fatal size-optimization warnings, not build failure.
+`scripts/prepare-linux-toolchain.mjs` discovers LLVM 22 development libraries through `llvm-config-22`/`llvm-config` or `LLVM_SYS_221_PREFIX`, including the static libraries required by the compiler. Otherwise it downloads the official LLVM 22.1.8 x64 or arm64 bundle (approximately 2 GB), verifies its pinned SHA256, and installs it into `.native-toolchain/llvm`. Linux requires glibc; musl is unsupported.
+
+The setup target has `cache: true`. Outputs include the managed checkout and Rust toolchain, `.native-toolchain/compiler/{perry,provenance.json}`, and downloaded LLVM. Compiler reuse checks provenance (source, Rust, LLVM, environment, build arguments), executable hash/version, and checkout cleanliness. Cache keys include the setup/build scripts, Perry pin, host platform, architecture, OS release, libc, absolute project path, and Linux compiler environment/external LLVM identity. `build-native` remains `cache: false`; Cargo intermediates in `.native-toolchain/build` are retained outside the cached outputs for incremental reuse. Build subprocesses use managed Rust/Cargo homes, force Perry telemetry off, and remove `PERRY_NO_AUTO_OPTIMIZE` entirely: its presence, even with an empty value, disables the coherent `net`/`ws` archive rebuild.
+
+Git, Node.js with npm, workspace dependencies, and a platform C/linker toolchain and SDK remain prerequisites. Linux also requires system development libraries and `tar`/`xz`, even with the LLVM bundle. The macOS build used Xcode Command Line Tools; the [package README](../../client/aio-installation-check/README.md#perry-native-build) lists the Fedora 44 arm64 prerequisites used for compiler verification, including `libffi-devel` for `llvm-config`'s system libraries. The intended user entrypoint is the produced executable, not Cargo. Missing `objcopy`/`llvm-objcopy` causes non-fatal size-optimization warnings, not build failure.
 
 ### Compatibility adapters and shims
 
@@ -131,7 +135,7 @@ npx nx run aio-installation-check:build-native
 ./client/aio-installation-check/dist/native/aio-installation-check --with-kind
 ```
 
-The build target prepares the managed toolchain, stages sources and dependencies, validates Ink/Yoga module resolution, and invokes the npm-provided Perry compiler. It preserves Perry/Cargo caches for incremental builds. `npx nx run aio-installation-check:native-verify` builds the executable and runs the Node-based PTY acceptance suite using `node-pty`, `@xterm/headless`, and `zx`.
+The build target prepares the managed toolchain, stages sources and dependencies, validates Ink/Yoga module resolution, and invokes the source-built Linux compiler or npm compiler on other platforms. It preserves Perry/Cargo caches for incremental builds. `npx nx run aio-installation-check:native-verify` builds the executable and runs the Node-based PTY acceptance suite using `node-pty`, `@xterm/headless`, and `zx`.
 
 The managed bootstrap and bare `npx nx run aio-installation-check:build-native` command are verified on macOS using the managed source checkout and pinned `nightly-2026-08-20`, producing an approximately 42 MB executable. The initial cold archive build hit an external timeout; the retry succeeded. Full uninterrupted cold-build timing is not established. A repeated Nx setup run hit the cache; full cache restoration has not yet been verified.
 
@@ -140,10 +144,9 @@ the launch preview with the VM-side socket, and exited cleanly after declining
 launch. An isolated cached-image bind probe confirmed the socket mount and
 Engine API `/_ping` response. No full AIO stack was started by those checks.
 
-Still outstanding: run the produced executable with Node absent from `PATH`,
-build and exercise it on Linux, and validate the Docker Desktop path live. The
-current evidence validates the macOS PoC path, not a completed distribution
-matrix.
+On Fedora 44 arm64, the source compiler and approximately 42.6 MB ARM64 ELF application built successfully with the required `libffi-devel` installed. Direct execution rendered readiness and reported missing Podman/Docker clients in the container. Upstream unused-item warnings from `dev-cli` are non-blocking; pthread declaration warnings remain unresolved.
+
+Still outstanding: Linux x86_64 builds, full Linux interactive runtime/launch checks, execution with Node absent from `PATH`, and live Docker Desktop validation. Current evidence validates the macOS PoC path and Fedora ARM64 build/readiness smoke check, not a completed distribution matrix.
 
 ## References
 

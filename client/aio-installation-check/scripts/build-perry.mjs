@@ -1,10 +1,15 @@
+#!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { cp, mkdir, realpath, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { prepareNativeToolchain } from "./prepare-native-toolchain.mjs";
+import {
+  prepareNativeToolchain,
+  runCommand,
+  validatePerrySource,
+} from "./prepare-native-toolchain.mjs";
 
 export { createPerryBuildEnvironment } from "./prepare-native-toolchain.mjs";
 
@@ -56,20 +61,32 @@ export async function preparePerryBuild(root = projectRoot) {
   return path.join(stage, "src/main.tsx");
 }
 
+export function perryCompilerInvocation(
+  prepared,
+  require,
+  platform = process.platform,
+) {
+  if (platform === "linux") {
+    if (!prepared.compiler)
+      throw new Error("Linux requires a prepared source compiler");
+    return { command: prepared.compiler, args: [] };
+  }
+  return {
+    command: process.execPath,
+    args: [require.resolve("@perryts/perry/bin/perry.js")],
+  };
+}
+
 async function build() {
-  const {
-    root: perryRoot,
-    rustToolchain,
-    env: buildEnv,
-    version,
-  } = await prepareNativeToolchain();
+  const prepared = await prepareNativeToolchain();
+  const { root: perryRoot, rustToolchain, env: buildEnv, version } = prepared;
   const require = createRequire(path.join(projectRoot, "package.json"));
   if (require("@perryts/perry/package.json").version !== version) {
     throw new Error(
       `Installed Perry does not match ${version}; run npm install.`,
     );
   }
-  const compiler = require.resolve("@perryts/perry/bin/perry.js");
+  const compiler = perryCompilerInvocation(prepared, require);
 
   if (process.env.PERRY_NO_AUTO_OPTIMIZE !== undefined) {
     console.log(
@@ -81,9 +98,9 @@ async function build() {
   const entry = await preparePerryBuild();
   await mkdir(path.join(projectRoot, "dist/native"), { recursive: true });
   const result = spawnSync(
-    process.execPath,
+    compiler.command,
     [
-      compiler,
+      ...compiler.args,
       "compile",
       entry,
       "--output",
@@ -91,6 +108,8 @@ async function build() {
     ],
     { cwd: projectRoot, env: buildEnv, stdio: "inherit" },
   );
+  // Auto-built runtime archives must leave the same source contract intact.
+  await validatePerrySource(perryRoot, version, runCommand, buildEnv);
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;
 }

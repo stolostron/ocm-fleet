@@ -15,7 +15,29 @@ import test from "node:test";
 import {
   createPerryBuildEnvironment,
   preparePerryBuild,
+  perryCompilerInvocation,
 } from "./build-perry.mjs";
+
+// eslint-disable-next-line playwright/expect-expect -- node:test assertions use node:assert.
+test("Linux runs prepared source compiler; macOS runs npm Node wrapper", () => {
+  const require = { resolve: () => "/npm/perry.js" };
+  assert.deepEqual(
+    perryCompilerInvocation(
+      { compiler: "/managed/compiler/perry" },
+      require,
+      "linux",
+    ),
+    { command: "/managed/compiler/perry", args: [] },
+  );
+  assert.deepEqual(perryCompilerInvocation({}, require, "darwin"), {
+    command: process.execPath,
+    args: ["/npm/perry.js"],
+  });
+  assert.throws(
+    () => perryCompilerInvocation({}, require, "linux"),
+    /prepared.*compiler/,
+  );
+});
 
 // eslint-disable-next-line playwright/expect-expect -- This node:test uses node:assert.
 test("Perry environment isolates Rust homes and required compiler flags", () => {
@@ -27,6 +49,10 @@ test("Perry environment isolates Rust homes and required compiler flags", () => 
       PERRY_NO_TELEMETRY: "0",
       CARGO_HOME: "/unrelated/cargo",
       RUSTUP_HOME: "/unrelated/rustup",
+      PERRY_BUILD_COMMIT: "forged",
+      GIT_DIR: "/wrong/git",
+      GIT_WORK_TREE: "/wrong/source",
+      GIT_INDEX_FILE: "/wrong/index",
     },
     "/project/.native-toolchain/perry",
     "nightly-2026-08-20",
@@ -38,6 +64,11 @@ test("Perry environment isolates Rust homes and required compiler flags", () => 
   assert.equal(env.PERRY_WORKSPACE_ROOT, "/project/.native-toolchain/perry");
   assert.equal(env.PERRY_NO_TELEMETRY, "1");
   assert.equal(env.PERRY_NO_AUTO_OPTIMIZE, undefined);
+  assert.equal(env.PERRY_BUILD_COMMIT, undefined);
+  assert.equal(
+    Object.keys(env).some((key) => key.startsWith("GIT_")),
+    false,
+  );
   assert.equal(
     env.PATH.split(path.delimiter)[0],
     "/project/.native-toolchain/cargo/bin",
