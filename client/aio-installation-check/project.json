@@ -10,15 +10,20 @@
       "cache": true,
       "inputs": [
         "{projectRoot}/scripts/prepare-native-toolchain.mjs",
+        "{projectRoot}/scripts/prepare-linux-toolchain.mjs",
         "{projectRoot}/scripts/build-perry.mjs",
         "{projectRoot}/scripts/native-toolchain-cache-key.mjs",
-        { "runtime": "node client/aio-installation-check/scripts/native-toolchain-cache-key.mjs" }
+        {
+          "runtime": "node client/aio-installation-check/scripts/native-toolchain-cache-key.mjs"
+        }
       ],
       "outputs": [
         "{projectRoot}/.native-toolchain/.managed",
         "{projectRoot}/.native-toolchain/perry",
         "{projectRoot}/.native-toolchain/cargo/bin",
-        "{projectRoot}/.native-toolchain/rustup"
+        "{projectRoot}/.native-toolchain/rustup",
+        "{projectRoot}/.native-toolchain/compiler",
+        "{projectRoot}/.native-toolchain/llvm"
       ],
       "options": {
         "command": "node scripts/prepare-native-toolchain.mjs",

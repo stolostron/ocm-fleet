@@ -29,7 +29,13 @@ Verification on macOS Podman: native PTY `--with-kind` passed all seven checks, 
 
 ## Perry native build
 
-Prerequisites are Git, Node.js with npm, workspace dependencies (`npm ci` from the repository root), and a native C compiler/linker with the platform SDK. The macOS build used Xcode Command Line Tools (`xcode-select -p`); Linux needs native compiler/linker tools and system development headers, but its build remains unverified.
+Prerequisites are Git, Node.js with npm, workspace dependencies (`npm ci` from the repository root), and a native C compiler/linker with the platform SDK. The macOS build used Xcode Command Line Tools (`xcode-select -p`). Linux requires glibc, system development libraries, and `tar`/`xz`; musl is unsupported. The Fedora 44 arm64 container used for compiler verification installed:
+
+```sh
+sudo dnf install nodejs npm git gcc gcc-c++ make cmake clang-devel llvm-devel zlib-devel libzstd-devel libxml2-devel openssl-devel libffi-devel tar xz which
+```
+
+`libffi-devel` is needed for the system libraries reported by Fedora's `llvm-config`. These prerequisites do not establish a successful Linux application build.
 
 From the repository root:
 
@@ -40,11 +46,15 @@ npx nx run aio-installation-check:build-native
 
 `build-native` depends on the cacheable `prepare-native-toolchain` target. Setup manages the ignored package-local `.native-toolchain/{perry,cargo,rustup}` directories: it clones the tag matching the exact `@perryts/perry` npm devDependency pin (currently `v0.5.1520`), reads the Rust pin from that checkout's `external-tools.json` (currently `nightly-2026-08-20`), and installs Rustup and the pinned toolchain noninteractively with the minimal profile. No manual checkout, Rust installation, `.env` setup, or Rust exports are needed; setup does not change shell profiles or global Rust installations.
 
-The setup target has `cache: true`, keyed by the setup/build scripts, Perry pin, host platform, architecture, OS release, libc, and absolute project path. Its output is `.native-toolchain`. `build-native` remains `cache: false` and reuses Perry/Cargo archives and compiler caches for incremental builds. The compiler comes from npm; it is not built from source. Perry builds missing feature-matched runtime, standard-library, and native extension support archives on demand, including those needed by the Unix-socket probe.
+On Linux, setup builds the compiler from that same clean pinned checkout using `cargo build --locked --profile perry-dev -p perry --no-default-features --features dev-cli`. It caches `.native-toolchain/compiler/perry` and `provenance.json`, recording source, Rust, LLVM, build environment, and executable hash. Other platforms retain the npm compiler. This avoids the Linux npm 0.5.1520 runtime source-hash mismatch (`src:85ccd72f…` versus clean tag `src:1764a5ba…`); it is not a hoisting issue, and no compatibility check is bypassed. Perry builds missing feature-matched runtime, standard-library, and native extension support archives on demand from the matching checkout, including those needed by the Unix-socket probe.
+
+Linux setup discovers installed LLVM 22 development libraries through `llvm-config-22`/`llvm-config` or `LLVM_SYS_221_PREFIX`. Otherwise it downloads the official LLVM 22.1.8 x64 or arm64 bundle (approximately 2 GB), verifies its pinned SHA256, and extracts it into `.native-toolchain/llvm`. The bundle does not replace the C/linker SDK, system development libraries, or `tar`/`xz` prerequisites.
+
+The setup target has `cache: true`, keyed by the setup/build scripts, Perry pin, host platform, architecture, OS release, libc, and absolute project path, plus Linux compiler environment and external LLVM identity. Outputs include the managed checkout, Rust toolchain, Linux compiler/provenance, and downloaded LLVM. `build-native` remains `cache: false`; Cargo intermediates stay in `.native-toolchain/build` for incremental reuse.
 
 Build subprocesses use the managed Rust/Cargo homes and toolchain. Perry telemetry is forced off, and `PERRY_NO_AUTO_OPTIMIZE` is removed entirely because its presence, even with an empty value, prevents the coherent `net`/`ws` archive rebuild. Missing `objcopy`/`llvm-objcopy` currently produces non-fatal size-optimization warnings; neither tool is required for a successful build.
 
-The resulting executable runs directly; Node.js is a build dependency, not its launcher. Host Node.js detection inside preflight remains guidance for `fleetctl`.
+The resulting executable runs directly; Node.js is a build dependency, not its launcher. Builds target the host CPU architecture and, on Linux, its glibc/distribution baseline; they are not universally portable Linux binaries. Host Node.js detection inside preflight remains guidance for `fleetctl`.
 
 ### Build-only Yoga resolution
 
@@ -83,4 +93,6 @@ Historical Nx task times before the managed bootstrap, with Rust archives alread
 
 The managed bootstrap and bare `npx nx run aio-installation-check:build-native` command are verified on macOS using the managed source checkout and pinned `nightly-2026-08-20`, producing an approximately 42 MB executable. The initial cold archive build hit an external timeout; the retry succeeded. Full uninterrupted cold-build timing is not established. A repeated Nx setup run hit the cache; full cache restoration has not yet been verified. Earlier native and PTY results above describe the pre-bootstrap PoC path.
 
-Linux runtime verification and execution with Node absent from PATH remain outstanding. ScriptC was evaluated and its compiler dependency and targets were removed; see the implementation decisions for findings. Compiler warnings about optional React devtools, browser globals, and unused dynamic-code paths remain; the verified native preflight flow completes successfully.
+On Fedora 44 arm64, the source compiler and AIO executable built successfully after installing the required `libffi-devel`. The resulting ARM64 ELF executable is approximately 42.6 MB. A direct execution rendered the readiness screen and reported the container's missing Podman/Docker clients. Linux x86_64, full interactive runtime/launch checks, and execution with Node absent from `PATH` remain outstanding.
+
+Upstream unused-item warnings from the `dev-cli` compiler build are non-blocking. Warnings about pthread declarations remain unresolved. Earlier optional React devtools, browser-global, and unused dynamic-code warnings did not block the verified macOS preflight flow. ScriptC was evaluated and its compiler dependency and targets were removed; see the implementation decisions for findings.

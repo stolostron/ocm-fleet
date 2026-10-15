@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import {
   chmod,
@@ -16,6 +17,10 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { fs } from "zx";
+
+import { prepareLinuxCompiler } from "./prepare-linux-toolchain.mjs";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const repository = "https://github.com/PerryTS/perry.git";
@@ -43,6 +48,11 @@ export function createPerryBuildEnvironment(
   if (!rustToolchain) delete env.RUSTUP_TOOLCHAIN;
   // Presence, even with an empty value, disables Perry's coherent native rebuild.
   delete env.PERRY_NO_AUTO_OPTIMIZE;
+  delete env.PERRY_BUILD_COMMIT;
+  // Git must describe this checkout, never a caller's repository/index/config.
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("GIT_")) delete env[key];
+  }
   return env;
 }
 
@@ -90,23 +100,39 @@ async function claimManagedDirectory(directory) {
       `Refusing unmanaged directory: ${directory}. Move it aside, then retry.`,
     );
   }
-  for (const child of ["perry", "cargo", "rustup", "build"]) {
+  for (const child of [
+    "perry",
+    "cargo",
+    "rustup",
+    "build",
+    "compiler",
+    "llvm",
+  ]) {
     await rejectSymlink(path.join(directory, child));
   }
+}
+
+async function validateNativeTargetLink(source) {
+  const target = path.join(source, "target");
+  const build = path.join(path.dirname(source), "build");
+  const info = await exists(target);
+  if (!info?.isSymbolicLink()) return false;
+  if (
+    path.toNamespacedPath(path.resolve(source, await readlink(target))) !==
+    path.toNamespacedPath(build)
+  ) {
+    throw new Error(`Unexpected native target symlink: ${target}`);
+  }
+  await rejectSymlink(build);
+  return true;
 }
 
 async function prepareNativeBuildDirectory(source, managed) {
   const target = path.join(source, "target");
   const build = path.join(managed, "build");
   const info = await exists(target);
-  if (info?.isSymbolicLink()) {
-    if (
-      path.toNamespacedPath(path.resolve(source, await readlink(target))) !==
-      path.toNamespacedPath(build)
-    ) {
-      throw new Error(`Unexpected native target symlink: ${target}`);
-    }
-  } else if (info) {
+  const managedLink = await validateNativeTargetLink(source);
+  if (info && !managedLink) {
     if (!info.isDirectory() || (await exists(build))) {
       throw new Error(
         `Cannot move native target to ${build}; preserve both directories and move the conflicting path aside before retrying.`,
@@ -142,7 +168,7 @@ async function readPin(root) {
   return version;
 }
 
-async function validateSource(root, version, run, env) {
+export async function validatePerrySource(root, version, run, env) {
   const options = { cwd: root, env };
   if (
     (await run("git", ["remote", "get-url", "origin"], options)).trim() !==
@@ -161,17 +187,21 @@ async function validateSource(root, version, run, env) {
       `Perry checkout must be exactly v${version}: ${root}. Move it aside, then retry.`,
     );
   }
+  const managedLink = await validateNativeTargetLink(root);
+  const status = await run(
+    "git",
+    ["status", "--porcelain", "--untracked-files=normal"],
+    options,
+  );
+  // Upstream ignores target/ directories, not symlinks. Only our validated
+  // root link may be untracked; retain every other tracked/untracked change.
   if (
-    (
-      await run(
-        "git",
-        ["status", "--porcelain", "--untracked-files=no"],
-        options,
-      )
-    ).trim()
+    status
+      .split(/\r?\n/)
+      .some((line) => line.trim() && !(managedLink && line === "?? target"))
   ) {
     throw new Error(
-      `Perry checkout has modified tracked files: ${root}. Restore them or move it aside, then retry.`,
+      `Perry checkout has modified or untracked source files: ${root}. Restore them or move it aside, then retry.`,
     );
   }
   for (const file of [
@@ -206,7 +236,7 @@ async function downloadInstaller(url, destination) {
   const response = await fetch(url, { signal: AbortSignal.timeout(120_000) });
   if (!response.ok)
     throw new Error(`Download ${url} failed: HTTP ${response.status}`);
-  await writeFile(destination, Buffer.from(await response.arrayBuffer()), {
+  await fs.writeFile(destination, Buffer.from(await response.arrayBuffer()), {
     mode: 0o700,
   });
 }
@@ -233,11 +263,17 @@ export async function prepareNativeToolchain(
     download = downloadInstaller,
     platform = process.platform,
     arch = process.arch,
+    libc = process.report.getReport().header.glibcVersionRuntime,
+    prepareLinux = prepareLinuxCompiler,
   } = {},
 ) {
   root = await realpath(root);
   const version = await readPin(root);
   const host = rustHost(platform, arch);
+  if (platform === "linux" && !libc)
+    throw new Error(
+      "Linux musl is unsupported; use a glibc host with a C compiler/linker and development SDK.",
+    );
   const managed = path.join(root, ".native-toolchain");
   const source = path.join(managed, "perry");
   let env = createPerryBuildEnvironment(baseEnv, source);
@@ -263,13 +299,13 @@ export async function prepareNativeToolchain(
           ],
           { cwd: root, env },
         );
-        await validateSource(checkout, version, run, env);
+        await validatePerrySource(checkout, version, run, env);
         await rename(checkout, source);
       } finally {
         await rm(temporary, { recursive: true, force: true });
       }
     }
-    const rustToolchain = await validateSource(source, version, run, env);
+    const rustToolchain = await validatePerrySource(source, version, run, env);
     await prepareNativeBuildDirectory(source, managed);
     env = createPerryBuildEnvironment(baseEnv, source, rustToolchain);
     const suffix = platform === "win32" ? ".exe" : "";
@@ -317,10 +353,25 @@ export async function prepareNativeToolchain(
       );
       await verify();
     }
-    // Perry v0.5.1520 auto-builds missing CPU-only ext archives (events),
-    // then rebuilds runtime/stdlib/net/ws together to unify Tokio. Keep the
-    // npm CLI; neither bootstrap nor the build needs to rebuild the compiler.
-    return { root: source, rustToolchain, env, version };
+    // Linux npm binaries have a different runtime source stamp than the clean
+    // release tag. Build the compiler from exactly the checkout used by its
+    // auto-built runtime/stdlib/net/ws/events archives. Other hosts keep npm.
+    const linux =
+      platform === "linux"
+        ? await prepareLinux({
+            managed,
+            source,
+            rustToolchain,
+            version,
+            env,
+            run,
+            arch,
+            libc,
+            validateSource: () =>
+              validatePerrySource(source, version, run, env),
+          })
+        : {};
+    return { root: source, rustToolchain, env, version, ...linux };
   } catch (error) {
     throw new Error(
       `Native toolchain preparation failed: ${error.message}\nCheck network access and Git/native build prerequisites, then rerun npx nx run aio-installation-check:prepare-native-toolchain. Managed files: ${managed}`,
