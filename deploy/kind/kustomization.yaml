@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ocm-fleet
+resources:
+  - namespace.yaml
+  - postgres/statefulset.yaml
+  - postgres/service.yaml
+  - postgres/pvc.yaml
+  - dex/pvc.yaml
+  - dex/service.yaml
+  - resource-manager/deployment.yaml
+  - resource-manager/service.yaml
+configMapGenerator:
+  - name: resource-manager-config
+    envs:
+      - config.env
+  - name: dex-config
+    files:
+      - config.yaml=dex/config.yaml
+secretGenerator:
+  - name: postgres-credentials
+    envs:
+      - secrets.env
+    type: Opaque
+  - name: dex-credentials
+    envs:
+      - dex-secrets.env
+    type: Opaque
+images:
+  - name: quay.io/stolostron/ocm-fleet-server
+    newName: localhost/ocm-fleet-server
+    newTag: kind
+  - name: quay.io/stolostron/ocm-fleet-web
+    newName: localhost/ocm-fleet-web
+    newTag: kind

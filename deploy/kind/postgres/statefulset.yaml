@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres:18
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER_FILE
+              value: /run/secrets/postgres/user
+            - name: POSTGRES_PASSWORD_FILE
+              value: /run/secrets/postgres/password
+            - name: POSTGRES_DB_FILE
+              value: /run/secrets/postgres/database
+          volumeMounts:
+            - name: pg-credentials
+              mountPath: /run/secrets/postgres
+              readOnly: true
+            # PostgreSQL 18 creates its versioned PGDATA beneath this directory.
+            - name: postgres-data
+              mountPath: /var/lib/postgresql
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -ec
+                - 'pg_isready -h 127.0.0.1 -U "$(cat "$POSTGRES_USER_FILE")" -d "$(cat "$POSTGRES_DB_FILE")"'
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+      volumes:
+        - name: pg-credentials
+          secret:
+            secretName: postgres-credentials
+            items:
+              - key: POSTGRES_USER
+                path: user
+              - key: POSTGRES_PASSWORD
+                path: password
+              - key: POSTGRES_DB
+                path: database
+            # The image entrypoint reads these files as root before starting
+            # PostgreSQL under its own user.
+            defaultMode: 0400
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-data

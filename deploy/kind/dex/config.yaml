@@ -1,0 +1,44 @@
+issuer: http://localhost:5556/dex
+storage:
+  type: sqlite3
+  config:
+    file: /var/dex/dex.db
+web:
+  http: 0.0.0.0:5556
+  allowedOrigins:
+    - http://localhost:8085
+  allowedHeaders:
+    - Authorization
+    - Content-Type
+oauth2:
+  skipApprovalScreen: true
+  passwordConnector: local
+enablePasswordDB: true
+staticPasswords:
+  - email: ops@ocm-fleet.local
+    hashFromEnv: DEX_OPERATOR_PASSWORD_HASH
+    username: ops-user
+    userID: ocm-fleet-kind-ops-v1
+    name: OCM Fleet operator
+    preferredUsername: ops-user
+    groups:
+      - ops
+staticClients:
+  - id: resource-manager
+    name: Resource manager API
+    secretEnv: DEX_RESOURCE_CLIENT_SECRET
+    trustedPeers:
+      - ocm-fleet-console
+      - fleetctl
+  - id: ocm-fleet-console
+    name: OCM Fleet console
+    public: true
+    redirectURIs:
+      - http://localhost:8085/app/auth/callback
+      - http://localhost:8085/app/silent-renew.html
+  - id: fleetctl
+    name: fleetctl
+    public: true
+  - id: resource-manager-signing
+    name: Resource manager signing enrollment
+    public: true

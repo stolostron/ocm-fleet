@@ -1,0 +1,9 @@
+/config.env
+/config.env.tmp.*
+/secrets.env
+/secrets.env.tmp.*
+/dex-secrets.env
+/dex-secrets.env.tmp.*
+/local-credentials.txt
+/local-credentials.txt.tmp.*
+/kubeconfig

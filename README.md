@@ -64,6 +64,7 @@ or console. Remove any previous development clusters and volumes explicitly.
 | Path | What you launch | Guide |
 |------|-----------------|-------|
 | Podman compose stack | All-in-one image via compose/Nx (HTTPS origin, source builds, local-web watch) | [deploy/podman/](deploy/podman/README.md) |
+| KinD in-cluster | Resource manager, console and PostgreSQL with REST and gRPC access on localhost | [deploy/kind/](deploy/kind/README.md) |
 | OpenShift example | Cluster deployment using Routes and ImageStreams | [deploy/openshift/](deploy/openshift/README.md) |
 | Keycloak (OpenShift) | External OIDC for cluster deploy or AIO compose (`OIDC_ISSUER_URL` in `.env`) | [deploy/openshift/keycloak/](deploy/openshift/keycloak/README.md) |
 | Nx remote cache | Shared build cache backed by MinIO | [docs/nx-remote-cache.md](docs/nx-remote-cache.md) |

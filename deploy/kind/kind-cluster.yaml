@@ -1,0 +1,21 @@
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+name: ocm-fleet
+networking:
+  apiServerAddress: "127.0.0.1"
+nodes:
+  - role: control-plane
+    # Match the NodePorts in resource-manager/service.yaml and dex/service.yaml.
+    extraPortMappings:
+      - containerPort: 30085
+        hostPort: 8085
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+      - containerPort: 30051
+        hostPort: 50051
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+      - containerPort: 30556
+        hostPort: 5556
+        listenAddress: "127.0.0.1"
+        protocol: TCP

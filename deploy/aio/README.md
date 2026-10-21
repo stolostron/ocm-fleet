@@ -4,6 +4,8 @@ Single container (`quay.io/stolostron/ocm-fleet`) with API, baked-in UI, and
 peer Dex under s6-overlay. Documented and tested with **podman**. To launch
 this image through the Podman compose stack, see
 [deploy/podman/](../podman/README.md).
+For a Kubernetes deployment with separate server, web and PostgreSQL images,
+see the [KinD deployment guide](../kind/README.md).
 
 Sandbox for demos, bootstrapping, and testing — not a production deployment.
 Packaging owns PID 1, peer Dex (default), sandbox PKI, and the ordinary

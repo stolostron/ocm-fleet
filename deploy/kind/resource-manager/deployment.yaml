@@ -1,0 +1,168 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resource-manager
+spec:
+  replicas: 1
+  # Dex keeps its SQLite store on a PVC, so only one Pod may use it at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: resource-manager
+  template:
+    metadata:
+      labels:
+        app: resource-manager
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        # A restartable init sidecar makes OIDC discovery ready before the server starts.
+        - name: dex
+          image: docker.io/dexidp/dex:v2.45.1@sha256:8499afd690c437f52301efd2b05b2455da5bd2dfc20332cd697dc9937f808462
+          restartPolicy: Always
+          command: ["/usr/local/bin/dex", "serve", "/etc/dex/config.yaml"]
+          envFrom:
+            - secretRef:
+                name: dex-credentials
+          ports:
+            - name: oidc
+              containerPort: 5556
+          startupProbe:
+            httpGet:
+              path: /dex/healthz
+              port: oidc
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /dex/healthz
+              port: oidc
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /dex/healthz
+              port: oidc
+            periodSeconds: 10
+            timeoutSeconds: 3
+          volumeMounts:
+            - name: dex-config
+              mountPath: /etc/dex
+              readOnly: true
+            - name: dex-data
+              mountPath: /var/dex
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+        - name: web-builder
+          image: quay.io/stolostron/ocm-fleet-web:latest
+          # Copy all static assets without depending on a shell in the image.
+          command: ["cp", "-a", "/srv/web/.", "/output/"]
+          volumeMounts:
+            - name: web-assets
+              mountPath: /output
+        - name: wait-for-postgres
+          image: docker.io/library/postgres:18
+          command:
+            - sh
+            - -ec
+            - |
+              until pg_isready -h postgres -p 5432 -U "$PGUSER" -d "$PGDATABASE" >/dev/null 2>&1; do
+                sleep 2
+              done
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+      containers:
+        - name: resource-manager
+          image: quay.io/stolostron/ocm-fleet-server:latest
+          args:
+            - serve
+            - --database-url-file=/run/secrets/resource-manager/database-url
+            - --http-addr=:8085
+            - --grpc-addr=:50051
+            - --log-level=$(OCM_RM_LOG_LEVEL)
+            - --addons=$(OCM_RM_SERVER_ADDONS)
+            - --web-dir=/srv/web
+            - --oidc-issuer=$(OIDC_ISSUER_URL)
+            - --oidc-ui-client-id=$(OIDC_UI_CLIENT_ID)
+            - --oidc-ui-scope=$(OIDC_UI_SCOPE)
+            - --oidc-resource-audience=$(OIDC_RESOURCE_AUDIENCE)
+            - --oidc-key-enrollment-audience=$(OIDC_KEY_ENROLLMENT_AUDIENCE)
+            - --oidc-public-key-claim-expression=$(PUBLIC_KEY_CLAIM_EXPR)
+            - --oidc-registry-id=$(KEY_REGISTRY_ID)
+            - --oidc-registry-subject-expression=$(KEY_REGISTRY_SUBJECT_EXPR)
+          envFrom:
+            - configMapRef:
+                name: resource-manager-config
+          ports:
+            - name: http
+              containerPort: 8085
+            - name: grpc
+              containerPort: 50051
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          volumeMounts:
+            - name: db-credentials
+              mountPath: /run/secrets/resource-manager
+              readOnly: true
+            - name: web-assets
+              mountPath: /srv/web
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: db-credentials
+          secret:
+            secretName: postgres-credentials
+            items:
+              - key: DATABASE_URL
+                path: database-url
+            defaultMode: 0400
+        - name: web-assets
+          emptyDir: {}
+        - name: dex-config
+          configMap:
+            name: dex-config
+        - name: dex-data
+          persistentVolumeClaim:
+            claimName: dex-data
