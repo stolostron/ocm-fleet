@@ -22,7 +22,7 @@ export interface InstallationServices {
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_ATTEMPTS = 100;
-const AIO_IMAGE = "quay.io/stolostron/fleetshift:latest";
+const AIO_IMAGE = "quay.io/stolostron/ocm-fleet:latest";
 const NODE_DOWNLOADS_URL = "https://nodejs.org/en/download/";
 const NVM_URL = "https://github.com/nvm-sh/nvm";
 
@@ -390,7 +390,7 @@ export async function runInstallationCheck(
   services: InstallationServices,
   terminal: Terminal,
 ): Promise<void> {
-  terminal.write("OME | FleetShift AIO installation check", "banner");
+  terminal.write("OCM Fleet | AIO installation check", "banner");
   if (terminal.platform !== "darwin" && terminal.platform !== "linux") {
     terminal.write(
       `Unsupported host platform: ${terminal.platform}. Preflight cannot report success.`,

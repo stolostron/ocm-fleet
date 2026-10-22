@@ -21,7 +21,7 @@ function result(
   const remediation: NonNullable<CheckResult["remediation"]> = {
     explanation,
     documentationUrl:
-      "https://docs.example.invalid/fleetshift/aio-installation-check#kind-mode",
+      "https://github.com/stolostron/ocm-fleet/blob/main/deploy/aio/README.md#with-kind",
   };
   if (command) {
     remediation.actions = [

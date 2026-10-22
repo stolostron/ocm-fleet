@@ -8,7 +8,7 @@ import type {
   LaunchResult,
 } from "../contracts";
 
-const AIO_IMAGE = "quay.io/stolostron/fleetshift:latest";
+const AIO_IMAGE = "quay.io/stolostron/ocm-fleet:latest";
 const CONTAINER_SOCKET_PATH = "/var/run/docker.sock";
 
 interface CommandResult {
@@ -169,9 +169,9 @@ export function createLaunchService(
         );
 
         if (options.runtime === "podman") {
-          args.push("--network", "kind:alias=fleetshift");
+          args.push("--network", "kind:alias=ocm-fleet");
         } else {
-          args.push("--network", "kind", "--network-alias", "fleetshift");
+          args.push("--network", "kind", "--network-alias", "ocm-fleet");
         }
       }
 

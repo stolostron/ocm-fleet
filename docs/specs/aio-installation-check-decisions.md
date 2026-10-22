@@ -11,13 +11,13 @@ in the [AIO installation-check specification](./aio-installation-check.md).
 | --- | --- | --- |
 | Distribute the utility as a native executable | Host readiness must be checkable before users install Node.js. Node guidance is for `fleetctl`, not a prerequisite for checking or launching AIO. | PoC executable builds and runs on macOS. Fedora 44 ARM64 build and readiness smoke check passed; Linux x86_64, full Linux runtime checks, and running with Node absent from `PATH` remain to be verified. |
 | Use Perry 0.5.1520 for the PoC native build | Perry successfully compiles the TypeScript/Ink dependency graph used by this utility. ScriptC 0.3.1 currently cannot compile the required Ink/React graph and runtime call shapes. | Validated PoC path; compiler for a distributed product remains a release decision. |
-| Keep Ink/React as the UI layer | `fleetctl` already uses Ink and React. Using the same presentation technology keeps FleetShift CLIs aligned and allows future component reuse without tying `fleetctl` to Perry. | Both CLIs use Ink/React; packages currently maintain their own app-specific components. |
+| Keep Ink/React as the UI layer | `fleetctl` already uses Ink and React. Using the same presentation technology keeps OCM Fleet CLIs aligned and allows future component reuse without tying `fleetctl` to Perry. | Both CLIs use Ink/React; packages currently maintain their own app-specific components. |
 | Keep keyboard/input transport separate from rendering | Perry's live Ink `render`/`useInput` path did not reliably repaint or clean up terminal state in repeated interactive flows. | AIO redraws bounded Ink-rendered frames from a small terminal input transport. |
 | Use a private, limited Yoga compatibility module in the Perry build | Perry's native Taffy/Yoga route was unreliable for Ink measurement; upstream Yoga's WebAssembly route also failed in this build. The current panels use a small, known layout subset. | Staged only for the AIO Perry build; not a general Yoga replacement and not used by `fleetctl`. |
 
 ## Why native execution
 
-This utility is meant to help prepare a host to run FleetShift AIO. Requiring
+This utility is meant to help prepare a host to run OCM Fleet AIO. Requiring
 Node.js to launch the checker would make the checker depend on a separate
 runtime before it can tell the user whether their container runtime is ready.
 That is particularly awkward because Node.js is guidance for `fleetctl`, while
@@ -80,7 +80,7 @@ lower to React elements for Ink's renderer.
 ### Why not Perry's TUI directly?
 
 Using Perry's own TUI would introduce a second presentation framework alongside
-Ink/React in FleetShift's command-line tools. That would mean separate
+Ink/React in OCM Fleet's command-line tools. That would mean separate
 components, styling conventions, and interaction behavior for the installation
 checker, even though the checker and `fleetctl` belong to the same CLI
 experience.

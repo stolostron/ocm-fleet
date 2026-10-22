@@ -98,7 +98,7 @@ export function checkDockerValidation(
       explanation:
         "Continue with Docker if preferred, or use Podman, the project-tested runtime.",
       documentationUrl:
-        "https://docs.example.invalid/fleetshift/aio-installation-check#runtime-support",
+        "https://github.com/stolostron/ocm-fleet/blob/main/deploy/podman/README.md",
     },
   };
 }
