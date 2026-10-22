@@ -26,7 +26,7 @@ export function checkHostPlatform(
       explanation:
         "Run the preflight utility on a supported macOS or Linux host.",
       documentationUrl:
-        "https://docs.example.invalid/fleetshift/aio-installation-check",
+        "https://github.com/stolostron/ocm-fleet/blob/main/deploy/aio/README.md#build",
     },
   };
 }

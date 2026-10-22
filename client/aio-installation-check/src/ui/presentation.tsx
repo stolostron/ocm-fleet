@@ -31,7 +31,7 @@ export function Banner({ color }: { color: boolean }) {
         color={color ? "cyan" : undefined}
         bold={color}
       >
-        OME / FleetShift
+        OCM Fleet
       </Text>
       <Text {...{ key: "title" }} bold={color}>
         AIO installation check

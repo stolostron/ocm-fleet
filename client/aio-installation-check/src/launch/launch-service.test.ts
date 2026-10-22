@@ -38,7 +38,7 @@ test("buildLaunchPlan covers runtime, mode, persistence and socket variants", ()
         assert.deepEqual(plan.args.slice(0, 2), ["run", "--pull=always"]);
         assert.ok(plan.args.includes("127.0.0.1:8085:8085"));
         assert.ok(plan.args.includes("127.0.0.1:50051:50051"));
-        assert.ok(plan.args.includes("quay.io/stolostron/fleetshift:latest"));
+        assert.ok(plan.args.includes("quay.io/stolostron/ocm-fleet:latest"));
         assert.equal(
           plan.args.includes("/var/lib/fleet shift/data:/data"),
           persistent,
@@ -66,13 +66,13 @@ test("buildLaunchPlan covers runtime, mode, persistence and socket variants", ()
           assert.ok(plan.displayCommand.includes("--privileged"));
 
           if (runtime === "podman") {
-            assert.ok(plan.args.includes("kind:alias=fleetshift"));
+            assert.ok(plan.args.includes("kind:alias=ocm-fleet"));
             assert.ok(!plan.args.includes("--network-alias"));
           } else {
             assert.ok(plan.args.includes("--network-alias"));
-            assert.ok(plan.args.includes("fleetshift"));
+            assert.ok(plan.args.includes("ocm-fleet"));
             assert.ok(plan.args.includes("kind"));
-            assert.ok(!plan.args.includes("kind:alias=fleetshift"));
+            assert.ok(!plan.args.includes("kind:alias=ocm-fleet"));
           }
         }
 
@@ -230,7 +230,7 @@ test("createDataDirectory only reaches filesystem mkdir when explicitly called",
 test("executeLaunch reports pull or startup failures as not started", async () => {
   const plan: LaunchPlan = {
     executable: "docker",
-    args: ["run", "--pull=always", "quay.io/stolostron/fleetshift:latest"],
+    args: ["run", "--pull=always", "quay.io/stolostron/ocm-fleet:latest"],
     environment: {},
     displayCommand: "this display text must not be executed",
   };

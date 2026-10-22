@@ -10,10 +10,10 @@ it("renders terminal lines through Ink without alternate-screen controls", () =>
   writeSpy.mockImplementation(() => true);
 
   try {
-    createTerminal().write("OME FleetShift AIO check");
+    createTerminal().write("OCM Fleet AIO check");
 
     const output = writeSpy.mock.calls.map(([chunk]) => String(chunk)).join("");
-    expect(output).toBe("OME FleetShift AIO check\n");
+    expect(output).toBe("OCM Fleet AIO check\n");
     expect(output).not.toMatch(/\u001b\[\?1049[hl]/);
   } finally {
     writeSpy.mockRestore();

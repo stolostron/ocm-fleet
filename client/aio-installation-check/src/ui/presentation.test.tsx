@@ -7,8 +7,7 @@ import { Banner, CheckPanel, Selection } from "./presentation";
 describe("inline Ink presentation", () => {
   it.each([32, 76])("keeps branded panels within %i columns", (columns) => {
     const output = renderToString(<Banner color={false} />, { columns });
-    expect(output).toContain("OME");
-    expect(output).toContain("FleetShift");
+    expect(output).toContain("OCM Fleet");
     expect(output).toContain("╭");
     expect(output.split("\n").every((line) => line.length <= columns)).toBe(
       true,

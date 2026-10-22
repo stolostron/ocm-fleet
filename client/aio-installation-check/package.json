@@ -1,6 +1,6 @@
 {
-  "name": "@fleetshift/aio-installation-check",
-  "description": "OME-branded FleetShift AIO host preflight utility.",
+  "name": "@ocm-fleet/aio-installation-check",
+  "description": "OCM Fleet all-in-one host preflight utility.",
   "version": "0.0.0",
   "private": true,
   "type": "module",

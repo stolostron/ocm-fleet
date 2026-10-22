@@ -31,7 +31,7 @@ export async function checkAioPorts(
           remediation: {
             explanation: `Stop the process using 127.0.0.1:${port}, or free the port before launching AIO.`,
             documentationUrl:
-              "https://docs.example.invalid/fleetshift/aio-installation-check#ports",
+              "https://github.com/stolostron/ocm-fleet/blob/main/deploy/aio/README.md#quick-start-dex-on",
           },
         };
       } catch (error) {
@@ -45,7 +45,7 @@ export async function checkAioPorts(
             explanation:
               "Resolve the host network probe error and rerun preflight.",
             documentationUrl:
-              "https://docs.example.invalid/fleetshift/aio-installation-check#ports",
+              "https://github.com/stolostron/ocm-fleet/blob/main/deploy/aio/README.md#quick-start-dex-on",
           },
         };
       }

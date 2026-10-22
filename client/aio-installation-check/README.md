@@ -1,6 +1,6 @@
 # AIO installation check
 
-Standalone Ink preflight utility with an OME / FleetShift banner, bordered readiness panels, and inline keyboard menus. The specification in [`docs/specs/aio-installation-check.md`](../../docs/specs/aio-installation-check.md) records Perry 0.5.1520 as the validated PoC compiler. ScriptC was evaluated and removed from the current PoC build; rationale appears in the [implementation decisions](../../docs/specs/aio-installation-check-decisions.md).
+Standalone Ink preflight utility for OCM Fleet's all-in-one image, with bordered readiness panels and inline keyboard menus. The specification in [`docs/specs/aio-installation-check.md`](../../docs/specs/aio-installation-check.md) records Perry 0.5.1520 as the validated PoC compiler. ScriptC was evaluated and removed from the current PoC build; rationale appears in the [implementation decisions](../../docs/specs/aio-installation-check-decisions.md).
 
 For rationale behind the native build, compiler choice, shared Ink presentation layer, Rust toolchain, and compatibility shims, see the [implementation decisions](../../docs/specs/aio-installation-check-decisions.md).
 
@@ -25,7 +25,7 @@ The utility follows the working `pd:dev` strategy in [`deploy/podman/scripts/com
 
 Checks and launch generation share refreshed discovery after every recheck, including remediation and basic-mode fallback. Missing mount paths block Kind and command generation refuses to substitute the host socket or a default. Basic AIO remains available when only Kind prerequisites fail.
 
-Verification on macOS Podman: native PTY `--with-kind` passed all seven checks, skipped persistence, previewed the engine-side mount, and exited 0 after declining launch and copy. An isolated `--rm --pull=never --network none` container using a cached FleetShift image confirmed the mounted destination was a Unix socket and returned HTTP 200 / `OK` from `/_ping`. The probe required `--security-opt label=disable` because SELinux denied socket access under the default container label; generated Kind commands already use the documented `--privileged` mode. No full AIO stack was started by verification.
+Verification on macOS Podman: native PTY `--with-kind` passed all seven checks, skipped persistence, previewed the engine-side mount, and exited 0 after declining launch and copy. An isolated `--rm --pull=never --network none` container using a cached OCM Fleet image confirmed the mounted destination was a Unix socket and returned HTTP 200 / `OK` from `/_ping`. The probe required `--security-opt label=disable` because SELinux denied socket access under the default container label; generated Kind commands already use the documented `--privileged` mode. No full AIO stack was started by verification.
 
 ## Perry native build
 
