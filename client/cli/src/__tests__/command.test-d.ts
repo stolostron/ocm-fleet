@@ -30,8 +30,16 @@ registerCommand<{ name: string }>({
   description: "Example",
   implemented: true,
   run: async () => ({ name: "ready" }),
-  // @ts-expect-error A presenter must return a string or React element.
+  // @ts-expect-error A presenter must return a React node.
   present: (data) => ({ name: data.name }),
+});
+
+registerCommand<{ name: string }>({
+  path: "example",
+  description: "Example",
+  implemented: true,
+  run: async () => ({ name: "ready" }),
+  present: (data) => [data.name, "ready"],
 });
 
 registerCommand<{ name: string }>({
@@ -41,6 +49,15 @@ registerCommand<{ name: string }>({
   run: async () => ({ name: "ready" }),
   // @ts-expect-error The component must accept the data passed by its presenter.
   present: (data) => createElement(View, { data: { count: data.name.length } }),
+});
+
+registerCommand<{ name: string }>({
+  path: "example",
+  description: "Example",
+  implemented: true,
+  run: async () => ({ name: "ready" }),
+  // @ts-expect-error Machine-readable formatters are owned by the renderer.
+  formatters: { json: (data) => JSON.stringify(data) },
 });
 
 const spec = {

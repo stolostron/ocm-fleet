@@ -3,7 +3,8 @@ import { PassThrough, Writable } from "node:stream";
 
 import { Text } from "ink";
 import { cleanup, render } from "ink-testing-library";
-import { useState } from "react";
+import { load as loadYaml } from "js-yaml";
+import { isValidElement, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { executeCommand, writeText } from "../app";
@@ -20,7 +21,7 @@ async function execute(command: RegisteredCommand, output: OutputFormat) {
 }
 
 describe("command output", () => {
-  it("serializes original data without evaluating the human presenter", async () => {
+  it("serializes original data without evaluating human presentation", async () => {
     const data = { identifier: "a".repeat(200), enabled: false };
     const command = registerCommand({
       path: "example",
@@ -48,13 +49,13 @@ describe("command output", () => {
       present: (data) => <View data={data} />,
     });
 
-    const content = await execute(command, "table");
-    if (typeof content === "string") throw new Error("Expected a React view");
+    const content = await execute(command, "component");
+    if (!isValidElement(content)) throw new Error("Expected a React view");
     const view = render(content);
     expect(view.lastFrame()).toBe("fleetctl ready");
   });
 
-  it("uses JSON as the default presentation when a command has no presenter", async () => {
+  it("uses JSON as the component fallback when no formatter is defined", async () => {
     const command = registerCommand({
       path: "example",
       description: "Example",
@@ -62,12 +63,29 @@ describe("command output", () => {
       run: async () => ({ names: ["one", "two"] }),
     });
 
-    expect(await execute(command, "table")).toBe(
+    expect(await execute(command, "component")).toBe(
       await execute(command, "json"),
     );
   });
 
-  it("keeps exact text separate from JSON serialization", async () => {
+  it("uses the generic YAML serializer for command data", async () => {
+    const data = { name: "fleetctl ready", enabled: false, count: 3 };
+    const command = registerCommand({
+      path: "example",
+      description: "Example",
+      implemented: true,
+      run: async () => data,
+      present() {
+        throw new Error("YAML must bypass human presentation");
+      },
+    });
+
+    const content = await execute(command, "yaml");
+    if (typeof content !== "string") throw new Error("Expected YAML text");
+    expect(loadYaml(content)).toEqual(data);
+  });
+
+  it("keeps exact component text separate from JSON serialization", async () => {
     const command = registerCommand({
       path: "example",
       description: "Example",
@@ -76,7 +94,7 @@ describe("command output", () => {
       present: (data) => ["TYPE", ...data].join("\n"),
     });
 
-    expect(await execute(command, "table")).toBe(
+    expect(await execute(command, "component")).toBe(
       "TYPE\nocm.kind.v1alpha/clusters",
     );
     expect(await execute(command, "json")).toBe(
@@ -84,7 +102,7 @@ describe("command output", () => {
     );
   });
 
-  it("preserves an empty string returned by the presenter", async () => {
+  it("preserves an empty string returned by human presentation", async () => {
     const command = registerCommand({
       path: "example",
       description: "Example",
@@ -93,7 +111,7 @@ describe("command output", () => {
       present: () => "",
     });
 
-    expect(await execute(command, "table")).toBe("");
+    expect(await execute(command, "component")).toBe("");
     expect(await execute(command, "json")).toBe(
       '[\n  "ocm.kind.v1alpha/clusters"\n]',
     );

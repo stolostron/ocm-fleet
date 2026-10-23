@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { execa } from "execa";
+import { load as loadYaml } from "js-yaml";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const binary = fileURLToPath(new URL("../../bin/fleetctl", import.meta.url));
@@ -63,6 +64,16 @@ describe.each(["true", "false"])("redirected CLI output with CI=%s", (ci) => {
     expect(result.stderr).toBe("");
   });
 
+  it("prints one complete YAML document", async () => {
+    const result = await run(
+      ["deployment", "list", "--server", address, "--output", "yaml"],
+      ci,
+    );
+
+    expect(loadYaml(result.stdout)).toEqual(deployments);
+    expect(result.stderr).toBe("");
+  });
+
   it("serializes a message as a JSON string", async () => {
     const result = await run(["auth", "logout", "--output", "json"], ci);
 
@@ -70,7 +81,7 @@ describe.each(["true", "false"])("redirected CLI output with CI=%s", (ci) => {
     expect(result.stderr).toBe("");
   });
 
-  it("still renders the deployment table for human output", async () => {
+  it("still renders the deployment component for human output", async () => {
     const result = await run(
       ["deployment", "list", "--server", address],
       ci,
@@ -78,8 +89,21 @@ describe.each(["true", "false"])("redirected CLI output with CI=%s", (ci) => {
     );
 
     expect(result.stdout).toContain("UNKNOWN");
-    expect(result.stdout).toContain("Use --output json for full details.");
+    expect(result.stdout).toContain(
+      "Use --output json or yaml for full details.",
+    );
     expect(result.stderr).toBe("");
+  });
+});
+
+it("rejects unsupported output values", async () => {
+  await expect(
+    run(["auth", "logout", "--output", "table"], "true"),
+  ).rejects.toMatchObject({
+    exitCode: 1,
+    stderr: expect.stringContaining(
+      "Supported output formats: component, json, yaml",
+    ),
   });
 });
 

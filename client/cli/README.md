@@ -156,7 +156,7 @@ CLI defaults (the server URL matches the Podman AIO stack):
 
 Set `FLEETCTL_SERVER` only when targeting another runtime. Set `FLEETCTL_CONFIG_DIR` when isolating credentials. Both command flags are optional and override these defaults.
 
-Explicit `--server` and `--config-dir` values override environment defaults. Use `--output json` for machine-readable responses.
+Explicit `--server` and `--config-dir` values override environment defaults. Output defaults to human-readable components; use `--output json` or `--output yaml` for machine-readable responses.
 
 ### Podman
 

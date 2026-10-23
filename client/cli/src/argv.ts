@@ -6,7 +6,9 @@ export interface ParsedArgs {
   positionals: string[];
 }
 
-export type OutputFormat = "table" | "json";
+export type OutputFormat = "component" | "json" | "yaml";
+
+const outputFormats: readonly OutputFormat[] = ["component", "json", "yaml"];
 
 const booleanFlags = [
   "help",
@@ -55,9 +57,13 @@ export function flagString(
 }
 
 export function outputFormat(args: ParsedArgs): OutputFormat {
-  return flagString(args, "output", "table").toLowerCase() === "json"
-    ? "json"
-    : "table";
+  const format = flagString(args, "output", "component").toLowerCase();
+  if (outputFormats.includes(format as OutputFormat)) {
+    return format as OutputFormat;
+  }
+  throw new Error(
+    `Unsupported output format "${format}". Supported output formats: ${outputFormats.join(", ")}`,
+  );
 }
 
 export function hasFlag(args: ParsedArgs, name: string): boolean {

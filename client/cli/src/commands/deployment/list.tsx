@@ -45,7 +45,7 @@ export function DeploymentListView({
   return (
     <Box flexDirection="column">
       <Table data={tableData} />
-      <Text dimColor>Use --output json for full details.</Text>
+      <Text dimColor>Use --output json or yaml for full details.</Text>
     </Box>
   );
 }

@@ -22,7 +22,7 @@ export function buildFleetctlArgs(
   configDir: string,
   serverTarget: string,
   args: readonly string[],
-  output: "json" | "table" = "json",
+  output: "json" | "component" = "json",
 ): string[] {
   return [
     "--config-dir",
@@ -75,7 +75,7 @@ function safeFailure(label: string, result: CommandResult): Error {
 
 interface FleetctlRunOptions {
   configDir?: string;
-  output?: "json" | "table";
+  output?: "json" | "component";
 }
 
 export class FleetctlClient {

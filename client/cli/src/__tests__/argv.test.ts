@@ -30,7 +30,28 @@ describe("parseArgs", () => {
     ).toBe("json");
   });
 
-  it("defaults output to table mode", () => {
-    expect(outputFormat(parseArgs(["resource", "list"]))).toBe("table");
+  it.each(["yaml", "YAML", "Yaml"])("normalizes %s output", (value) => {
+    expect(
+      outputFormat(parseArgs(["resource", "list", "--output", value])),
+    ).toBe("yaml");
+  });
+
+  it.each(["component", "COMPONENT", "Component"])(
+    "normalizes %s output",
+    (value) => {
+      expect(
+        outputFormat(parseArgs(["resource", "list", "--output", value])),
+      ).toBe("component");
+    },
+  );
+
+  it.each(["table", "csv", ""])("rejects unsupported output %s", (value) => {
+    expect(() =>
+      outputFormat(parseArgs(["resource", "list", "--output", value])),
+    ).toThrow(/Supported output formats: component, json, yaml/);
+  });
+
+  it("defaults output to component mode", () => {
+    expect(outputFormat(parseArgs(["resource", "list"]))).toBe("component");
   });
 });

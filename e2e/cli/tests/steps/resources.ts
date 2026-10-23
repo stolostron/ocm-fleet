@@ -67,7 +67,7 @@ export class ResourceDiscoverySteps {
 
   async typesIncludeKindClusterAndNode(): Promise<void> {
     const result = await this.#client.succeed(["resource", "types"], {
-      output: "table",
+      output: "component",
     });
     const rows = parseResourceTypeRows(result.stdout);
     expect(
@@ -103,7 +103,7 @@ export class ResourceDiscoverySteps {
   async expectKindClusterSchema(): Promise<void> {
     const result = await this.#client.succeed(
       ["resource", "describe", KIND_CLUSTER_TYPE],
-      { output: "table" },
+      { output: "component" },
     );
     const described = parseResourceDescribe(result.stdout);
     expect(described.type).toBe(KIND_CLUSTER_TYPE);

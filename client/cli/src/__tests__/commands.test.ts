@@ -1,4 +1,5 @@
 /* eslint-disable playwright/no-standalone-expect */
+import { load as loadYaml } from "js-yaml";
 import { describe, expect, it } from "vitest";
 
 import { executeCommand } from "../app";
@@ -40,16 +41,17 @@ describe("command registry", () => {
       registerCommand(countCommand),
     ];
 
-    for (const [tokens, text, json] of [
-      [["ex", "ls"], "one, two", '[\n  "one",\n  "two"\n]'],
-      [["example", "count"], "Count: 1", '{\n  "count": 1\n}'],
+    for (const [tokens, text, json, yaml] of [
+      [["ex", "ls"], "one, two", '[\n  "one",\n  "two"\n]', "- one\n- two"],
+      [["example", "count"], "Count: 1", '{\n  "count": 1\n}', "count: 1"],
     ] as const) {
       const entry = findCommand([...tokens], commands);
       if (!entry?.implemented) throw new Error("Expected a runnable command");
 
       for (const [output, expected] of [
-        ["table", text],
+        ["component", text],
         ["json", json],
+        ["yaml", yaml],
       ] as const) {
         const content = await entry.withSpec((spec) =>
           executeCommand(
@@ -60,6 +62,9 @@ describe("command registry", () => {
         );
 
         expect(content).toBe(expected);
+        if (output === "yaml") {
+          expect(loadYaml(content as string)).toEqual(JSON.parse(json));
+        }
       }
     }
   });

@@ -22,7 +22,7 @@ describe("Ink output", () => {
     expect(instance.lastFrame()).toContain("UNKNOWN");
     expect(instance.lastFrame()).toContain("NONE");
     expect(instance.lastFrame()).toContain(
-      "Use --output json for full details.",
+      "Use --output json or yaml for full details.",
     );
   });
 
@@ -30,7 +30,7 @@ describe("Ink output", () => {
     const instance = render(<DeploymentListView data={[]} />);
 
     expect(instance.lastFrame()).toContain(
-      "Use --output json for full details.",
+      "Use --output json or yaml for full details.",
     );
   });
 });
