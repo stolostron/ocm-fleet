@@ -1,0 +1,62 @@
+{
+  "name": "node-plugin",
+  "root": "sdk/node-plugin",
+  "sourceRoot": "sdk/node-plugin/src",
+  "projectType": "library",
+  "tags": ["scope:ui", "type:lib", "visibility:private"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p tsconfig.json",
+        "cwd": "sdk/node-plugin"
+      },
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig*.json"],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint",
+      "options": {
+        "lintFilePatterns": [
+          "{projectRoot}/src/**/*.ts",
+          "{projectRoot}/fixtures/**/*.{js,mjs}"
+        ]
+      },
+      "inputs": [
+        "uiSource",
+        "eslintConfig",
+        "{projectRoot}/fixtures/**/*.{js,mjs}"
+      ]
+    },
+    "lint:fix": {
+      "executor": "@nx/eslint:lint",
+      "options": {
+        "lintFilePatterns": [
+          "{projectRoot}/src/**/*.ts",
+          "{projectRoot}/fixtures/**/*.{js,mjs}"
+        ],
+        "fix": true
+      },
+      "inputs": [
+        "uiSource",
+        "eslintConfig",
+        "{projectRoot}/fixtures/**/*.{js,mjs}"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx vitest run --config vitest.config.ts sdk/node-plugin/src"
+      },
+      "inputs": ["{projectRoot}/src/**/*", "{workspaceRoot}/vitest.config.ts"]
+    },
+    "fixture": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node fixtures/build.mjs",
+        "cwd": "sdk/node-plugin"
+      }
+    }
+  }
+}

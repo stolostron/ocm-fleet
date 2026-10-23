@@ -12,6 +12,7 @@ Start with [Plugin System](plugin-system.md) to understand how domain plugins ex
 | --- | --- |
 | [Plugin discovery and asset distribution](plugin-discovery.md) | Identify available contributions; distinguish registry metadata, asset sources, target signals, and planned distribution |
 | [Authentication](authentication.md) | Configure OIDC login and understand console identity projection |
+| [Node remote producer](node-plugin.md) | Build Node-targeted Module Federation remotes with the private Rspack SDK producer |
 | [Feature contracts](feature-contracts.md) | Make independent contributions predictable; read for extension metadata, composition, routing, and feature search |
 | [Routes and route groups](route-groups.md) | Make new pages discoverable by default; read for generated links, grouping, visibility, ordering, and identity limits |
 | [Extension validation](extension-validation.md) | Catch incompatible contributions; distinguish current build/SDK/consumer checks from proposed host-owned runtime validation |

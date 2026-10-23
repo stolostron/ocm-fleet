@@ -6,6 +6,7 @@
     "client/web",
     "sdk/common",
     "sdk/build-utils",
+    "sdk/node-plugin",
     "extensions/core/client",
     "extensions/kind/client"
   ],

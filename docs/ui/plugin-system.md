@@ -8,6 +8,8 @@ Plugins declare exposed modules and typed `ocm-fleet.*` extensions. `FleetPlugin
 
 The current toolchain uses Rspack with SWC, not the former webpack/TypeScript-transform setup. Shared React and runtime dependencies are configured through Module Federation; PatternFly barrel imports are rewritten to granular paths through SWC import transforms and module replacement helpers.
 
+The separate private [`@ocm-fleet/node-plugin`](node-plugin.md) SDK package provides an Rspack producer for Node.js Module Federation remotes. It emits the standard `init`/`get` container and a producer manifest; it does not implement remote discovery or a Node/Scalprum loader.
+
 Sources:
 
 - [Core plugin build and extension declarations](../../extensions/core/client/rspack.config.ts)
