@@ -112,6 +112,7 @@ npx nx affected -t test     # only test what changed
 npx nx run server:build     # server
 npx nx run cli:build        # package build; also updates bin/fleetctl
 npx nx run fleetctl         # shortcut for the package build
+npx nx run aio-installation-check:build-native # host-native AIO preflight CLI
 npx nx run deploy-aio:build # AIO packaging binaries
 npx nx run common:build     # shared UI types/helpers
 npx nx run plugins:build    # all MF remote plugins
@@ -122,7 +123,7 @@ npx nx run-many -t build    # build all (parallel, cached)
 
 Builds are cached — unchanged sources skip recompilation entirely.
 
-CLI guide: [client/cli/README.md](client/cli/README.md).
+CLI guides: [fleetctl](client/cli/README.md) and [native AIO installation check](client/aio-installation-check/README.md).
 
 ### Server debugging in VS Code
 

@@ -1,0 +1,2 @@
+# Managed Perry source, Rustup installation, Cargo registry and native archives.
+/.native-toolchain/

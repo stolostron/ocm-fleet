@@ -66,6 +66,8 @@ deploy/podman/.certs/
 
 # Nx
 .nx/
+# Keep the managed source/toolchain tree out of root-level Nx scans/watchers.
+/client/aio-installation-check/.native-toolchain/
 
 # Claude Code
 .claude/worktrees
