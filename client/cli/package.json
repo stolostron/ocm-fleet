@@ -27,13 +27,20 @@
     "yargs-parser": "^22.0.0"
   },
   "devDependencies": {
+    "@module-federation/enhanced": "^2.9.0",
+    "@module-federation/node": "^2.7.52",
+    "@ocm-fleet/node-plugin": "^0.0.0",
+    "@openshift/dynamic-plugin-sdk": "^9.1.0",
     "@rspack/cli": "^2.0.8",
     "@rspack/core": "^2.0.8",
+    "@scalprum/core": "^0.13.0",
+    "@scalprum/node-loader": "^0.1.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.13.10",
     "@types/react": "^19.1.0",
     "@types/yargs-parser": "^21.0.3",
     "execa": "^9.6.0",
-    "ink-testing-library": "^4.0.0"
+    "ink-testing-library": "^4.0.0",
+    "react-devtools-core": "^6.1.5"
   }
 }

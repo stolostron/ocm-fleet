@@ -211,6 +211,31 @@ npx nx test:e2e e2e-cli
 
 E2E requires Podman keyring quotas and a clean AIO sandbox.
 
+### Isolated Node federation shell acceptance
+
+Run the isolated, localhost-only federation acceptance harness without AIO or
+Podman:
+
+```bash
+npx nx run cli:e2e
+```
+
+The target builds the production CLI as a build prerequisite (but does not
+execute it), builds a Node remote fixture, then launches a separate Rspack test
+host. That isolated host uses the CLI's Ink renderer, real
+`@scalprum/core`/`@scalprum/node-loader` integration, and Enhanced's Node
+Module Federation runtime. A local server binds `127.0.0.1` on an ephemeral
+port to serve the producer manifest and assets. The injectable manifest URL is
+test-host-only.
+
+This covers the producer/Scalprum/Enhanced integration, not production
+`fleetctl` plugin discovery or loading. The CLI package guidance explicitly
+defers plugin loading, so the built production executable is not wired to this
+test harness.
+Malformed-manifest cases invoke the Node loader's manifest validator directly;
+the current Scalprum `getModule` path fetches manifests itself, so those cases
+are loader-schema checks rather than end-to-end production discovery failures.
+
 ## Current Migration Surface
 
 Implemented command handlers cover auth setup/login/logout/inspect/enroll, deployment CRUD/resume/signing, resource CRUD/query, and reflection-backed resource types/schema discovery.

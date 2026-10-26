@@ -84,6 +84,10 @@ this adds no asset-source contract or Fleet host integration.
 This package produces remotes only. A production Node loader, Scalprum loader
 changes, CLI discovery/caching, and Kind integration are out of scope. The
 package is `private`; it is not included in publication or release workflows.
+The isolated [`cli:e2e` acceptance target](../../client/cli/README.md#isolated-node-federation-shell-acceptance)
+also exercises the producer through the published Scalprum Node loader and
+Enhanced runtime in a separate test host. It builds but does not execute the
+production CLI, so it does not cover production CLI plugin discovery/loading.
 The `node-plugin:fixture` Nx target builds a self-contained Node remote and a
 Rspack-bundled CommonJS host. It serves the remote over real HTTP, then runs the
 host in a bounded subprocess using Enhanced `createInstance`, `registerRemotes`,
@@ -95,6 +99,6 @@ lazy `.cjs` chunk), the single-script manifest, local `init`/`get` export shape,
 and transformed-path entry identification.
 Unit tests cover incompatible compiler options and metadata validation.
 
-This qualifies Rspack 2.1.7, Enhanced 2.9.2, and Node federation 2.7.52 on the
-installed Node 26.8.1 runtime. Node 22 qualification and Scalprum/Fleet host
-integration remain separate checks.
+The producer fixture qualifies Rspack 2.1.7, Enhanced 2.9.2, and Node federation
+2.7.52 on the installed Node 26.8.1 runtime. Node 22 qualification and
+production CLI/Fleet host integration remain separate checks.

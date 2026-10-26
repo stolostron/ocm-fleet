@@ -77,10 +77,18 @@ export async function print(
 }
 
 export async function printView(element: ReactNode): Promise<void> {
-  const instance = render(element);
+  const instance = renderView(element);
   try {
     await instance.waitUntilExit();
   } finally {
     instance.unmount();
   }
+}
+
+/** Render a view through the CLI's Ink renderer, optionally into a test stream. */
+export function renderView(
+  element: ReactNode,
+  stdout: Writable = process.stdout,
+) {
+  return render(element, { stdout: stdout as NodeJS.WriteStream });
 }
