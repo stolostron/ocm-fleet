@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+
 import { ModuleFederationPlugin } from "@module-federation/enhanced/rspack";
 import { Compilation, type Compiler, sources } from "@rspack/core";
 
@@ -20,10 +22,11 @@ export type NodeRemotePluginOptions = {
 };
 
 const PLUGIN_NAME = "OCMFleetNodeRemotePlugin";
+const require = createRequire(import.meta.url);
 
 /**
  * Configure a Node-compatible Module Federation container and emit the small
- * SDK-shaped manifest needed to find its entry and runtime chunks.
+ * SDK-shaped manifest needed to find its self-contained entry.
  */
 export class NodeRemotePlugin {
   private readonly options: NodeRemotePluginOptions;
@@ -88,6 +91,9 @@ export class NodeRemotePlugin {
         "Node remote entryScriptFilename templates are unsupported; use a static filename",
       );
     }
+    if (!entryScriptFilename.endsWith(".cjs")) {
+      throw new Error("Node remote entryScriptFilename must end in .cjs");
+    }
 
     this.options = options;
     this.federationPlugin = new ModuleFederationPlugin({
@@ -98,6 +104,9 @@ export class NodeRemotePlugin {
       library: { type: "commonjs-module" },
       dts: false,
       manifest: false,
+      runtimePlugins: [
+        require.resolve("@module-federation/node/runtimePlugin"),
+      ],
     });
   }
 
@@ -115,6 +124,43 @@ export class NodeRemotePlugin {
         'NodeRemotePlugin requires Rspack target "node" or "async-node"',
       );
     }
+
+    const { output, optimization } = compiler.options;
+    if (output.module) {
+      throw new Error(
+        "NodeRemotePlugin requires CommonJS output (output.module: false)",
+      );
+    }
+    if (optimization.runtimeChunk) {
+      throw new Error(
+        "NodeRemotePlugin requires optimization.runtimeChunk: false for HTTP loading",
+      );
+    }
+    if (
+      (output.chunkFormat !== undefined && output.chunkFormat !== "commonjs") ||
+      (output.chunkLoading !== undefined &&
+        output.chunkLoading !== "async-node")
+    ) {
+      throw new Error(
+        "NodeRemotePlugin requires commonjs chunkFormat and async-node chunkLoading",
+      );
+    }
+    for (const filename of [output.filename, output.chunkFilename]) {
+      if (
+        filename !== undefined &&
+        (typeof filename !== "string" || !filename.endsWith(".cjs"))
+      ) {
+        throw new Error(
+          "NodeRemotePlugin requires output.filename and output.chunkFilename to end in .cjs",
+        );
+      }
+    }
+    output.module = false;
+    output.filename ??= "[name].cjs";
+    output.chunkFilename ??= "[name].cjs";
+    output.chunkFormat = "commonjs";
+    output.chunkLoading = "async-node";
+    optimization.runtimeChunk = false;
 
     // The Rspack entry point is structurally compatible but Module Federation
     // still exposes webpack's nominal compiler type.
@@ -164,6 +210,14 @@ export class NodeRemotePlugin {
             compilation.errors.push(
               new Error(
                 `Module Federation remote entry "${remoteEntryFilename}" is ambiguous across entrypoints`,
+              ),
+            );
+            return;
+          }
+          if (entrypoints[0].loadScripts.length !== 1) {
+            compilation.errors.push(
+              new Error(
+                "NodeRemotePlugin requires a self-contained remote entry; disable initial splitChunks extraction",
               ),
             );
             return;

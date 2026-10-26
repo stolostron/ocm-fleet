@@ -1,7 +1,7 @@
 export const answer = 42;
 
 export async function loadLazyAnswer() {
-  const lazy = await import("./lazy.js");
+  const lazy = await import(/* webpackChunkName: "fixture-lazy" */ "./lazy.js");
   return lazy.lazyAnswer;
 }
 

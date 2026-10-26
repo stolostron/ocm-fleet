@@ -1,4 +1,5 @@
 /* eslint-disable playwright/no-standalone-expect -- These are Vitest tests. */
+import rspack from "@rspack/core";
 import { describe, expect, it } from "vitest";
 
 import { NodeRemotePlugin } from "../NodeRemotePlugin.ts";
@@ -70,5 +71,42 @@ describe("NodeRemotePlugin options", () => {
     expect(() => plugin.apply({ options: { target: "web" } } as never)).toThrow(
       /requires Rspack target/,
     );
+  });
+
+  it.each([
+    [{ optimization: { runtimeChunk: "single" } }, /runtimeChunk: false/],
+    [
+      { optimization: { runtimeChunk: { name: "runtime" } } },
+      /runtimeChunk: false/,
+    ],
+    [{ output: { module: true } }, /CommonJS output/],
+    [{ output: { filename: "[name].js" } }, /end in .cjs/],
+    [{ output: { chunkFilename: "[name].js" } }, /end in .cjs/],
+    [{ output: { chunkLoading: "require" } }, /async-node chunkLoading/],
+    [{ output: { chunkLoading: false } }, /async-node chunkLoading/],
+    [{ output: { chunkFormat: "module" } }, /commonjs chunkFormat/],
+    [{ output: { chunkFormat: false } }, /commonjs chunkFormat/],
+  ] as const)(
+    "rejects incompatible compiler options %j",
+    (options, message) => {
+      expect(() =>
+        rspack({
+          target: "async-node",
+          entry: {},
+          ...options,
+          plugins: [new NodeRemotePlugin(validOptions)],
+        }),
+      ).toThrow(message);
+    },
+  );
+
+  it("rejects non-CommonJS remote entry extensions", () => {
+    expect(
+      () =>
+        new NodeRemotePlugin({
+          ...validOptions,
+          entryScriptFilename: "remoteEntry.js",
+        }),
+    ).toThrow(/must end in .cjs/);
   });
 });
