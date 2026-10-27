@@ -2,6 +2,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { lookup as dnsLookup } from "node:dns";
 import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import https from "node:https";
 import os from "node:os";
@@ -35,9 +36,16 @@ export function parseCommand(argv) {
 }
 
 export function buildTestEnvironment(base, sandbox) {
+  const localhostDnsPreload = path.join(
+    REPO_ROOT,
+    "e2e/sandbox/localhost-dns.cjs",
+  );
   return {
     ...base,
     BASE_URL: UI_ORIGIN,
+    NODE_OPTIONS: [base.NODE_OPTIONS, `--require=${localhostDnsPreload}`]
+      .filter(Boolean)
+      .join(" "),
     OCM_RM_GRPC_TARGET: GRPC_TARGET,
     OCM_RM_CA_FILE: sandbox.caFile,
     OCM_FLEET_E2E_RUN_ID: sandbox.runId,
@@ -212,6 +220,7 @@ function waitForReady(ca) {
     const request = https.get(`${UI_ORIGIN}/readyz`, {
       ca,
       family: 4,
+      lookup: sandboxLookup,
       rejectUnauthorized: true,
       timeout: 5_000,
     });
@@ -227,6 +236,20 @@ function waitForReady(ca) {
       });
     });
   });
+}
+
+export function sandboxLookup(hostname, options, callback) {
+  if (typeof options === "function") {
+    callback = options;
+    options = {};
+  }
+  if (hostname.endsWith(".localhost")) {
+    const result = { address: "127.0.0.1", family: 4 };
+    return options?.all
+      ? callback(null, [result])
+      : callback(null, result.address, result.family);
+  }
+  return dnsLookup(hostname, options, callback);
 }
 
 export function sanitize(value) {
