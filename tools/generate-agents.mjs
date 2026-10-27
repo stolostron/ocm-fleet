@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createProjectGraphAsync, workspaceRoot } from "@nx/devkit";
 
 export function formatProjects(nodes) {
   return Object.keys(nodes)
@@ -46,7 +47,6 @@ export function updateAgents(contents, nodes) {
 }
 
 async function main() {
-  const { createProjectGraphAsync, workspaceRoot } = await import("@nx/devkit");
   const graph = await createProjectGraphAsync();
   const path = resolve(workspaceRoot, "AGENTS.md");
   const original = await readFile(path, "utf8");
