@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
@@ -8,19 +7,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { ModuleFederationPlugin } from "@module-federation/enhanced/rspack";
-import rspack from "@rspack/core";
 import { NodeRemotePlugin } from "@ocm-fleet/node-plugin";
+import rspack from "@rspack/core";
 
 const execFileAsync = promisify(execFile);
-const require = createRequire(import.meta.url);
 const cliRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const scratch = await mkdtemp(path.join(os.tmpdir(), "fleetctl-node-e2e-"));
+const scratch = await mkdtemp(path.join(os.tmpdir(), "fleetctl-plugin-e2e-"));
 const remotePath = path.join(scratch, "remote");
-const hostPath = path.join(scratch, "host");
+const binary = path.join(cliRoot, "bin/fleetctl");
 const remoteName = "fleetctl_fixture_remote";
 const requests = [];
 const sharedModules = {
@@ -79,7 +76,11 @@ async function buildRemote() {
         pluginMetadata: {
           name: remoteName,
           version: "1.0.0",
-          exposedModules: { command: "./e2e/remote-command.tsx" },
+          exposedModules: {
+            command: "./e2e/remote-command.tsx",
+            "command-null": "./e2e/remote-null.ts",
+            "command-undefined": "./e2e/remote-undefined.ts",
+          },
         },
         extensions: [{ type: "cli.command", properties: { id: "fixture" } }],
         sharedModules,
@@ -100,60 +101,49 @@ async function buildRemote() {
   return manifest;
 }
 
-async function buildHost() {
-  await build({
-    context: cliRoot,
-    mode: "production",
-    target: "async-node",
-    entry: "./e2e/host.js",
-    resolve: { extensions: [".tsx", ".ts", ".jsx", ".js"] },
-    module: { rules: [transpileTsxRule()] },
-    externalsPresets: { node: true },
-    optimization: { minimize: false, runtimeChunk: false },
-    output: {
-      path: hostPath,
-      filename: "host.cjs",
-      chunkFilename: "[name].cjs",
-      module: false,
-      chunkFormat: "commonjs",
-      chunkLoading: "async-node",
-    },
-    plugins: [
-      new ModuleFederationPlugin({
-        name: "fleetctl_node_e2e_host",
-        remotes: [],
-        shared: sharedModules,
-        dts: false,
-        manifest: false,
-        runtimePlugins: [
-          require.resolve("@module-federation/node/runtimePlugin"),
-        ],
-      }),
-    ],
-  });
-}
-
 async function startServer(manifest) {
   server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
-    const pathname = url.pathname;
-    const record = { method: request.method, path: pathname, status: 200 };
+    const { pathname } = url;
+    const record = {
+      method: request.method,
+      host: request.headers.host,
+      path: pathname,
+      status: 200,
+    };
     requests.push(record);
 
-    if (pathname === "/plugins/remote-manifest.json") {
+    if (pathname === `/plugins/${remoteName}-manifest.json`) {
+      const manifestCase = url.searchParams.get("case");
+      if (manifestCase === "manifest-http-error") {
+        record.status = 503;
+        response.writeHead(503).end("manifest fixture failure");
+        return;
+      }
+      if (manifestCase === "invalid-json") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end("{not-json");
+        return;
+      }
       const delivered = structuredClone(manifest);
-      switch (url.searchParams.get("case")) {
+      switch (manifestCase) {
         case "missing-name":
           delete delivered.name;
           break;
         case "missing-version":
           delete delivered.version;
           break;
+        case "missing-base-url":
+          delete delivered.baseURL;
+          break;
         case "missing-extensions":
           delete delivered.extensions;
           break;
         case "missing-load-scripts":
           delete delivered.loadScripts;
+          break;
+        case "missing-registration-method":
+          delete delivered.registrationMethod;
           break;
         case "empty-name":
           delivered.name = "";
@@ -169,6 +159,15 @@ async function startServer(manifest) {
           break;
         case "non-string-load-script":
           delivered.loadScripts = ["remoteEntry.cjs", 42];
+          break;
+        case "non-array-extensions":
+          delivered.extensions = {};
+          break;
+        case "invalid-extension":
+          delivered.extensions = [{ type: "fixture.command", properties: [] }];
+          break;
+        case "invalid-registration-method":
+          delivered.registrationMethod = "automatic";
           break;
         case "missing-remote-entry":
           delivered.loadScripts = ["other-asset.cjs"];
@@ -227,56 +226,42 @@ async function startServer(manifest) {
   return `http://127.0.0.1:${address.port}`;
 }
 
-async function runHost(baseURL, scenario) {
-  serverScenario = scenario.serverScenario ?? scenario.mode;
+async function runCli(baseURL, options = {}) {
+  serverScenario = options.serverScenario ?? "success";
   retryEntryRequests = 0;
   const requestStart = requests.length;
-  const manifestURL = `${baseURL}/plugins/remote-manifest.json?case=${scenario.manifestCase ?? "valid"}`;
-  let result;
-  try {
-    const child = await execFileAsync(
-      process.execPath,
-      [path.join(hostPath, "host.cjs")],
-      {
-        cwd: cliRoot,
-        timeout: 30000,
-        maxBuffer: 2 * 1024 * 1024,
-        env: {
-          ...process.env,
-          FIXTURE_MANIFEST_URL: manifestURL,
-          FIXTURE_MODE: scenario.mode,
-          NODE_PATH: path.resolve(cliRoot, "../../node_modules"),
-          NO_COLOR: "1",
-          FORCE_COLOR: "0",
-        },
-      },
-    );
-    result = child.stdout.match(/^FLEETCTL_NODE_E2E_RESULT:(.+)$/m)?.[1];
-    assert.ok(
-      result,
-      `Host emitted no result. stdout=${child.stdout}\nstderr=${child.stderr}`,
-    );
-    result = JSON.parse(result);
-  } catch (error) {
-    const details =
-      error?.stdout || error?.stderr
-        ? `\nstdout:\n${error.stdout}\nstderr:\n${error.stderr}`
-        : "";
-    throw new Error(
-      `Scenario ${scenario.mode} failed: ${error.message}${details}`,
-      { cause: error },
-    );
-  }
-  return { result, requests: requests.slice(requestStart) };
-}
+  const manifestCase = options.manifestCase ?? "valid";
+  const pluginBaseURL = `${baseURL}/plugins/?case=${manifestCase}`;
+  const args = ["plugin", "run", remoteName];
+  if (options.moduleName) args.push("--module", options.moduleName);
+  if (options.retry) args.push("--retry");
 
-function assertLoaderError(result, stage, expectedMessage) {
-  const event = result.loaderEvents.find(
-    (item) => item.stage === stage && item.success === false,
-  );
-  assert.ok(event, `Expected a failed ${stage} loader event`);
-  assert.match(event.errorMessage, expectedMessage);
-  return event;
+  try {
+    const result = await execFileAsync(process.execPath, [binary, ...args], {
+      cwd: cliRoot,
+      timeout: 30000,
+      maxBuffer: 2 * 1024 * 1024,
+      env: {
+        ...process.env,
+        FLEETCTL_PLUGIN_BASE_URL: pluginBaseURL,
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+      },
+    });
+    return {
+      ok: true,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      requests: requests.slice(requestStart),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      stdout: error.stdout ?? "",
+      stderr: error.stderr ?? "",
+      requests: requests.slice(requestStart),
+    };
+  }
 }
 
 async function closeServer() {
@@ -289,86 +274,111 @@ async function closeServer() {
 
 try {
   const manifest = await buildRemote();
-  await buildHost();
   const baseURL = await startServer(manifest);
 
-  const success = await runHost(baseURL, { mode: "success" });
-  assert.equal(success.result.remoteLabel, "Node federation command");
-  assert.match(success.result.rendered, /Remote command: ready/);
-  assert.equal(success.result.counters.manifestTransforms, 1);
-  assert.equal(success.result.counters.registerRemotes, 1);
-  assert.ok(success.result.counters.readinessAcquisitions >= 1);
-  assert.ok(success.result.counters.moduleInits >= 1);
-  assert.ok(success.result.counters.loadRemote >= 2);
-  assert.equal(
-    success.result.transformedEntry,
-    `${baseURL}/plugins/${manifest.remoteEntry}`,
+  const success = await runCli(baseURL);
+  assert.equal(success.ok, true, success.stderr);
+  assert.match(success.stdout, /Remote command: ready/);
+  assert.ok(
+    success.requests.some(
+      (item) => item.path === `/plugins/${remoteName}-manifest.json`,
+    ),
+    "The production CLI did not fetch the SDK manifest",
   );
   assert.ok(
     success.requests.some(
-      (item) => item.path === "/plugins/remote-manifest.json",
+      (item) =>
+        item.path === `/plugins/${manifest.remoteEntry}` &&
+        item.host === new URL(baseURL).host &&
+        item.status === 200,
     ),
-  );
-  assert.ok(
-    success.requests.some(
-      (item) => item.path === `/plugins/${manifest.remoteEntry}`,
-    ),
+    "The production CLI did not fetch the transformed absolute remote entry",
   );
 
   for (const manifestCase of [
     "missing-name",
     "missing-version",
+    "missing-base-url",
     "missing-extensions",
     "missing-load-scripts",
+    "missing-registration-method",
     "empty-name",
     "non-string-name",
     "non-string-version",
     "non-array-load-scripts",
     "non-string-load-script",
+    "non-array-extensions",
+    "invalid-extension",
+    "invalid-registration-method",
   ]) {
-    const failure = await runHost(baseURL, {
-      mode: "invalid-manifest",
-      manifestCase,
-    });
-    assertLoaderError(
-      failure.result,
-      "manifest",
-      /Invalid remote plugin manifest/,
-    );
+    const failure = await runCli(baseURL, { manifestCase });
+    assert.equal(failure.ok, false, `Expected ${manifestCase} to fail`);
     assert.match(
-      failure.result.expectedFailure,
+      `${failure.stdout}\n${failure.stderr}`,
       /Invalid remote plugin manifest/,
+      `Expected ${manifestCase} validation through production getModule`,
     );
     assert.ok(
       failure.requests.some(
-        (item) => item.path === "/plugins/remote-manifest.json",
+        (item) => item.path === `/plugins/${remoteName}-manifest.json`,
       ),
     );
   }
 
-  const missingEntry = await runHost(baseURL, {
-    mode: "missing-remote-entry",
+  const missingEntry = await runCli(baseURL, {
     manifestCase: "missing-remote-entry",
   });
-  assertLoaderError(
-    missingEntry.result,
-    "plugin",
-    new RegExp(
-      `^Failed to load plugin ${remoteName}: Plugin "${remoteName}" has no declared remoteEntry`,
+  assert.equal(missingEntry.ok, false);
+  assert.match(
+    `${missingEntry.stdout}\n${missingEntry.stderr}`,
+    /no declared remoteEntry/,
+  );
+  assert.ok(
+    missingEntry.requests.some(
+      (item) => item.path === `/plugins/${remoteName}-manifest.json`,
     ),
   );
-  assert.equal(missingEntry.result.counters.registerRemotes, 0);
 
-  const missingAsset = await runHost(baseURL, {
-    mode: "missing-entry-asset",
+  const manifestHttpError = await runCli(baseURL, {
+    manifestCase: "manifest-http-error",
+  });
+  assert.equal(manifestHttpError.ok, false);
+  assert.match(
+    `${manifestHttpError.stdout}\n${manifestHttpError.stderr}`,
+    /Unable to load plugin manifest/,
+  );
+  assert.ok(
+    manifestHttpError.requests.some(
+      (item) =>
+        item.path === `/plugins/${remoteName}-manifest.json` &&
+        item.status === 503,
+    ),
+  );
+
+  const invalidManifestJson = await runCli(baseURL, {
+    manifestCase: "invalid-json",
+  });
+  assert.equal(invalidManifestJson.ok, false);
+  assert.match(
+    `${invalidManifestJson.stdout}\n${invalidManifestJson.stderr}`,
+    /Unable to parse plugin manifest/,
+  );
+
+  const readinessFailure = await runCli(baseURL, {
+    serverScenario: "retry-readiness",
+  });
+  assert.equal(readinessFailure.ok, false);
+  assert.ok(
+    readinessFailure.requests.some(
+      (item) =>
+        item.path === `/plugins/${manifest.remoteEntry}` && item.status === 503,
+    ),
+  );
+
+  const missingAsset = await runCli(baseURL, {
     serverScenario: "missing-entry-asset",
   });
-  const assetError = assertLoaderError(
-    missingAsset.result,
-    "plugin",
-    new RegExp(`^Failed to load plugin ${remoteName}:`),
-  );
-  assert.match(assetError.errorMessage, /remoteEntry\.cjs/);
+  assert.equal(missingAsset.ok, false);
   assert.ok(
     missingAsset.requests.some(
       (item) =>
@@ -376,78 +386,51 @@ try {
     ),
   );
 
-  const retry = await runHost(baseURL, { mode: "retry-readiness" });
-  assert.ok(retry.result.firstFailure);
-  assert.match(retry.result.rendered, /Remote command: ready/);
-  const retryFailures = retry.result.loaderEvents.filter(
-    (item) => item.stage === "plugin" && !item.success,
-  );
-  assert.ok(retryFailures.length >= 1, "First readiness attempt did not fail");
-  assert.match(retryFailures[0].errorMessage, /remoteEntry\.cjs/);
-  const firstFailureIndex = retry.result.loaderEvents.findIndex(
-    (item) => item.stage === "plugin" && !item.success,
-  );
-  assert.ok(
-    retry.result.loaderEvents.some(
-      (item, index) =>
-        index > firstFailureIndex && item.stage === "plugin" && item.success,
-    ),
-    "A later load in the same host did not recover successfully",
-  );
-  assert.ok(
-    retry.result.counters.registerRemotes >= 2,
-    "Retry did not register remote again in the same host",
-  );
-  assert.ok(
-    retry.result.counters.readinessAcquisitions >= 2,
-    "Retry did not acquire readiness again in the same host",
-  );
-  assert.ok(retry.result.counters.moduleInits >= 1);
-  const firstFailedEntryRequest = retry.requests.findIndex(
+  const retry = await runCli(baseURL, {
+    serverScenario: "retry-readiness",
+    retry: true,
+  });
+  assert.equal(retry.ok, true, retry.stderr);
+  assert.match(retry.stdout, /Remote command: ready/);
+  const failedEntry = retry.requests.findIndex(
     (item) =>
       item.path === `/plugins/${manifest.remoteEntry}` && item.status === 503,
   );
-  const recoveredEntryRequest = retry.requests.findIndex(
+  const recoveredEntry = retry.requests.findIndex(
     (item, index) =>
-      index > firstFailedEntryRequest &&
+      index > failedEntry &&
       item.path === `/plugins/${manifest.remoteEntry}` &&
       item.status === 200,
   );
-  assert.ok(firstFailedEntryRequest >= 0, "Initial entry request did not fail");
-  assert.ok(recoveredEntryRequest > firstFailedEntryRequest);
+  assert.ok(failedEntry >= 0, "Initial Enhanced readiness did not fail");
+  assert.ok(
+    recoveredEntry > failedEntry,
+    "getModule did not recover in-process",
+  );
 
-  for (const kind of ["null", "undefined"]) {
-    const nullish = await runHost(baseURL, { mode: `${kind}-module` });
+  for (const [kind, moduleName] of [
+    ["null", "command-null"],
+    ["undefined", "command-undefined"],
+  ]) {
+    const result = await runCli(baseURL, { moduleName });
+    assert.equal(result.ok, false);
     assert.match(
-      nullish.result.expectedFailure,
-      new RegExp(`Failed to load module 'command' of plugin ${remoteName}`),
-    );
-    assertLoaderError(
-      nullish.result,
-      "exposed-module",
-      new RegExp(
-        `Enhanced runtime returned no module for plugin "${remoteName}" request "command"`,
-      ),
+      `${result.stdout}\n${result.stderr}`,
+      /did not export a command component/,
+      `Expected nullish ${kind} export to be rejected`,
     );
     assert.ok(
-      nullish.result.remoteModuleResults.some(
-        (item) => item.id === `${remoteName}/command` && item.kind === kind,
-      ),
-      `Expected Enhanced runtime ${kind} module result`,
-    );
-    assert.ok(nullish.result.counters.moduleInits >= 1);
-    assert.ok(nullish.result.counters.loadRemote >= 1);
-    assert.ok(
-      nullish.requests.some(
+      result.requests.some(
         (item) =>
           item.path === `/plugins/${manifest.remoteEntry}` &&
           item.status === 200,
       ),
+      `Expected ${kind} export to resolve through the remote`,
     );
   }
 
   console.log(
-    `Isolated CLI federation shell e2e passed: NodeRemotePlugin producer, real Scalprum/Enhanced loading, manifest transform, Ink render, failure/retry cases; HTTP requests ${requests.length}`,
+    `Production fleetctl plugin e2e passed on Node ${process.version}: SDK manifest, absolute asset URL, Enhanced load/init, Ink state, manifest/entry failures, in-process retry, and nullish exports; HTTP requests ${requests.length}`,
   );
 } finally {
   await closeServer();

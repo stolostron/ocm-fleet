@@ -1,5 +1,6 @@
 import { authCommand, authCommands } from "./auth";
 import { deploymentCommand, deploymentCommands } from "./deployment";
+import { pluginCommand, pluginCommands } from "./plugin";
 import { resourceCommand, resourceCommands } from "./resource";
 import type { CommandEntry } from "./types";
 
@@ -8,6 +9,8 @@ export const commandEntries: CommandEntry[] = [
   ...authCommands,
   deploymentCommand,
   ...deploymentCommands,
+  pluginCommand,
+  ...pluginCommands,
   resourceCommand,
   ...resourceCommands,
 ];

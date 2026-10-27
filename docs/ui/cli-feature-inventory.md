@@ -410,20 +410,22 @@ Generated addon types should remain owned by the addon package whose API they
 describe. The common TypeScript SDK provides shared generation and runtime
 foundation; it should not absorb every addon schema.
 
-## Target Dynamic Plugin Build and Runtime Model
+## Node Plugin Runtime and Target Build Model
 
-The shared Dynamic Plugin SDK should provide the common high-level plugin
-abstraction for Web UI and CLI. Scalprum should be the shared runtime in both
-browser and Node environments, with Module Federation and Rspack providing the
-underlying loading and build mechanisms.
+The CLI now supports explicit Node federation plugin execution through
+`fleetctl plugin run`. It uses Scalprum's `PluginStore` with the SDK-compatible
+`@scalprum/node-loader`, and Enhanced's Node runtime to load remotes produced by
+`@ocm-fleet/node-plugin`. `FLEETCTL_PLUGIN_BASE_URL` supplies the manifest and
+asset base; automatic registry discovery is not implemented. The production
+acceptance coverage lives in `client/cli/e2e/`.
 
-The current blocker is that the Dynamic Plugin SDK only supports the Web target.
-Direct Module Federation and Rspack integration can work around this blocker
-for the CLI, but it creates a second plugin path. The target is to extend or
-align the SDK so it supports both targets and produces and consumes manifests
-through one unified model.
+The CLI and web runtimes share Scalprum's plugin-store model, while their loader
+and federation runtimes are target-specific. The longer-term target remains a
+shared high-level extension contract and aligned manifest production/consumption
+for browser and Node builds; the current explicit CLI command is not automatic
+plugin discovery or a unified extension build system.
 
-Runtime differences should be hidden behind Scalprum/SDK adapters, while
+Runtime differences should remain behind Scalprum/SDK adapters, while
 extension contracts, API clients, capabilities, context, and validation remain
 shared. If Scalprum lacks required Node features, OCM Fleet can extend or own
 those additions rather than replacing the shared runtime with a separate CLI
@@ -538,11 +540,11 @@ that feature differently:
 All representations use the same feature contract, validation, context, and API
 operation. Input collection and rendering remain runtime-specific.
 
-The existing Node Module Federation loading prototype demonstrates that the CLI
-runtime is feasible. Remaining work is enabling the shared Dynamic Plugin SDK
-and Scalprum path for Node, aligning manifest generation and loading across
-targets, and extending Scalprum where needed rather than maintaining an
-independent CLI plugin system.
+The explicit `fleetctl plugin run` path now loads Node remotes through Scalprum
+and the SDK-compatible Node loader. Remaining work includes server-driven
+discovery, typed pre-load command metadata, and a shared high-level extension
+contract across browser and Node targets rather than maintaining independent
+plugin systems.
 
 For performance, the Node client may later cache verified plugin manifests and
 assets locally and load them from cache instead of fetching them remotely on
@@ -702,7 +704,7 @@ coverage in the client architecture proposals; planned coverage does not mean im
 | --- | --- |
 | JavaScript/TypeScript client runtime | `OME-306` Rewrite CLI client in TypeScript |
 | Shared Dynamic Plugin SDK with Web UI | `OME-305`, `OME-306`, and target SDK model in this document |
-| Module Federation loading for CLI | `OME-306`; Node loading prototype already exists |
+| Module Federation loading for CLI | Explicit `plugin run` uses Scalprum's Node loader; automatic discovery remains open |
 | Server-driven plugin metadata and client-specific enablement | `OME-309`, `OME-313`, `OME-316` |
 | Typed plugin-provided CLI commands | `OME-319` and `OME-320`; implementation follows spike outcome |
 | Named profiles and shared client configuration | `OME-310` defines the model; implementation not yet created |
@@ -718,8 +720,9 @@ coverage in the client architecture proposals; planned coverage does not mean im
   current CLI still uses gRPC reflection and dynamic gRPC invocation.
 - **Schema metadata:** CLI can inspect recursive protobuf `spec` fields, while
   richer resource metadata and server-backed hints are covered by `OME-321`.
-- **TypeScript plugin loading:** Node Module Federation is proven by prototype,
-  but shared SDK/Scalprum integration and production builds remain open.
+- **TypeScript plugin loading:** Explicit production CLI loading now uses the
+  SDK-compatible Scalprum Node loader. Server-driven discovery and a shared
+  high-level extension contract remain open.
 
 ### Not yet addressed
 

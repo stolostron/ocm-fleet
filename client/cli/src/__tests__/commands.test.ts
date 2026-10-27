@@ -17,6 +17,11 @@ describe("command registry", () => {
   it("lists root commands", () => {
     expect(helpText()).toContain("deployment");
     expect(helpText()).toContain("resource");
+    expect(helpText()).toContain("plugin");
+  });
+
+  it("registers the remote plugin command", () => {
+    expect(findCommand(["plugin", "run"])?.path).toBe("plugin run");
   });
 
   it("executes differently typed specs after registry lookup", async () => {

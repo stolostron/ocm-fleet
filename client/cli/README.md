@@ -211,34 +211,40 @@ npx nx test:e2e e2e-cli
 
 E2E requires Podman keyring quotas and a clean AIO sandbox.
 
-### Isolated Node federation shell acceptance
+### Node federation plugin acceptance
 
-Run the isolated, localhost-only federation acceptance harness without AIO or
-Podman:
+Run the localhost-only production CLI plugin acceptance harness without AIO,
+Podman, Kind, or a production plugin registry:
 
 ```bash
 npx nx run cli:e2e
 ```
 
-The target builds the production CLI as a build prerequisite (but does not
-execute it), builds a Node remote fixture, then launches a separate Rspack test
-host. That isolated host uses the CLI's Ink renderer, real
-`@scalprum/core`/`@scalprum/node-loader` integration, and Enhanced's Node
-Module Federation runtime. A local server binds `127.0.0.1` on an ephemeral
-port to serve the producer manifest and assets. The injectable manifest URL is
-test-host-only.
+The target builds the production `fleetctl` executable and a Node remote using
+`@ocm-fleet/node-plugin`, then serves the SDK manifest and remote assets over
+HTTP on an ephemeral `127.0.0.1` port. It executes the built CLI through its
+production `plugin run` command. `FLEETCTL_PLUGIN_BASE_URL` selects the asset
+directory; the CLI resolves `<plugin-name>-manifest.json` there. No production
+registry endpoint or automatic discovery is configured.
+Remote command code executes inside `fleetctl` with its process permissions;
+configure only a trusted plugin asset source.
 
-This covers the producer/Scalprum/Enhanced integration, not production
-`fleetctl` plugin discovery or loading. The CLI package guidance explicitly
-defers plugin loading, so the built production executable is not wired to this
-test harness.
-Malformed-manifest cases invoke the Node loader's manifest validator directly;
-the current Scalprum `getModule` path fetches manifests itself, so those cases
-are loader-schema checks rather than end-to-end production discovery failures.
+```bash
+FLEETCTL_PLUGIN_BASE_URL=https://plugins.example.invalid/fleetctl/ \
+  fleetctl plugin run sample-plugin --module command
+```
+
+The remote exposes a default Ink command component. `--module` selects another
+exposed module (default `command`), and `--retry` retries one failed module load
+in the same CLI process. The harness covers manifest validation through Scalprum
+`getModule`, `baseURL: "auto"` resolution, Enhanced remote
+registration/initialization, exposed-module loading, live Ink state rendering,
+missing entry and readiness failures, retry after readiness eviction, and
+null/undefined command exports.
 
 ## Current Migration Surface
 
-Implemented command handlers cover auth setup/login/logout/inspect/enroll, deployment CRUD/resume/signing, resource CRUD/query, and reflection-backed resource types/schema discovery.
+Implemented command handlers cover auth setup/login/logout/inspect/enroll, deployment CRUD/resume/signing, resource CRUD/query, reflection-backed resource types/schema discovery, and explicit Node federation plugin execution (`plugin run`).
 
 ## Cleanup
 

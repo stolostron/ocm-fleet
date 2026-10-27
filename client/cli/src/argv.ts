@@ -18,6 +18,7 @@ const booleanFlags = [
   "no-browser",
   "sign",
   "debug",
+  "retry",
 ];
 
 export function parseArgs(argv: string[]): ParsedArgs {

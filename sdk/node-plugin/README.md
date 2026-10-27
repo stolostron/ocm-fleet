@@ -1,6 +1,6 @@
 # @ocm-fleet/node-plugin
 
-A private workspace package for producing Node.js Module Federation remotes with Rspack. It is not published or included in release workflows. The package provides a generic producer and manifest helpers; it does not implement a production Node or Scalprum loader.
+A private workspace package for producing Node.js Module Federation remotes with Rspack. It is not published or included in release workflows. The package provides a generic producer and manifest helpers; production host integration is owned by `client/cli` and is not implemented by this producer package.
 
 ## Quick start
 
@@ -90,7 +90,7 @@ const entryURL = identifyRemoteEntry(
 
 `identifyRemoteEntry(loadScripts, remoteEntry)` returns the exact matching input URL, preserving its prefix, query, and fragment. Matching ignores query/fragment suffixes and accepts an exact asset path or a path ending in `/<remoteEntry>` after path normalization. Missing and ambiguous matches throw. The helper performs no base inference or second URL rewrite, and this package does not export `transformPluginManifest`.
 
-The federation runtime owns initialization, share scopes, and lazy chunk acquisition. The manifest is not an instruction to hand-load every script. Scalprum/Fleet host integration, discovery, and caching remain separate work.
+The federation runtime owns initialization, share scopes, and lazy chunk acquisition. The manifest is not an instruction to hand-load every script. The producer package does not own Scalprum/Fleet host discovery or caching; the CLI's explicit plugin command and runtime integration are documented in [the CLI guide](../../client/cli/README.md#node-federation-plugin-acceptance).
 
 ## Verification
 

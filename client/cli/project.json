@@ -43,7 +43,7 @@
       "dependsOn": ["build", "node-plugin:build"],
       "inputs": [
         "{projectRoot}/e2e/**/*",
-        "{projectRoot}/src/app.tsx",
+        "{projectRoot}/src/**/*",
         "{projectRoot}/rspack.config.ts",
         "{projectRoot}/package.json",
         "{workspaceRoot}/package-lock.json",
