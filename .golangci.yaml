@@ -1,0 +1,71 @@
+# Copyright Contributors to the Open Cluster Management project
+# Source: https://github.com/open-cluster-management-io/ocm/blob/7ec1be985687041c4afbf093b6c8d3a903af5667/.golangci.yaml
+# Adapted for OCM Fleet: local imports, stock analysis, and targeted test cleanup.
+
+version: "2"
+
+run:
+  # Concurrency follows available CPUs and container quotas automatically.
+  # Bound analysis time; golangci-lint's default has no timeout.
+  timeout: 5m
+  # Evaluate exclusion paths relative to this shared configuration.
+  relative-path-mode: cfg
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      # Apply gofmt's standard simplifications as well as formatting.
+      simplify: true
+    goimports:
+      # Group this repository's imports after third-party packages.
+      local-prefixes:
+        - github.com/stolostron/ocm-fleet/
+    gci:
+      # Keep OCM dependencies distinct and the current module's imports last.
+      sections:
+        - standard
+        - default
+        - prefix(open-cluster-management.io)
+        - localmodule
+      custom-order: true
+
+linters:
+  # Use standard linters and their stock Staticcheck check selection.
+  default: standard
+  exclusions:
+    # Recognize generated files by the standard Go generated-code header.
+    generated: strict
+    # Warn when an exclusion no longer matches any findings.
+    warn-unused: true
+    # Review each diagnostic exception explicitly.
+    presets: []
+    rules:
+      # Deferred transaction rollback is best-effort cleanup in tests.
+      - path: '_test\.go$'
+        linters:
+          - errcheck
+        source: '^\s*defer\s+[\w.]+\.Rollback\(\)\s*(//.*)?$'
+  settings:
+    errcheck:
+      # Keep the defaults for assertions and explicit blank-identifier discards.
+      check-type-assertions: false
+      check-blank: false
+      # Include the function signature in unchecked-error diagnostics.
+      verbose: true
+    unused:
+      # Count increments/decrements as reads, avoiding write-only loop-counter noise.
+      post-statements-are-reads: true
+      # Allow unused parameters while checking unused local variables.
+      parameters-are-used: true
+      local-variables-are-used: false
+      # Treat identifiers referenced by generated files as used.
+      generated-is-used: true
+
+issues:
+  # Keep the full report by disabling per-linter and repeated-message limits.
+  max-issues-per-linter: 0
+  max-same-issues: 0

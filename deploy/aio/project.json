@@ -7,6 +7,18 @@
   "projectType": "application",
   "tags": ["lang:go", "scope:deploy"],
   "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "dependsOn": [{ "projects": ["ocm-fleet"], "target": "lint:go:config" }],
+      "options": {
+        "command": "../../bin/tools/golangci-lint run --config ../../.golangci.yaml --allow-serial-runners --path-mode=abs ./...",
+        "cwd": "deploy/aio",
+        "env": { "GOWORK": "off" }
+      },
+      "cache": true,
+      "inputs": ["goSource", "goLintConfig"],
+      "outputs": []
+    },
     "build": {
       "executor": "nx:run-commands",
       "options": {

@@ -106,6 +106,57 @@ npx nx run-many -t test     # run target across all projects (parallel)
 npx nx affected -t test     # only test what changed
 ```
 
+Nx manages a pinned Go linter, installed locally as `bin/tools/golangci-lint`.
+macOS and Linux on amd64 and arm64 are supported; installation requires `tar`.
+
+```bash
+npx nx run ocm-fleet:setup:golangci-lint
+```
+
+Setup verifies the local installation on every run and downloads only when needed.
+Go lint targets install the pinned tool and validate the shared config automatically:
+
+```bash
+npx nx run ocm-fleet:lint:go # server, deploy-aio, and nx-cache-proxy
+npx nx run server:lint      # one Go project
+```
+
+The checked-in [`.golangci.yaml`](.golangci.yaml) starts from OCM's config, with
+its source revision recorded in the file and our local import prefix substituted.
+It checks the standard linters, including stock Staticcheck checks, and Go/import
+formatting in production and test files. Test cleanup may ignore errors from a
+deferred transaction rollback; other test findings remain enabled. Generated code
+with the standard Go header is excluded from linter findings. The shared config
+keeps upstream exclusion presets disabled and scopes its exceptions to specific
+rules. Concurrency follows available CPUs and container quotas, with a five-minute
+analysis timeout and uncapped reports.
+Extend this local config for our own checks. Standalone `poc/` modules are not
+registered as Nx projects or included here.
+
+Nx caches successful lint results using the module's files, shared configuration,
+tool pin, and Go environment. When linting runs, golangci-lint also reuses its own
+local analysis cache. Concurrent lint tasks wait for the linter's shared lock.
+CI tests the configuration; enforcing lint and persisting its analysis cache in CI
+are deferred until the existing Go findings are addressed. The lint task reports
+the complete findings and exits with failure when issues remain.
+
+To prepare an upgrade, select an explicit stable v2 release:
+
+```bash
+npx nx run ocm-fleet:update:golangci-lint --release=v2.15.0
+```
+
+Replace the example version with your chosen release. The updater verifies all
+four platform archives against the published checksums and GitHub asset digests,
+then updates [`tools/golangci-lint-release.json`](tools/golangci-lint-release.json)
+as one change. It refuses changed hashes for an already pinned version.
+Review the upstream release notes, Go compatibility, and pin diff before committing;
+these checks still rely on trust in the upstream release. Run setup to install the
+updated pin. Installer and updater tests run through
+`npx nx run ocm-fleet:test:golangci-lint-setup`.
+Configuration regression tests use real temporary Go modules and the pinned linter:
+`npx nx run ocm-fleet:test:golangci-lint-config`.
+
 ### Build
 
 ```bash

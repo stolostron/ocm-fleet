@@ -25,16 +25,21 @@
     }
   ],
   "namedInputs": {
+    "goSource": ["{projectRoot}/**/*"],
+    "goLintConfig": [
+      "{workspaceRoot}/.golangci.yaml",
+      "{workspaceRoot}/tools/golangci-lint-release.json",
+      "{workspaceRoot}/tools/install-golangci-lint.mjs",
+      {
+        "runtime": "go env GOVERSION GOOS GOARCH CGO_ENABLED GOFLAGS GOEXPERIMENT GOTOOLCHAIN CC CXX CGO_CFLAGS CGO_CPPFLAGS CGO_CXXFLAGS CGO_LDFLAGS"
+      }
+    ],
     "uiSource": [
       "{projectRoot}/src/**/*.{ts,tsx,js,jsx}",
       "{projectRoot}/tsconfig*.json"
     ],
-    "uiStyles": [
-      "{projectRoot}/src/**/*.{css,scss}"
-    ],
-    "eslintConfig": [
-      "{workspaceRoot}/eslint.config.mjs"
-    ]
+    "uiStyles": ["{projectRoot}/src/**/*.{css,scss}"],
+    "eslintConfig": ["{workspaceRoot}/eslint.config.mjs"]
   },
   "targetDefaults": {
     "build": {
@@ -45,22 +50,15 @@
     },
     "lint": {
       "cache": true,
-      "inputs": [
-        "uiSource",
-        "eslintConfig"
-      ]
+      "inputs": ["uiSource", "eslintConfig"]
     },
     "lint:css": {
       "cache": true,
-      "inputs": [
-        "uiStyles"
-      ]
+      "inputs": ["uiStyles"]
     },
     "test:ct": {
       "cache": true,
-      "dependsOn": [
-        "^build"
-      ]
+      "dependsOn": ["^build"]
     }
   }
 }

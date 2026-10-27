@@ -5,6 +5,53 @@
   },
   "root": ".",
   "targets": {
+    "lint:go": {
+      "executor": "nx:noop",
+      "dependsOn": [
+        {
+          "projects": ["server", "deploy-aio", "nx-cache-proxy"],
+          "target": "lint"
+        }
+      ],
+      "cache": false
+    },
+    "lint:go:config": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["setup:golangci-lint"],
+      "options": {
+        "command": "bin/tools/golangci-lint config verify --config .golangci.yaml"
+      },
+      "cache": false
+    },
+    "setup:golangci-lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/install-golangci-lint.mjs"
+      },
+      "cache": false
+    },
+    "update:golangci-lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/update-golangci-lint.mjs"
+      },
+      "cache": false
+    },
+    "test:golangci-lint-setup": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test tools/install-golangci-lint.test.mjs tools/update-golangci-lint.test.mjs"
+      },
+      "cache": false
+    },
+    "test:golangci-lint-config": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["setup:golangci-lint"],
+      "options": {
+        "command": "node --test tools/golangci-lint-config.test.mjs"
+      },
+      "cache": false
+    },
     "generate-agents": {
       "executor": "nx:run-commands",
       "options": {
