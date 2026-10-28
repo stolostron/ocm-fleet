@@ -53,10 +53,6 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Test Go lint configuration
-        if: matrix.project == 'server'
-        run: npx nx run ocm-fleet:test:golangci-lint-config
-
       - name: Detect Docker host address for kind OIDC tests
         if: matrix.project == 'server'
         run: echo "KIND_HOST_ADDR=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')" >> "$GITHUB_ENV"
@@ -67,6 +63,42 @@ jobs:
       - name: Run integration tests
         if: matrix.project == 'server'
         run: npx nx test-integration server
+
+  test-go-lint-tool:
+    name: Go lint tooling
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: tools/golangci-lint/go.mod
+          cache: true
+          cache-dependency-path: tools/golangci-lint/go.sum
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Test Go lint tooling and configuration
+        run: |
+          npx nx run ocm-fleet:test:golangci-lint-setup
+          npx nx run ocm-fleet:test:golangci-lint-analyzers
+          npx nx run ocm-fleet:lint:golangci-lint
+          npx nx run ocm-fleet:test:golangci-lint-config
+
+      - name: Check dependency files stayed unchanged
+        run: git diff --exit-code -- tools/golangci-lint/go.mod tools/golangci-lint/go.sum
 
   test-ui:
     name: UI Tests
@@ -86,9 +118,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Go linter tool tests
-        run: npx nx run ocm-fleet:test:golangci-lint-setup
 
       - name: Build common library
         run: npx nx run common:build

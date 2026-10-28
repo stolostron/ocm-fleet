@@ -61,12 +61,12 @@ or console. Remove any previous development clusters and volumes explicitly.
 
 ### Other ways to run
 
-| Path | What you launch | Guide |
-|------|-----------------|-------|
-| Podman compose stack | All-in-one image via compose/Nx (HTTPS origin, source builds, local-web watch) | [deploy/podman/](deploy/podman/README.md) |
-| OpenShift example | Cluster deployment using Routes and ImageStreams | [deploy/openshift/](deploy/openshift/README.md) |
-| Keycloak (OpenShift) | External OIDC for cluster deploy or AIO compose (`OIDC_ISSUER_URL` in `.env`) | [deploy/openshift/keycloak/](deploy/openshift/keycloak/README.md) |
-| Nx remote cache | Shared build cache backed by MinIO | [docs/nx-remote-cache.md](docs/nx-remote-cache.md) |
+| Path                 | What you launch                                                                | Guide                                                             |
+| -------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| Podman compose stack | All-in-one image via compose/Nx (HTTPS origin, source builds, local-web watch) | [deploy/podman/](deploy/podman/README.md)                         |
+| OpenShift example    | Cluster deployment using Routes and ImageStreams                               | [deploy/openshift/](deploy/openshift/README.md)                   |
+| Keycloak (OpenShift) | External OIDC for cluster deploy or AIO compose (`OIDC_ISSUER_URL` in `.env`)  | [deploy/openshift/keycloak/](deploy/openshift/keycloak/README.md) |
+| Nx remote cache      | Shared build cache backed by MinIO                                             | [docs/nx-remote-cache.md](docs/nx-remote-cache.md)                |
 
 ## Develop in this repo
 
@@ -106,56 +106,48 @@ npx nx run-many -t test     # run target across all projects (parallel)
 npx nx affected -t test     # only test what changed
 ```
 
-Nx manages a pinned Go linter, installed locally as `bin/tools/golangci-lint`.
-macOS and Linux on amd64 and arm64 are supported; installation requires `tar`.
+Nx builds our custom Go linter from the isolated
+[`tools/golangci-lint`](tools/golangci-lint) module into
+`bin/tools/golangci-lint`. Its Go dependencies and source hashes are committed in
+`go.mod` and `go.sum`, and its compiler is pinned separately from application Go
+versions. The [tooling rationale](tools/golangci-lint/README.md#why-a-dedicated-module)
+explains the alternatives and provenance tradeoffs.
 
 ```bash
 npx nx run ocm-fleet:setup:golangci-lint
-```
-
-Setup verifies the local installation on every run and downloads only when needed.
-Go lint targets install the pinned tool and validate the shared config automatically:
-
-```bash
-npx nx run ocm-fleet:lint:go # server, deploy-aio, and nx-cache-proxy
+npx nx run ocm-fleet:lint:go # application Go modules and lint tooling
 npx nx run server:lint      # one Go project
 ```
 
-The checked-in [`.golangci.yaml`](.golangci.yaml) starts from OCM's config, with
-its source revision recorded in the file and our local import prefix substituted.
-It checks the standard linters, including stock Staticcheck checks, and Go/import
-formatting in production and test files. Test cleanup may ignore errors from a
-deferred transaction rollback; other test findings remain enabled. Generated code
-with the standard Go header is excluded from linter findings. The shared config
-keeps upstream exclusion presets disabled and scopes its exceptions to specific
-rules. Concurrency follows available CPUs and container quotas, with a five-minute
-analysis timeout and uncapped reports.
-Extend this local config for our own checks. Standalone `poc/` modules are not
-registered as Nx projects or included here.
+Go lint targets build or restore the cached tool and validate the shared config
+automatically. The checked-in [`.golangci.yaml`](.golangci.yaml) starts from OCM's
+config, with its source revision recorded in the file. It checks standard linters,
+stock Staticcheck, Go/import formatting, and our `fleetdomain` analyzer for domain
+field encapsulation. Production and tests are checked; generated code is excluded.
+Upstream exclusion presets are disabled. The targeted test exception allows
+best-effort deferred transaction rollback. Standalone `poc/` modules are not
+included.
 
-Nx caches successful lint results using the module's files, shared configuration,
-tool pin, and Go environment. When linting runs, golangci-lint also reuses its own
-local analysis cache. Concurrent lint tasks wait for the linter's shared lock.
-CI tests the configuration; enforcing lint and persisting its analysis cache in CI
-are deferred until the existing Go findings are addressed. The lint task reports
-the complete findings and exits with failure when issues remain.
+Nx caches the tool build and successful lint results using source, configuration,
+dependency pins, and Go environment. Go's build cache and golangci-lint's analysis
+cache also reduce repeated work. Concurrent lint tasks wait for the linter's
+shared lock. CI tests the tooling and configuration; application cleanup and CI
+lint enforcement remain deferred. Lint reports all findings and fails when issues
+remain.
 
-To prepare an upgrade, select an explicit stable v2 release:
+To update the linter, select an explicit stable v2 release:
 
 ```bash
 npx nx run ocm-fleet:update:golangci-lint --release=v2.15.0
+npx nx run ocm-fleet:test:golangci-lint-setup
+npx nx run ocm-fleet:test:golangci-lint-analyzers
+npx nx run ocm-fleet:test:golangci-lint-config
 ```
 
-Replace the example version with your chosen release. The updater verifies all
-four platform archives against the published checksums and GitHub asset digests,
-then updates [`tools/golangci-lint-release.json`](tools/golangci-lint-release.json)
-as one change. It refuses changed hashes for an already pinned version.
-Review the upstream release notes, Go compatibility, and pin diff before committing;
-these checks still rely on trust in the upstream release. Run setup to install the
-updated pin. Installer and updater tests run through
-`npx nx run ocm-fleet:test:golangci-lint-setup`.
-Configuration regression tests use real temporary Go modules and the pinned linter:
-`npx nx run ocm-fleet:test:golangci-lint-config`.
+Replace the example version with your chosen release, review the module diff and
+upstream release notes, and run the tests before committing. See the
+[tooling guide](tools/golangci-lint/README.md#working-with-the-tool) for adding
+analyzers and updating the compiler.
 
 ### Build
 

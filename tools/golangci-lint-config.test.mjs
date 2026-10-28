@@ -1,6 +1,7 @@
 /* eslint playwright/expect-expect: ["error", { "assertFunctionNames": ["doesNotReject", "equal", "match", "rejects"] }] */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,17 @@ const binary = fileURLToPath(
   new URL("../bin/tools/golangci-lint", import.meta.url),
 );
 const config = fileURLToPath(new URL("../.golangci.yaml", import.meta.url));
+
+test("identifies the exact custom executable in its version for analysis caching", async () => {
+  const digest = createHash("sha256")
+    .update(await readFile(binary))
+    .digest("hex");
+  const { stdout } = await run(binary, ["version"]);
+  assert.match(
+    stdout,
+    new RegExp(`version v?2\\.\\d+\\.\\d+-fleet\\.${digest}\\b`),
+  );
+});
 
 test("validates the shared config with our pinned linter", async () => {
   await assert.doesNotReject(
@@ -36,6 +48,25 @@ test("reports unchecked production errors with a failing exit status", async (t)
     );
     return true;
   });
+});
+
+test("reports same-package domain field reads through the custom analyzer", async (t) => {
+  const { directory, lint } = await fixture(t);
+  await writeDomainFixture(directory, "f.generation");
+  await assert.rejects(lint(), (error) => {
+    assert.equal(error.code, 1);
+    assert.match(
+      error.stdout + error.stderr,
+      /access Fulfillment\.generation through Fulfillment methods.*fleetdomain/,
+    );
+    return true;
+  });
+});
+
+test("allows the domain's own methods and external getter calls", async (t) => {
+  const { directory, lint } = await fixture(t);
+  await writeDomainFixture(directory, "f.Generation()");
+  await assert.doesNotReject(lint());
 });
 
 test("reports unchecked Close errors in production code", async (t) => {
@@ -222,6 +253,26 @@ async function fixture(t) {
 
 const uncheckedError =
   'package lintfixture\n\nimport "os"\n\nfunc Check() {\n\tos.Chdir(".")\n}\n';
+
+async function writeDomainFixture(directory, expression) {
+  await writeFile(
+    join(directory, "go.mod"),
+    "module github.com/stolostron/ocm-fleet/server/internal/domain\n\ngo 1.26.0\n",
+  );
+  await writeFile(
+    join(directory, "main.go"),
+    `package domain
+
+type Fulfillment struct{ generation int }
+
+func (f *Fulfillment) Generation() int { return f.generation }
+
+func Read(f *Fulfillment) int {
+\treturn ${expression}
+}
+`,
+  );
+}
 
 const invalidRegexp =
   'package lintfixture\n\nimport "regexp"\n\nfunc Pattern() *regexp.Regexp {\n\treturn regexp.MustCompile("[")\n}\n';

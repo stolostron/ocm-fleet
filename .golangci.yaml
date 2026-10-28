@@ -1,6 +1,6 @@
 # Copyright Contributors to the Open Cluster Management project
 # Source: https://github.com/open-cluster-management-io/ocm/blob/7ec1be985687041c4afbf093b6c8d3a903af5667/.golangci.yaml
-# Adapted for OCM Fleet: local imports, stock analysis, and targeted test cleanup.
+# Adapted for OCM Fleet: local imports, domain analysis, and targeted test cleanup.
 
 version: "2"
 
@@ -36,6 +36,8 @@ formatters:
 linters:
   # Use standard linters and their stock Staticcheck check selection.
   default: standard
+  enable:
+    - fleetdomain
   exclusions:
     # Recognize generated files by the standard Go generated-code header.
     generated: strict
@@ -50,6 +52,10 @@ linters:
           - errcheck
         source: '^\s*defer\s+[\w.]+\.Rollback\(\)\s*(//.*)?$'
   settings:
+    custom:
+      fleetdomain:
+        type: module
+        description: Use domain getters outside the owning type's methods.
     errcheck:
       # Keep the defaults for assertions and explicit blank-identifier discards.
       check-type-assertions: false

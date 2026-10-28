@@ -11,7 +11,8 @@
         {
           "projects": ["server", "deploy-aio", "nx-cache-proxy"],
           "target": "lint"
-        }
+        },
+        "lint:golangci-lint"
       ],
       "cache": false
     },
@@ -26,21 +27,23 @@
     "setup:golangci-lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node tools/install-golangci-lint.mjs"
+        "command": "node tools/golangci-lint.mjs build"
       },
-      "cache": false
+      "cache": true,
+      "inputs": ["goLintTool"],
+      "outputs": ["{workspaceRoot}/bin/tools/golangci-lint"]
     },
     "update:golangci-lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node tools/update-golangci-lint.mjs"
+        "command": "node tools/golangci-lint.mjs update"
       },
       "cache": false
     },
     "test:golangci-lint-setup": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test tools/install-golangci-lint.test.mjs tools/update-golangci-lint.test.mjs"
+        "command": "node --test tools/golangci-lint.test.mjs"
       },
       "cache": false
     },
@@ -49,6 +52,36 @@
       "dependsOn": ["setup:golangci-lint"],
       "options": {
         "command": "node --test tools/golangci-lint-config.test.mjs"
+      },
+      "cache": false
+    },
+    "test:golangci-lint-analyzers": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/golangci-lint.mjs test"
+      },
+      "cache": true,
+      "inputs": ["goLintTool"],
+      "outputs": []
+    },
+    "lint:golangci-lint": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["lint:go:config"],
+      "options": {
+        "command": "../../bin/tools/golangci-lint run --config ../../.golangci.yaml --allow-serial-runners --path-mode=abs ./...",
+        "cwd": "tools/golangci-lint",
+        "env": {
+          "GOWORK": "off"
+        }
+      },
+      "cache": true,
+      "inputs": ["goLintConfig"],
+      "outputs": []
+    },
+    "fmt:golangci-lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/golangci-lint.mjs fmt"
       },
       "cache": false
     },
@@ -164,22 +197,30 @@
     },
     "deploy:podman:up": {
       "executor": "nx:run-commands",
-      "options": { "command": "./deploy/podman/scripts/start.mjs" },
+      "options": {
+        "command": "./deploy/podman/scripts/start.mjs"
+      },
       "cache": false
     },
     "deploy:podman:dev": {
       "executor": "nx:run-commands",
-      "options": { "command": "DEV=true ./deploy/podman/scripts/start.mjs" },
+      "options": {
+        "command": "DEV=true ./deploy/podman/scripts/start.mjs"
+      },
       "cache": false
     },
     "deploy:podman:down": {
       "executor": "nx:run-commands",
-      "options": { "command": "./deploy/podman/scripts/stop.mjs" },
+      "options": {
+        "command": "./deploy/podman/scripts/stop.mjs"
+      },
       "cache": false
     },
     "deploy:podman:clean": {
       "executor": "nx:run-commands",
-      "options": { "command": "./deploy/podman/scripts/stop.mjs --clean" },
+      "options": {
+        "command": "./deploy/podman/scripts/stop.mjs --clean"
+      },
       "cache": false
     },
     "deploy:podman:logs": {
@@ -198,7 +239,9 @@
     },
     "deploy:podman:rebuild": {
       "executor": "nx:run-commands",
-      "options": { "command": "./deploy/podman/scripts/rebuild.mjs" },
+      "options": {
+        "command": "./deploy/podman/scripts/rebuild.mjs"
+      },
       "cache": false
     },
     "deploy:podman:pull": {
@@ -210,7 +253,9 @@
     },
     "deploy:podman:clock-drift": {
       "executor": "nx:run-commands",
-      "options": { "command": "./deploy/podman/scripts/check-clock-drift.mjs" },
+      "options": {
+        "command": "./deploy/podman/scripts/check-clock-drift.mjs"
+      },
       "cache": false
     },
     "deploy:openshift:keycloak:deploy": {
