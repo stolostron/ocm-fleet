@@ -114,12 +114,24 @@ versions. The [tooling rationale](tools/golangci-lint/README.md#why-a-dedicated-
 explains the alternatives and provenance tradeoffs.
 
 ```bash
-npx nx run ocm-fleet:setup:golangci-lint
-npx nx run ocm-fleet:lint:go # application Go modules and lint tooling
-npx nx run server:lint      # one Go project
+npx nx run ocm-fleet:verify:go # format/import fixes, then lint and tests
+npx nx run ocm-fleet:fmt:go    # formatting and import organization only
+npx nx run ocm-fleet:fix:go    # also apply supported linter fixes, then lint and tests
+npx nx run ocm-fleet:lint:go   # check all Go modules without editing source
+npx nx run server:lint        # check one Go project
+
+# Limit source changes and verification to selected projects:
+npx nx run ocm-fleet:verify:go --projects=server,deploy-aio
 ```
 
-Go lint targets build or restore the cached tool and validate the shared config
+Local verification fixes formatting and imports automatically. Broader linter
+rewrites require the explicit `fix:go` task; review its diff. Both tasks run the
+selected projects' normal lint and test targets after rewriting, and fail if
+findings or failing tests remain. By default these tasks cover server, deploy-aio,
+nx-cache-proxy, and the lint tooling; they leave generated files and analyzer
+`testdata` fixtures alone. Application lint still reports the existing backlog.
+
+Go quality tasks build or restore the cached tool and validate the shared config
 automatically. The checked-in [`.golangci.yaml`](.golangci.yaml) starts from OCM's
 config, with its source revision recorded in the file. It checks standard linters,
 stock Staticcheck, Go/import formatting, and our `fleetdomain` analyzer for domain
@@ -131,7 +143,9 @@ included.
 Nx caches the tool build and successful lint results using source, configuration,
 dependency pins, and Go environment. Go's build cache and golangci-lint's analysis
 cache also reduce repeated work. Concurrent lint tasks wait for the linter's
-shared lock. CI tests the tooling and configuration; application cleanup and CI
+shared lock. Source-rewriting tasks always run; verification starts a fresh Nx
+invocation after edits so checks hash the resulting files. CI uses checks without
+source rewrites and tests the tooling and configuration; application cleanup and CI
 lint enforcement remain deferred. Lint reports all findings and fails when issues
 remain.
 

@@ -12,6 +12,9 @@ run:
   relative-path-mode: cfg
 
 formatters:
+  exclusions:
+    # Keep source-rewriting commands aligned with the linter's generated policy.
+    generated: strict
   enable:
     - gci
     - gofmt

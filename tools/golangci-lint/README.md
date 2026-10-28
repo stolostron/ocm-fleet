@@ -44,12 +44,35 @@ and [Kubernetes' tools module](https://github.com/kubernetes/kubernetes/tree/mas
 Run these from the repository root:
 
 ```sh
+npx nx run ocm-fleet:verify:go
+npx nx run ocm-fleet:fmt:go
+npx nx run ocm-fleet:fix:go
+npx nx run ocm-fleet:lint:go
+
+# Select projects by their Nx names; ocm-fleet selects the lint tooling.
+npx nx run ocm-fleet:verify:go --projects=server
+
+# Tool development and updates:
 npx nx run ocm-fleet:setup:golangci-lint
 npx nx run ocm-fleet:test:golangci-lint-analyzers
 npx nx run ocm-fleet:lint:golangci-lint
 npx nx run ocm-fleet:test:golangci-lint-config
+npx nx run ocm-fleet:test:go-workflow
 npx nx run ocm-fleet:update:golangci-lint --release=v2.15.0
 ```
+
+`fmt:go` applies the shared formatters, including import organization. `verify:go`
+does that first, then runs lint and the normal tests. `fix:go` additionally applies
+supported linter fixes before rechecking; review those changes. All three accept
+comma-separated `--projects` and otherwise cover the application Go projects and
+this module. Generated files and analyzer `testdata` fixtures are excluded from
+rewrites. A fix pass can leave findings behind, so verification still runs and
+fails if those findings or test failures remain. `lint:go` remains a check without
+source edits for CI and other callers that need that behavior.
+
+Source-rewriting tasks are uncached. They finish editing before starting a fresh
+Nx invocation for lint and tests, ensuring checks hash the resulting source.
+The tool build and individual checks retain their normal cache settings.
 
 Choose an explicit stable v2 release when updating. The update task uses Go's
 module tooling in a disposable copy, then publishes `go.mod` and `go.sum` for

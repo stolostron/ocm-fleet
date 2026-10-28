@@ -96,9 +96,10 @@ jobs:
           npx nx run ocm-fleet:test:golangci-lint-analyzers
           npx nx run ocm-fleet:lint:golangci-lint
           npx nx run ocm-fleet:test:golangci-lint-config
+          npx nx run ocm-fleet:test:go-workflow
 
-      - name: Check dependency files stayed unchanged
-        run: git diff --exit-code -- tools/golangci-lint/go.mod tools/golangci-lint/go.sum
+      - name: Check repository files stayed unchanged
+        run: git diff --exit-code
 
   test-ui:
     name: UI Tests

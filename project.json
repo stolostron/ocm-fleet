@@ -5,6 +5,30 @@
   },
   "root": ".",
   "targets": {
+    "fmt:go": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["lint:go:config"],
+      "options": {
+        "command": "node tools/go-workflow.mjs fmt"
+      },
+      "cache": false
+    },
+    "verify:go": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["lint:go:config"],
+      "options": {
+        "command": "node tools/go-workflow.mjs verify"
+      },
+      "cache": false
+    },
+    "fix:go": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["lint:go:config"],
+      "options": {
+        "command": "node tools/go-workflow.mjs fix"
+      },
+      "cache": false
+    },
     "lint:go": {
       "executor": "nx:noop",
       "dependsOn": [
@@ -52,6 +76,14 @@
       "dependsOn": ["setup:golangci-lint"],
       "options": {
         "command": "node --test tools/golangci-lint-config.test.mjs"
+      },
+      "cache": false
+    },
+    "test:go-workflow": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["setup:golangci-lint"],
+      "options": {
+        "command": "node --test tools/go-workflow.test.mjs"
       },
       "cache": false
     },
