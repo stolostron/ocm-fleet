@@ -14,6 +14,10 @@ locally. Public module downloads use Go's checksum database by default. Checksum
 establish consistent source identity; they do not certify that code is safe or
 provide signed build provenance.
 
+The tooling currently uses Go 1.26.6, matching the application and CodeQL builds.
+Custom analyzers do not require a Go upgrade. Keep compiler upgrades separate
+from linter changes and check compatibility with CodeQL when raising the minimum.
+
 We considered these alternatives:
 
 - **Upstream release binaries with our archive hashes:** fast setup and upstream's
@@ -71,4 +75,5 @@ zero-argument getter of the same result type. It respects constructors and the
 documented `snapshot.go` / `etag.go` exceptions, including in tests. Fields without
 such getters and mutation through returned references remain outside its scope.
 Application cleanup and CI lint enforcement remain deferred; CI tests the tool
-and its configuration.
+and its configuration. CodeQL builds the tool module alongside the application
+modules, excluding analyzer `testdata` fixtures.

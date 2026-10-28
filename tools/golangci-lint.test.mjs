@@ -5,12 +5,37 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   buildGolangciLint,
   toolEnvironment,
   updateGolangciLint,
 } from "./golangci-lint.mjs";
+
+test("CodeQL's application compiler can load the linter and analyzer fixtures", async () => {
+  const env = await toolEnvironment(
+    fileURLToPath(new URL("../server/", import.meta.url)),
+  );
+  for (const [directory, expectedPackage] of [
+    ["./golangci-lint/", "github.com/stolostron/ocm-fleet/tools/golangci-lint"],
+    [
+      "./golangci-lint/domainaccess/testdata/domain/",
+      "github.com/stolostron/ocm-fleet/server/internal/domain",
+    ],
+  ]) {
+    const packages = execFileSync(
+      "go",
+      ["list", "-mod=readonly", "-deps", "./..."],
+      {
+        cwd: fileURLToPath(new URL(directory, import.meta.url)),
+        env,
+        encoding: "utf8",
+      },
+    ).split("\n");
+    assert.equal(packages.includes(expectedPackage), true);
+  }
+});
 
 test("builds a real module for the host with the module's compiler pin", async (t) => {
   const options = await fixture(t);
@@ -21,7 +46,7 @@ test("builds a real module for the host with the module's compiler pin", async (
     else process.env.GOFLAGS = previous;
   });
   const env = await toolEnvironment(options.directory);
-  assert.equal(env.GOTOOLCHAIN, "go1.27.3");
+  assert.equal(env.GOTOOLCHAIN, "go1.26.6");
   assert.equal(env.GOWORK, "off");
   assert.equal(env.CGO_ENABLED, "0");
   await buildGolangciLint(options);
@@ -99,7 +124,7 @@ async function fixture(t) {
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(
     join(directory, "go.mod"),
-    "module lintfixture\n\ngo 1.27.0\n\ntoolchain go1.27.3\n",
+    "module lintfixture\n\ngo 1.26.0\n\ntoolchain go1.26.6\n",
   );
   await writeFile(join(directory, "go.sum"), "");
   await writeFile(

@@ -1,8 +1,8 @@
 module github.com/stolostron/ocm-fleet/tools/golangci-lint
 
-go 1.27.0
+go 1.26.0
 
-toolchain go1.27.3
+toolchain go1.26.6
 
 require (
 	github.com/golangci/golangci-lint/v2 v2.15.0
