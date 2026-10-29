@@ -167,8 +167,9 @@ Prettier and ESLint use content-based file caches within those rewrite stages.
 Tooling regression tests are cached against their scripts, task definitions,
 configuration, and tool versions. UI unit tests run per project, with dependency
 sources included in their cache keys. Component tests consume source directly,
-so they generate the icon manifest but skip production builds. Server tests still
-run each time, including their container checks.
+so they generate the icon manifest but skip production builds. Server tests,
+including Postgres checks, are cached against source, assets, dependencies, and
+Go/test settings. Use `npx nx run server:test --skip-nx-cache` for a fresh run.
 CI uses checks without source rewrites and tests the tooling and configuration;
 application cleanup and CI lint enforcement remain deferred. Lint reports all
 unsuppressed findings and fails when issues remain.

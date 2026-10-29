@@ -73,6 +73,11 @@ Run from the repository root. The default suite excludes integration-tagged test
 
     npx nx run server:test
 
+Nx caches the default suite, including its Postgres tests.
+To force execution, use:
+
+    npx nx run server:test --skip-nx-cache
+
 To run integration tests explicitly (requires Docker or Podman):
 
     npx nx run server:test-integration

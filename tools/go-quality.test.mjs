@@ -104,6 +104,94 @@ test("verification formats before real lint and tests, then reuses checks for th
   assert.equal(await readFile(join(root, "tested"), "utf8"), "passed");
 });
 
+test("server test caching covers embedded assets, fixtures, dependencies, and execution settings", async (t) => {
+  const { root, task } = await fixture(t, { serverTestPolicy: true });
+  await mkdir(join(root, "server/testdata"));
+  await writeJSON(join(root, "proto/project.json"), {
+    name: "proto",
+    root: "proto",
+    targets: {},
+  });
+  const assets = [
+    ["server/schema.sql", "SELECT 1;\n"],
+    ["server/resource.proto", 'syntax = "proto3";\n'],
+    ["server/testdata/sample.json", "{}\n"],
+    ["proto/example.proto", 'syntax = "proto3";\n'],
+  ];
+  for (const [path, content] of assets)
+    await writeFile(join(root, path), content);
+  await writeFile(
+    join(root, "server/main.go"),
+    `package lintfixture
+
+import _ "embed"
+
+//go:embed schema.sql
+var schema string
+
+//go:embed resource.proto
+var resource string
+`,
+  );
+  await writeFile(
+    join(root, "server/main_test.go"),
+    `package lintfixture
+
+import (
+    "os"
+    "testing"
+)
+
+func TestCacheInputs(t *testing.T) {
+    if schema == "" || resource == "" { t.Fatal("missing embedded assets") }
+    for _, path := range []string{"testdata/sample.json", "../proto/example.proto"} {
+        if _, err := os.ReadFile(path); err != nil { t.Fatal(err) }
+    }
+    marker, err := os.OpenFile("../tested", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+    if err != nil { t.Fatal(err) }
+    if _, err := marker.WriteString("passed"); err != nil { t.Fatal(err) }
+    if err := marker.Close(); err != nil { t.Fatal(err) }
+}
+`,
+  );
+  let executions = 0;
+  let env = {
+    GOFLAGS: "",
+    TESTCONTAINERS_PROVIDER: "docker",
+    OCM_RM_QUERY_BENCH: "",
+    OCM_RM_INVENTORY_BENCH: "",
+  };
+  const runTest = async ({ rerun = true, args = [] } = {}) => {
+    await task("test", "server", { env, args });
+    if (rerun) executions++;
+    assert.equal(
+      await readFile(join(root, "tested"), "utf8"),
+      "passed".repeat(executions),
+    );
+  };
+  await runTest();
+  await runTest({ rerun: false });
+  for (const [path, content] of [
+    ...assets,
+    ["server/main.go", await readFile(join(root, "server/main.go"), "utf8")],
+  ]) {
+    await writeFile(join(root, path), content + "\n");
+    await task("refresh:inputs");
+    await runTest();
+  }
+  for (const change of [
+    { TESTCONTAINERS_PROVIDER: "podman" },
+    { GOFLAGS: "-v" },
+    { OCM_RM_QUERY_BENCH: "1" },
+    { OCM_RM_INVENTORY_BENCH: "1" },
+  ]) {
+    env = { ...env, ...change };
+    await runTest();
+  }
+  await runTest({ rerun: false });
+  await runTest({ args: ["--skip-nx-cache"] });
+});
+
 test("workspace verification formats every Go module before running their checks", async (t) => {
   const { root, task } = await fixture(t);
   await writeWorkspaceChecks(root);
@@ -330,7 +418,7 @@ test("an unknown project fails before editing source", async (t) => {
 
 // Use the real Nx runner, compiled linter, and Go tests in disposable workspaces.
 // Their separate source trees also exercise Nx caching after source rewrites.
-async function fixture(t) {
+async function fixture(t, { serverTestPolicy = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), "ocm-fleet-go-quality-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const directory of ["tools", "server", "bin/tools"]) {
@@ -348,7 +436,7 @@ async function fixture(t) {
     );
   }
   await cp(join(repository, ".golangci.yaml"), join(root, ".golangci.yaml"));
-  const { targetDefaults } = JSON.parse(
+  const { targetDefaults, namedInputs } = JSON.parse(
     await readFile(join(repository, "nx.json"), "utf8"),
   );
   await writeJSON(join(root, "nx.json"), {
@@ -357,6 +445,7 @@ async function fixture(t) {
     namedInputs: {
       goSource: ["{projectRoot}/**/*"],
       goLintConfig: ["{workspaceRoot}/.golangci.yaml"],
+      goRuntime: namedInputs.goRuntime,
       uiSource: ["{projectRoot}/**/*.js"],
       eslintConfig: [],
     },
@@ -394,9 +483,11 @@ async function fixture(t) {
     const project = JSON.parse(
       await readFile(join(repository, directory, "project.json"), "utf8"),
     );
+    const testPolicy = project.targets.test;
     // Exercise the production task definitions with real, small Go modules.
-    // Fixtures need neither the server's proto dependency nor the tooling's own
-    // test suites; their normal tests run the Go code below instead.
+    // Most fixtures need neither the server's proto dependency nor the tooling's
+    // own test suites; their normal tests run the Go code below instead. The
+    // server cache-policy fixture retains proto to exercise dependency inputs.
     delete project.implicitDependencies;
     project.targets = Object.fromEntries(
       [
@@ -424,6 +515,14 @@ async function fixture(t) {
       cache: true,
       inputs: ["{projectRoot}/**/*.go", "{projectRoot}/go.mod"],
     };
+    if (serverTestPolicy && project.name === "server") {
+      // Keep the production cache policy; only replace its Go module and test
+      // command with a small real suite that records actual executions on disk.
+      project.implicitDependencies = ["proto"];
+      project.targets.test.cache = testPolicy.cache;
+      project.targets.test.inputs = testPolicy.inputs;
+      project.targets.test.outputs = testPolicy.outputs;
+    }
     await writeJSON(join(root, directory, "project.json"), project);
     await writeFile(
       join(root, directory, "go.mod"),
@@ -471,7 +570,7 @@ func TestClean(t *testing.T) {
 }
 `,
   );
-  const runNx = (args) =>
+  const runNx = (args, env = {}) =>
     run(process.execPath, [nx, ...args], {
       cwd: root,
       env: {
@@ -480,14 +579,18 @@ func TestClean(t *testing.T) {
         NX_ISOLATE_PLUGINS: "false",
         NX_NO_CLOUD: "true",
         GOWORK: "off",
+        ...env,
       },
       maxBuffer: 4 * 1024 * 1024,
     });
   return {
     root,
     source,
-    task: (target, project = "server") =>
-      runNx(["run", `${project}:${target}`, "--outputStyle=static"]),
+    task: (target, project = "server", { env, args = [] } = {}) =>
+      runNx(
+        ["run", `${project}:${target}`, "--outputStyle=static", ...args],
+        env,
+      ),
     configuredGraph: async (target) => {
       const path = join(root, ".nx", "configured-task-graph.json");
       await mkdir(dirname(path), { recursive: true });

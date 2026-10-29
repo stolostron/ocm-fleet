@@ -37,12 +37,19 @@
         "command": "GOTESTSUM_FORMAT=\"${GOTESTSUM_FORMAT:-pkgname-and-test-fails}\" go tool gotestsum --format-icons hivis --format-hide-empty-pkg -- -count=1 ./...",
         "cwd": "server"
       },
-      "cache": false,
+      "cache": true,
       "inputs": [
-        "{projectRoot}/**/*.go",
-        "{projectRoot}/go.mod",
-        "{projectRoot}/go.sum"
-      ]
+        "goSource",
+        "^default",
+        "goRuntime",
+        { "env": "TESTCONTAINERS_PROVIDER" },
+        { "env": "OCM_RM_QUERY_BENCH" },
+        { "env": "OCM_RM_INVENTORY_BENCH" },
+        { "env": "GOTESTSUM_FORMAT" },
+        { "env": "KIND_EXPERIMENTAL_DOCKER_NETWORK" },
+        { "env": "KIND_LOOPBACK_FORWARD_TO" }
+      ],
+      "outputs": []
     },
     "test-stress": {
       "executor": "nx:run-commands",

@@ -16,6 +16,10 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
+// Pin the multi-platform image index so each host still selects its own platform.
+// Updating this constant invalidates Nx's cached server test results.
+const testPostgresImage = "docker.io/library/postgres:18@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"
+
 func isPodmanAvailable() bool {
 	_, err := exec.LookPath("podman")
 	return err == nil
@@ -68,7 +72,7 @@ func startContainer(extraOpts ...testcontainers.ContainerCustomizer) (*tcpostgre
 		tcpostgres.BasicWaitStrategies(),
 		detectProvider(),
 	}, extraOpts...)
-	ctr, err := tcpostgres.Run(ctx, "postgres:18", opts...)
+	ctr, err := tcpostgres.Run(ctx, testPostgresImage, opts...)
 	if err != nil {
 		return nil, "", fmt.Errorf("start postgres container: %w", err)
 	}
