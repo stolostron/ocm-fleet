@@ -30,6 +30,7 @@
         "cwd": "e2e/web"
       },
       "inputs": ["{projectRoot}/**/*.{js,mjs,ts,tsx}", "eslintConfig"]
-    }
+    },
+    "lint:format": {}
   }
 }

@@ -63,6 +63,7 @@
         "command": "node fixtures/build.mjs",
         "cwd": "sdk/node-plugin"
       }
-    }
+    },
+    "lint:format": {}
   }
 }

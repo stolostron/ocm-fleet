@@ -49,6 +49,7 @@
       }
     },
     "fix:css": {},
-    "test": {}
+    "test": {},
+    "lint:format": {}
   }
 }

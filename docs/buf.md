@@ -4,6 +4,7 @@ Run through Nx: `npx nx run proto:fmt` formats protobuf files;
 `npx nx run proto:lint` checks formatting and Buf lint rules without edits.
 `npx nx run proto:verify` formats first, then checks. These also participate in
 the workspace's language-agnostic `fmt`, `lint`, `verify`, and `fix` targets.
+CI installs Buf 1.75.0 and runs these checks through `ocm-fleet:check`.
 
 Dependencies should be local to the repository, or remote, for repeatable builds.
 

@@ -68,6 +68,7 @@
         "command": "node plugin/run.mjs",
         "cwd": "e2e/cli"
       }
-    }
+    },
+    "lint:format": {}
   }
 }

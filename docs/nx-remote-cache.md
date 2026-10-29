@@ -145,6 +145,24 @@ To retrieve credentials later (e.g., on a new machine), log in to the cluster an
 
 ## Configuration reference
 
+### GitHub Actions
+
+The quality workflow can read this cache when the repository has the
+`NX_SELF_HOSTED_REMOTE_CACHE_SERVER` Actions variable and `NX_CACHE_READ_TOKEN`
+Actions secret. Use an HTTPS endpoint reachable by GitHub-hosted runners and
+the proxy's read-only token. Without both settings, including on fork pull
+requests without secrets, CI runs with local Nx caching. These settings are
+optional and are not provisioned by the workflow.
+
+The proxy returns 403 for writes with a read-only token; Nx treats that as a
+read-only cache. CI cannot populate it, so hits depend on compatible entries
+published by trusted Linux builds. Keep write credentials out of PR jobs.
+
+Do not archive `.nx/cache` alone with `actions/cache`: Nx 23 also requires
+machine-specific database metadata. Use its HTTP cache for task results. The
+workflow separately persists Go's module/build cache and golangci-lint's native
+analysis cache, which remain useful when no shared Nx cache is configured.
+
 ### nx-cache-proxy environment variables
 
 | Variable               | Default      | Description                            |

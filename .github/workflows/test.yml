@@ -1,48 +1,104 @@
-name: Unit/Integration Tests
+name: Quality and tests
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   TESTCONTAINERS_PROVIDER: docker
   NX_DAEMON: "false"
+  GOTESTSUM_FORMAT: github-actions
 
 jobs:
-  test-backend:
-    name: ${{ matrix.name }}
+  quality:
+    name: Workspace checks
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 25
     env:
-      GOTESTSUM_FORMAT: github-actions
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - project: server
-            name: Test (server)
-            go-mod: server
-          - project: cli
-            name: CLI unit tests
-          - project: deploy-aio
-            name: Test (deploy-aio)
-            go-mod: deploy/aio
+      # Optional, read-only reuse of the existing HTTP cache. Forks and an
+      # unconfigured repository run the same checks with local caching only.
+      NX_SELF_HOSTED_REMOTE_CACHE_SERVER: ${{ secrets.NX_CACHE_READ_TOKEN != '' && vars.NX_SELF_HOSTED_REMOTE_CACHE_SERVER || '' }}
+      NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: ${{ secrets.NX_CACHE_READ_TOKEN }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Set up Go
-        if: matrix.go-mod != ''
         uses: actions/setup-go@v6
         with:
-          go-version-file: ${{ matrix.go-mod }}/go.mod
+          go-version-file: tools/golangci-lint/go.mod
           cache: true
-          cache-dependency-path: "**/go.sum"
+          cache-dependency-path: |
+            tools/golangci-lint/go.sum
+            server/go.sum
+            deploy/aio/go.sum
+            sdk/nx-cache-proxy/go.sum
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Set up Buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+          version: "1.75.0"
+
+      # Native analysis entries validate their own source/configuration hashes;
+      # restoring an older archive still helps on partially changed modules.
+      - name: Cache Go lint analysis
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/golangci-lint-cache
+          key: golangci-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/golangci-lint/**', 'tools/golangci-lint.mjs') }}-${{ github.sha }}
+          restore-keys: |
+            golangci-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/golangci-lint/**', 'tools/golangci-lint.mjs') }}-
+
+      - name: Install component-test browser
+        run: npx playwright install --with-deps chromium
+
+      # One task graph shares setup and collects every project's supported
+      # checks. CI checks source as submitted; local verify/fix handle rewrites.
+      - name: Check workspace
+        env:
+          GOLANGCI_LINT_CACHE: ${{ runner.temp }}/golangci-lint-cache
+        run: npx nx run ocm-fleet:check --parallel=3 --nxBail=false
+
+      - name: Check repository files stayed unchanged
+        if: ${{ !cancelled() }}
+        run: git diff --exit-code
+
+  integration:
+    name: Backend integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache: true
+          cache-dependency-path: server/go.sum
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -54,81 +110,21 @@ jobs:
         run: npm ci
 
       - name: Detect Docker host address for kind OIDC tests
-        if: matrix.project == 'server'
         run: echo "KIND_HOST_ADDR=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')" >> "$GITHUB_ENV"
 
-      - name: Run unit tests
-        run: npx nx test ${{ matrix.project }}
-
       - name: Run integration tests
-        if: matrix.project == 'server'
-        run: npx nx test-integration server
+        run: npx nx run server:test-integration
 
-  test-go-lint-tool:
-    name: Go lint tooling
+  # Require this stable check in branch protection. Explicit result checks keep
+  # a skipped or failed dependency from becoming a successful merge gate.
+  ci:
+    name: CI
+    if: ${{ always() }}
+    needs: [quality, integration]
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
+    timeout-minutes: 1
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: tools/golangci-lint/go.mod
-          cache: true
-          cache-dependency-path: tools/golangci-lint/go.sum
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install npm dependencies
-        run: npm ci
-
-      - name: Test Go lint tooling and configuration
-        run: npx nx run go-lint-tool:check
-
-      - name: Check repository files stayed unchanged
-        run: git diff --exit-code
-
-  test-ui:
-    name: UI Tests
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build common library
-        run: npx nx run common:build
-
-      - name: Unit tests (vitest)
-        run: npx nx run common:test
-
-      - name: Unit tests for e2e-cli (vitest)
-        run: npx nx run e2e-cli:test
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-
-      - name: Component tests (web)
-        run: npx nx run web:test:ct
-
-      - name: Component tests (plugins)
-        run: npx nx run plugins:test:ct
+      - name: Require all checks to pass
+        run: |
+          test "${{ needs.quality.result }}" = success
+          test "${{ needs.integration.result }}" = success

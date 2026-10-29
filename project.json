@@ -62,6 +62,7 @@
       "executor": "nx:noop",
       "dependsOn": [
         "lint:workspace",
+        "lint:format",
         {
           "projects": ["*", "!ocm-fleet"],
           "target": "lint"
@@ -69,6 +70,10 @@
         {
           "projects": ["*", "!ocm-fleet"],
           "target": "lint:css"
+        },
+        {
+          "projects": ["*", "!ocm-fleet"],
+          "target": "lint:format"
         }
       ],
       "cache": false
@@ -80,6 +85,7 @@
       "executor": "nx:noop",
       "dependsOn": [
         "lint:workspace",
+        "lint:format",
         "test:generate-agents",
         "test:eslint-config",
         "test:workspace-quality",
@@ -137,6 +143,25 @@
         "{workspaceRoot}/deploy/**/*.mjs",
         "{workspaceRoot}/*.mjs",
         "eslintConfig"
+      ],
+      "outputs": []
+    },
+    "lint:format": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "prettier --check --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" \"*.{json,yaml,yml,md,mjs}\" \".github/**/*.{yml,yaml,json,md}\" \"docs/**/*.{md,json,yaml,yml}\" \"tools/*.{mjs,md,json}\" \"scripts/**/*.{mjs,json,yaml,yml,md}\" \"deploy/**/*.{mjs,json,yaml,yml,md}\" \"e2e/{shared,sandbox}/**/*.{ts,mjs,json,md}\" --no-error-on-unmatched-pattern",
+        "forwardAllArgs": false
+      },
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/*.{json,yaml,yml,md,mjs}",
+        "{workspaceRoot}/.github/**/*.{yml,yaml,json,md}",
+        "{workspaceRoot}/docs/**/*.{md,json,yaml,yml}",
+        "{workspaceRoot}/tools/*.{mjs,md,json}",
+        "{workspaceRoot}/scripts/**/*.{mjs,json,yaml,yml,md}",
+        "{workspaceRoot}/deploy/**/*.{mjs,json,yaml,yml,md}",
+        "{workspaceRoot}/e2e/{shared,sandbox}/**/*.{ts,mjs,json,md}",
+        "formatConfig"
       ],
       "outputs": []
     },

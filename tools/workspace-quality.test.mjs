@@ -9,6 +9,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -18,6 +19,19 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 const repository = fileURLToPath(new URL("../", import.meta.url));
 const nx = join(repository, "node_modules/nx/dist/bin/nx.js");
+
+test("workspace Nx configuration matches the installed schema", async () => {
+  // Resolve the schema and validator from Nx so they follow its pinned version.
+  const requireNx = createRequire(import.meta.resolve("nx/package.json"));
+  const Ajv = requireNx("ajv");
+  const ajv = new Ajv({ allErrors: true, strict: false });
+  const validate = ajv.compile(requireNx("./schemas/nx-schema.json"));
+  assert.equal(
+    validate(await json("nx.json")),
+    true,
+    ajv.errorsText(validate.errors, { separator: "\n" }),
+  );
+});
 
 test("workspace verification formats Go, TypeScript, styles and protobuf before checks", async (t) => {
   const { root, task } = await fixture(t);
@@ -56,6 +70,37 @@ test("workspace lint is read-only and propagates findings", async (t) => {
   const source = await readFile(path, "utf8");
   await assert.rejects(task("lint"));
   assert.equal(await readFile(path, "utf8"), source);
+});
+
+test("format checks catch configuration and documentation drift without rewriting files", async (t) => {
+  const { root, task } = await fixture(t);
+  await task("fmt:workspace");
+  await task("fmt", "cli");
+  for (const [project, files] of [
+    ["cli", [["client/cli/settings.json", '{"value":1}\n']]],
+    [
+      "ocm-fleet",
+      [
+        ["docs/example.md", "#  Example\n"],
+        [".github/workflows/example.yaml", "name:   Example\n"],
+      ],
+    ],
+  ]) {
+    for (const [path, source] of files) {
+      await mkdir(dirname(join(root, path)), { recursive: true });
+      await writeFile(join(root, path), source);
+    }
+    await assert.rejects(task("lint:format", project));
+    for (const [path, source] of files) {
+      assert.equal(await readFile(join(root, path), "utf8"), source);
+    }
+    await task(project === "ocm-fleet" ? "fmt:workspace" : "fmt", project);
+    await task("lint:format", project);
+    // A prior success must not hide a subsequent formatting regression.
+    const [path, source] = files[0];
+    await writeFile(join(root, path), source);
+    await assert.rejects(task("lint:format", project));
+  }
 });
 
 test("fmt leaves broader fixes for fix and ignores generated files", async (t) => {
@@ -185,12 +230,20 @@ test("Nx checks include component tests and omit inferred end-to-end suites", as
     join(root, "e2e/cli/playwright.config.ts"),
   );
   const { tasks, dependencies } = await graph("check");
-  for (const target of ["lint", "lint:css", "test", "test:ct", "typecheck"]) {
+  for (const target of [
+    "lint",
+    "lint:format",
+    "lint:css",
+    "test",
+    "test:ct",
+    "typecheck",
+  ]) {
     assert.ok(dependencies["cli:check"].includes(`cli:${target}`));
   }
   for (const project of ["server", "proto", "cli", "e2e-cli"]) {
     assert.ok(dependencies["ocm-fleet:check"].includes(`${project}:check`));
   }
+  assert.ok(dependencies["ocm-fleet:check"].includes("ocm-fleet:lint:format"));
   assert.equal(Object.hasOwn(tasks, "e2e-cli:test:ct"), false);
   for (const task of Object.values(tasks)) {
     assert.equal(
@@ -271,6 +324,7 @@ async function fixture(t) {
       "fmt:workspace",
       "fix:workspace",
       "lint:workspace",
+      "lint:format",
       "refresh:inputs",
     ].map((name) => [name, workspace.targets[name]]),
   );
@@ -314,9 +368,16 @@ async function fixture(t) {
   );
   const cli = await json("client/cli/project.json");
   const cliTargets = Object.fromEntries(
-    ["fmt", "verify", "fix", "fix:lint", "refresh:inputs", "check", "lint"].map(
-      (name) => [name, cli.targets[name]],
-    ),
+    [
+      "fmt",
+      "verify",
+      "fix",
+      "fix:lint",
+      "refresh:inputs",
+      "check",
+      "lint",
+      "lint:format",
+    ].map((name) => [name, cli.targets[name]]),
   );
   cliTargets["lint:css"] = {
     executor: "nx:run-commands",

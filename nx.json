@@ -66,6 +66,15 @@
       {
         "runtime": "go env GOVERSION GOOS GOARCH CGO_ENABLED GOFLAGS GOEXPERIMENT GOTOOLCHAIN CC CXX CGO_CFLAGS CGO_CPPFLAGS CGO_CXXFLAGS CGO_LDFLAGS"
       }
+    ],
+    "formatConfig": [
+      "{workspaceRoot}/.gitignore",
+      "{workspaceRoot}/.prettierignore",
+      "{workspaceRoot}/.prettierrc*",
+      "{workspaceRoot}/prettier.config.*",
+      "{workspaceRoot}/.editorconfig",
+      "{workspaceRoot}/package.json",
+      "jsRuntime"
     ]
   },
   "targetDefaults": {
@@ -267,7 +276,14 @@
           "description": "Run the project's lint, style, normal test, component test, and type checks without rewriting source."
         },
         "executor": "nx:noop",
-        "dependsOn": ["lint", "lint:css", "test", "test:ct", "typecheck"],
+        "dependsOn": [
+          "lint",
+          "lint:format",
+          "lint:css",
+          "test",
+          "test:ct",
+          "typecheck"
+        ],
         "cache": false
       }
     ],
@@ -300,6 +316,25 @@
         },
         "cache": true,
         "inputs": ["goSource", "goLintConfig"],
+        "outputs": []
+      }
+    ],
+    "lint:format": [
+      {
+        "filter": {
+          "projects": ["tag:type:js-project"]
+        },
+        "metadata": {
+          "description": "Check project formatting without rewriting source."
+        },
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "prettier --check --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" .",
+          "cwd": "{projectRoot}",
+          "forwardAllArgs": false
+        },
+        "cache": true,
+        "inputs": ["default", "formatConfig"],
         "outputs": []
       }
     ],

@@ -140,11 +140,13 @@ tests. Integration and end-to-end suites remain explicit.
 Local verification fixes formatting and imports automatically. Broader ESLint,
 stylelint, and Go linter rewrites require `fix`; review its diff. Both workflows
 finish with checks and fail if findings or test failures remain. Existing lint
-backlogs remain; these tasks do not enable CI enforcement.
+backlogs have scoped, temporary exclusions tracked in
+[FM-144](https://redhat.atlassian.net/browse/FM-144); unsuppressed lint errors fail CI.
+Existing ESLint warning severities are unchanged.
 
 Shared lifecycle definitions live in `nx.json`, scoped to `type:go-module`,
 `type:js-project`, and `lang:proto` as appropriate. Projects opt in with target
-entries in their Nx configuration. `check` collects available lint, style, test,
+entries in their Nx configuration. `check` collects available lint, formatting, style, test,
 component test, and typecheck targets; `fix:lint` applies broader fixes before
 that check. Nx handles project selection and ordering without a task wrapper.
 Generated files and analyzer `testdata` fixtures retain their formatting;
@@ -170,9 +172,18 @@ sources included in their cache keys. Component tests consume source directly,
 so they generate the icon manifest but skip production builds. Server tests,
 including Postgres checks, are cached against source, assets, dependencies, and
 Go/test settings. Use `npx nx run server:test --skip-nx-cache` for a fresh run.
-CI uses checks without source rewrites and tests the tooling and configuration;
-application cleanup and CI lint enforcement remain deferred. Lint reports all
-unsuppressed findings and fails when issues remain.
+CI runs `ocm-fleet:check` once, without source rewrites: application and tooling
+linters, formatting (including shared configuration and docs), normal tests,
+component tests, and available type checks. Backend integration tests run in a
+parallel job; end-to-end tests retain their separate workflow. The final `CI`
+check fails if either quality job fails or is skipped. After the workflow's first
+run, add `CI` to main's required status checks alongside the existing image checks.
+
+Go compilation/modules, npm downloads, and golangci-lint analysis are cached across
+CI runs. Nx shares setup within the job; optional HTTP caching can also reuse
+task results across runners (see [cache setup](docs/nx-remote-cache.md#github-actions)).
+CI limits Nx to three concurrent tasks, avoids production builds for component
+tests, and cancels superseded pull-request runs. No cache is required to pass.
 
 To update the linter, select an explicit stable v2 release:
 

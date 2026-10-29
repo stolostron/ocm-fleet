@@ -29,6 +29,7 @@
         "lintFilePatterns": ["{projectRoot}/src/**/*.{ts,tsx}"]
       }
     },
-    "test": {}
+    "test": {},
+    "lint:format": {}
   }
 }
