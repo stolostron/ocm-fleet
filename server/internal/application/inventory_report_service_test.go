@@ -1,13 +1,12 @@
 package application_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
-
-	"context"
 
 	"github.com/stolostron/ocm-fleet/server/internal/application"
 	"github.com/stolostron/ocm-fleet/server/internal/domain"

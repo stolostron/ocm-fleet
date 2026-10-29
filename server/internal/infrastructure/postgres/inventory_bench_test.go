@@ -60,6 +60,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
 )
 
