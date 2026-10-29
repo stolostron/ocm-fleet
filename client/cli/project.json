@@ -37,24 +37,6 @@
         "cwd": "client/cli"
       }
     },
-    "e2e": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "dependsOn": ["build", "node-plugin:build"],
-      "inputs": [
-        "{projectRoot}/e2e/**/*",
-        "{projectRoot}/src/**/*",
-        "{projectRoot}/rspack.config.ts",
-        "{projectRoot}/package.json",
-        "{workspaceRoot}/package-lock.json",
-        "{workspaceRoot}/sdk/node-plugin/src/**/*",
-        "{workspaceRoot}/sdk/node-plugin/package.json"
-      ],
-      "options": {
-        "command": "node e2e/run.mjs",
-        "cwd": "client/cli"
-      }
-    },
     "typecheck": {
       "executor": "nx:run-commands",
       "cache": true,
@@ -70,9 +52,9 @@
     },
     "lint": {
       "executor": "nx:run-commands",
-      "inputs": ["uiSource", "eslintConfig", "{projectRoot}/e2e/**/*"],
+      "inputs": ["uiSource", "eslintConfig"],
       "options": {
-        "command": "eslint \"client/cli/src/**/*.{ts,tsx}\" \"client/cli/e2e/**/*.{js,mjs,tsx}\"",
+        "command": "eslint \"client/cli/src/**/*.{ts,tsx}\"",
         "cwd": "."
       }
     }

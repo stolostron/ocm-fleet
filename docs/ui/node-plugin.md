@@ -83,7 +83,7 @@ this adds no asset-source contract or Fleet host integration.
 
 This package produces remotes only; the CLI host and runtime integration live in
 `client/cli`. The package is `private`; it is not included in publication or
-release workflows. The production [`cli:e2e` acceptance target](../../client/cli/README.md#node-federation-plugin-acceptance)
+release workflows. The production [`e2e-cli:test:plugin` acceptance target](../../client/cli/README.md#node-federation-plugin-acceptance)
 executes the built CLI with a remote produced by this package. It exercises the
 Scalprum Node loader, Enhanced remote registration/initialization, manifest
 validation through `getModule`, asset URL transformation, command module loading,

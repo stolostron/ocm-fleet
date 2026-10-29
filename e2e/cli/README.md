@@ -54,6 +54,19 @@ npx nx lint e2e-cli
 npx nx test e2e-cli
 ```
 
+Run the production Node federation plugin acceptance suite without AIO, Podman,
+Kind, or a production registry:
+
+```bash
+npx nx run e2e-cli:test:plugin
+```
+
+This target builds the production CLI and Node remote, serves its manifest and
+assets from an ephemeral localhost HTTP server, then executes the built
+`fleetctl`. The suite covers manifest validation, transformed asset URLs,
+remote readiness/initialization, live Ink rendering, failed-entry handling,
+readiness retry, and nullish module exports.
+
 Fleetctl state, copied CAs, manifests, and login state live in a private OS
 temporary directory that is removed during teardown. Login traces,
 screenshots, and videos are disabled. Never print or upload authorization

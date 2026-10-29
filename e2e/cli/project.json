@@ -24,10 +24,11 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "eslint \"e2e/cli/**/*.ts\" \"e2e/shared/**/*.ts\" \"e2e/sandbox/**/*.mjs\""
+        "command": "eslint \"e2e/cli/**/*.ts\" \"e2e/cli/plugin/**/*.{mjs,ts,tsx}\" \"e2e/shared/**/*.ts\" \"e2e/sandbox/**/*.mjs\""
       },
       "inputs": [
         "{projectRoot}/**/*.ts",
+        "{projectRoot}/plugin/**/*",
         "{workspaceRoot}/e2e/shared/**/*.ts",
         "{workspaceRoot}/e2e/sandbox/**/*.mjs",
         "{workspaceRoot}/eslint.config.mjs"
@@ -42,6 +43,25 @@
       },
       "dependsOn": ["cli:build"],
       "cache": false
+    },
+    "test:plugin": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["cli:build", "node-plugin:build"],
+      "inputs": [
+        "{projectRoot}/plugin/**/*",
+        "{workspaceRoot}/client/cli/src/**/*",
+        "{workspaceRoot}/client/cli/package.json",
+        "{workspaceRoot}/client/cli/rspack.config.ts",
+        "{workspaceRoot}/client/cli/tsconfig.json",
+        "{workspaceRoot}/package-lock.json",
+        "{workspaceRoot}/sdk/node-plugin/src/**/*",
+        "{workspaceRoot}/sdk/node-plugin/package.json",
+        "{workspaceRoot}/sdk/node-plugin/tsconfig.json"
+      ],
+      "options": {
+        "command": "node plugin/run.mjs",
+        "cwd": "e2e/cli"
+      }
     }
   }
 }

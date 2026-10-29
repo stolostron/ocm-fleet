@@ -11,10 +11,9 @@ import { NodeRemotePlugin } from "@ocm-fleet/node-plugin";
 import rspack from "@rspack/core";
 
 const execFileAsync = promisify(execFile);
-const cliRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-);
+const pluginRoot = path.dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = path.resolve(pluginRoot, "../../..");
+const cliRoot = path.join(workspaceRoot, "client/cli");
 const scratch = await mkdtemp(path.join(os.tmpdir(), "fleetctl-plugin-e2e-"));
 const remotePath = path.join(scratch, "remote");
 const binary = path.join(cliRoot, "bin/fleetctl");
@@ -62,7 +61,7 @@ function transpileTsxRule() {
 
 async function buildRemote() {
   await build({
-    context: cliRoot,
+    context: workspaceRoot,
     mode: "production",
     target: "async-node",
     entry: {},
@@ -77,9 +76,9 @@ async function buildRemote() {
           name: remoteName,
           version: "1.0.0",
           exposedModules: {
-            command: "./e2e/remote-command.tsx",
-            "command-null": "./e2e/remote-null.ts",
-            "command-undefined": "./e2e/remote-undefined.ts",
+            command: "./e2e/cli/plugin/remote-command.tsx",
+            "command-null": "./e2e/cli/plugin/remote-null.ts",
+            "command-undefined": "./e2e/cli/plugin/remote-undefined.ts",
           },
         },
         extensions: [{ type: "cli.command", properties: { id: "fixture" } }],

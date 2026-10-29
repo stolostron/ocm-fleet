@@ -417,7 +417,8 @@ The CLI now supports explicit Node federation plugin execution through
 `@scalprum/node-loader`, and Enhanced's Node runtime to load remotes produced by
 `@ocm-fleet/node-plugin`. `FLEETCTL_PLUGIN_BASE_URL` supplies the manifest and
 asset base; automatic registry discovery is not implemented. The production
-acceptance coverage lives in `client/cli/e2e/`.
+acceptance coverage lives in `e2e/cli/plugin/` and is run by
+`e2e-cli:test:plugin`.
 
 The CLI and web runtimes share Scalprum's plugin-store model, while their loader
 and federation runtimes are target-specific. The longer-term target remains a
