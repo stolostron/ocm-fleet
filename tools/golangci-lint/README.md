@@ -87,6 +87,13 @@ verification still runs and fails if those findings or test failures remain.
 `lint:go` remains a check without source edits for CI and other callers that need
 that behavior.
 
+`goimports` owns import layout and adds missing imports or removes unused ones;
+repository imports form a local group after other dependencies. OCM imports use
+the normal third-party group. We retain `gofmt` for its standard simplifications.
+We dropped `gci` because it removes spacing before some import comments that
+`goimports` requires, leaving formatted code that still fails lint. Reordering
+the formatters cannot reconcile their independent checks.
+
 Source-rewriting tasks are uncached. They finish editing before starting a fresh
 Nx invocation for lint and tests, ensuring checks hash the resulting source.
 The tool build and individual checks retain their normal cache settings.

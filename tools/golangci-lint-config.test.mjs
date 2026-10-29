@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -35,6 +35,68 @@ test("validates the shared config with our pinned linter", async () => {
 test("accepts formatted Go code with checked errors", async (t) => {
   const { lint } = await fixture(t);
   await assert.doesNotReject(lint());
+});
+
+test("formatting preserves registration comments and produces lint-clean, stable imports", async (t) => {
+  const { directory, lint } = await fixture(t);
+  // A local dependency reproduces third-party import grouping without downloads.
+  await writeFile(
+    join(directory, "go.mod"),
+    "module github.com/stolostron/ocm-fleet/lintfixture\n\ngo 1.26.0\n\nrequire example.com/dependency v0.0.0\n\nreplace example.com/dependency => ./dependency\n",
+  );
+  await mkdir(join(directory, "dependency"));
+  await writeFile(
+    join(directory, "dependency/go.mod"),
+    "module example.com/dependency\n\ngo 1.26.0\n",
+  );
+  for (const name of ["first", "parser", "second", "registration"]) {
+    await mkdir(join(directory, "dependency", name));
+    await writeFile(
+      join(directory, "dependency", name, "value.go"),
+      `package ${name}\n\nfunc Value(value int) int { return value }\n`,
+    );
+  }
+  const path = join(directory, "main.go");
+  // Two third-party imports before the registration comment trigger the conflict.
+  await writeFile(
+    path,
+    `package lintfixture
+
+import (
+    "fmt"
+    "os"
+
+    "example.com/dependency/first"
+    "example.com/dependency/parser"
+    // Register custom handlers for their initialization side effects.
+    _ "example.com/dependency/registration"
+    "example.com/dependency/second"
+)
+
+func Check(value int) string {return fmt.Sprint(first.Value(value) + parser.Value(value) + second.Value(value))}
+
+func Label(value int) string {return strconv.Itoa(value)}
+`,
+  );
+  const format = () =>
+    run(binary, ["fmt", "--config", config, "./..."], {
+      cwd: directory,
+      env: { ...process.env, GOWORK: "off" },
+    });
+
+  await format();
+  const formatted = await readFile(path, "utf8");
+  assert.match(formatted, /\/\/ Register custom handlers/);
+  assert.match(formatted, /"strconv"/);
+  assert.equal(formatted.includes('"os"'), false);
+  await assert.doesNotReject(
+    lint().catch((error) => {
+      t.diagnostic(error.stdout + error.stderr);
+      throw error;
+    }),
+  );
+  await format();
+  assert.equal(await readFile(path, "utf8"), formatted);
 });
 
 test("loads packages with its build toolchain despite an ambient override", async (t) => {
@@ -249,7 +311,7 @@ test("reports formatting issues without modifying sources", async (t) => {
     assert.equal(error.code, 1);
     assert.match(
       error.stdout + error.stderr,
-      /File is not properly formatted \((?:gci|gofmt|goimports)\)/,
+      /File is not properly formatted \((?:gofmt|goimports)\)/,
     );
     return true;
   });

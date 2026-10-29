@@ -18,8 +18,8 @@ formatters:
     # Keep source-rewriting commands aligned with the linter's generated policy.
     generated: strict
   enable:
-    - gci
     - gofmt
+    # Let one tool own import layout: gci disagrees about import-comment spacing.
     - goimports
   settings:
     gofmt:
@@ -29,14 +29,6 @@ formatters:
       # Group this repository's imports after third-party packages.
       local-prefixes:
         - github.com/stolostron/ocm-fleet/
-    gci:
-      # Keep OCM dependencies distinct and the current module's imports last.
-      sections:
-        - standard
-        - default
-        - prefix(open-cluster-management.io)
-        - localmodule
-      custom-order: true
 
 linters:
   # Use standard linters and their stock Staticcheck check selection.
