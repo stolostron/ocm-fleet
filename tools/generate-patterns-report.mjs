@@ -20,7 +20,9 @@ const w = (s = "") => lines.push(s);
 
 w("# Resource Patterns Report");
 w();
-w(`> Auto-generated from \`resource-patterns.json\` — **${d.totalCount}** resources analyzed.`);
+w(
+  `> Auto-generated from \`resource-patterns.json\` — **${d.totalCount}** resources analyzed.`,
+);
 w();
 
 // ── Resource Type Summary ────────────────────────────────────────────
@@ -82,7 +84,9 @@ if (kinds) {
   w("## Kubernetes Object Kinds");
   w();
   const entries = Object.entries(kinds);
-  w(`**${entries.length} distinct kinds** across ${d.resourceTypes["kubernetes.open-cluster-management.io/Object"]?.count ?? "?"} objects.`);
+  w(
+    `**${entries.length} distinct kinds** across ${d.resourceTypes["kubernetes.open-cluster-management.io/Object"]?.count ?? "?"} objects.`,
+  );
   w();
   w("| Kind | Count |");
   w("|------|------:|");
@@ -155,7 +159,9 @@ const extracted = d.crossTypePatterns?.extractedFieldsByKind;
 if (extracted) {
   w("## Extracted Fields by Kind");
   w();
-  w("These are kind-specific fields surfaced by the backend into `resource.observation.extracted`.");
+  w(
+    "These are kind-specific fields surfaced by the backend into `resource.observation.extracted`.",
+  );
   w();
 
   for (const [kind, fields] of Object.entries(extracted)) {
@@ -166,9 +172,13 @@ if (extracted) {
     for (const [field, vals] of Object.entries(fields)) {
       let display;
       if (Array.isArray(vals)) {
-        display = vals.length <= 8
-          ? vals.map((v) => `\`${v}\``).join(", ")
-          : vals.slice(0, 6).map((v) => `\`${v}\``).join(", ") + `, ... (${vals.length} total)`;
+        display =
+          vals.length <= 8
+            ? vals.map((v) => `\`${v}\``).join(", ")
+            : vals
+                .slice(0, 6)
+                .map((v) => `\`${v}\``)
+                .join(", ") + `, ... (${vals.length} total)`;
       } else {
         display = `${vals.distinctCount} distinct values`;
       }
@@ -194,8 +204,10 @@ if (dims) {
     for (const item of items) {
       let info = "";
       if (item.values) info = item.values.map((v) => `\`${v}\``).join(", ");
-      else if (item.distinctCount) info = `${item.distinctCount} distinct values`;
-      if (item.description) info += info ? ` — ${item.description}` : item.description;
+      else if (item.distinctCount)
+        info = `${item.distinctCount} distinct values`;
+      if (item.description)
+        info += info ? ` — ${item.description}` : item.description;
       if (item.forKinds) info += ` (${item.forKinds.join(", ")})`;
       w(`| \`${item.field}\` | ${info} |`);
     }

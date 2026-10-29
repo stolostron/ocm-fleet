@@ -91,7 +91,7 @@ The inventory shape is designed to balance well-structured data the platform and
 
 - **Identity**: resource type and name, following AIP resource names. The full resource name includes the extension's service name (e.g. `//kubernetes.open-cluster-management.io/clusters/foo/namespaces/bar/objects/apps.v1.Deployment.nginx`). The relative resource name links to the platform resource identity.
   - This necessarily includes the **Parent** resource, if any.
-- **Aliases**: namespaced key:value pairs for alternate identifiers. These solve the problem of relating to a resource where you do not know the canonical platform-defined resource name. Inventory reporting may contribute aliases, but the linked platform resource remains the canonical owner of the aggregated, *accepted* alias set used for cross-extension identity correlation (see [resource_identity_and_api.md](resource_identity_and_api.md#aliases)).
+- **Aliases**: namespaced key:value pairs for alternate identifiers. These solve the problem of relating to a resource where you do not know the canonical platform-defined resource name. Inventory reporting may contribute aliases, but the linked platform resource remains the canonical owner of the aggregated, _accepted_ alias set used for cross-extension identity correlation (see [resource_identity_and_api.md](resource_identity_and_api.md#aliases)).
 - **Relationships**: semantic links between different platform resource identities (e.g. Pod → Service, Node → Cluster). These are modeled on the platform resource and follow the relationship model described in [resource_identity_and_api.md](resource_identity_and_api.md#semantic-relationships). Inventory reporting may contribute relationship facts, but the platform resource remains the canonical owner of the aggregated relationship graph.
   - In the future these may drive relationship-based access control, as well as general-purpose relational queries.
   - Relationships should be able to be defined using aliases.
@@ -126,16 +126,14 @@ Inventoried resources are extension resources in their addon's own package, with
 
 Identity correlation across extensions works through:
 
-1. **Shared relative name**: if an extension registers into the same platform identity domain and uses the same relative name (e.g. `clusters/foo`), it links to the existing identity automatically. 
-2. **Alias correlation**: if an extension doesn't know the canonical name, it can only resolve a report to an *existing* identity today by asserting an alias that identity has already accepted (see [resource_identity_and_api.md](resource_identity_and_api.md#aliases)). Newly reported aliases are stored as pending assertions on the reporting extension resource, not synchronously checked against or folded into the platform resource's accepted alias set -- accepting or conflict-flagging a pending alias is deferred to a future asynchronous reconciliation process.
+1. **Shared relative name**: if an extension registers into the same platform identity domain and uses the same relative name (e.g. `clusters/foo`), it links to the existing identity automatically.
+2. **Alias correlation**: if an extension doesn't know the canonical name, it can only resolve a report to an _existing_ identity today by asserting an alias that identity has already accepted (see [resource_identity_and_api.md](resource_identity_and_api.md#aliases)). Newly reported aliases are stored as pending assertions on the reporting extension resource, not synchronously checked against or folded into the platform resource's accepted alias set -- accepting or conflict-flagging a pending alias is deferred to a future asynchronous reconciliation process.
 
 ### What if there is no matching resource?
 
 If an addon reports about a resource and no matching platform identity exists by name, the platform creates the platform resource implicitly (if the addon is authorized to establish identity in that domain). If an addon reports only aliases and none of them match an already-accepted identity, the resource should be held in some kind of "inbox," to be resolved later (by user or later report).
 
 Whether the assigning operator is the provider or a tenant depends on who is importing the resource. Trusted addons can offer a tenant association; otherwise it defaults to the provider tenant.
-
-
 
 ## What gets indexed
 
@@ -171,13 +169,11 @@ Representative scale assumptions for a typical production Kubernetes target:
 - around 100 events per minute in steady state
 - roughly 500 B to 1 KB per indexed representation
 
-
 | Fleet size    | Indexed resources | Index storage | Write rate | Per-fleetlet bandwidth |
 | ------------- | ----------------- | ------------- | ---------- | ---------------------- |
 | 50 targets    | 550K              | ~550 MB       | ~80/sec    | ~1.6 KB/s              |
 | 500 targets   | 5.5M              | ~5.5 GB       | ~780/sec   | ~1.6 KB/s              |
 | 2,000 targets | 22M               | ~22 GB        | ~3,100/sec | ~1.6 KB/s              |
-
 
 The steady-state fleetlet bandwidth is modest. The platform-side index service is the real bottleneck consideration rather than the fleetlet link.
 
@@ -221,7 +217,6 @@ GET /apis/open-cluster-management.io/v1alpha/{scope}:queryResources?filter={cel_
 - **Response**: each hit is `name`, `resourceType`, and a body matching the dynamic extension-resource Get/List envelope for that type — the same platform-held fields, not a reduced search DTO.
 
 Fully realized, the same method covers a broader set of platform-held resource shapes (platform aggregates, inventoried and managed resources, and other inventory-held types), still filtered with CEL and still scoped through the hierarchy. Filters may limit results to specific resource types or extensions. RBAC is enforced by the platform, so users only see resources they are authorized to access.
-
 
 `queryResources` returns the same platform-held resource data as typed Get/List for those hits — it queries the resources. Selectivity lives in what reporters extract and send to the platform (schemas define that extraction); once data is on the platform, query and direct get see the same thing. Reaching beyond what was reported (full live objects on a target) is a different path: API proxying or addon-specific APIs, not a richer variant of this search surface. See [resource_identity_and_api.md](resource_identity_and_api.md#inventory-search-api) for how this fits into the overall API model.
 

@@ -75,14 +75,14 @@ Runtime behavior is composition, not generic overrides. The shared layer carries
 
 Review each candidate for runtime neutrality and intended audience before choosing its location.
 
-| Candidate | Shared part | Runtime-specific part |
-| --- | --- | --- |
-| REST API client | request/response types, paths, error parsing | browser/Undici transport, auth injection, CA handling |
-| Plugins | identity and capability metadata | Scalprum/assets, Web routes, CLI commands, Ink screens |
-| Search | fields, operators, dynamic hints, result metadata | browser indexing and UI/TUI interaction |
-| Navigation | stable capability IDs, labels, hierarchy if proven useful | PatternFly icons, browser URLs, Ink screens and `MemoryRouter` paths |
-| Signing | canonical payload construction and signer contract | browser cryptography, keychain/local-agent access, key storage |
-| Localization | message IDs, catalog shape, interpolation, fallback rules | locale source, catalog loading, React/Ink presentation |
+| Candidate       | Shared part                                               | Runtime-specific part                                                |
+| --------------- | --------------------------------------------------------- | -------------------------------------------------------------------- |
+| REST API client | request/response types, paths, error parsing              | browser/Undici transport, auth injection, CA handling                |
+| Plugins         | identity and capability metadata                          | Scalprum/assets, Web routes, CLI commands, Ink screens               |
+| Search          | fields, operators, dynamic hints, result metadata         | browser indexing and UI/TUI interaction                              |
+| Navigation      | stable capability IDs, labels, hierarchy if proven useful | PatternFly icons, browser URLs, Ink screens and `MemoryRouter` paths |
+| Signing         | canonical payload construction and signer contract        | browser cryptography, keychain/local-agent access, key storage       |
+| Localization    | message IDs, catalog shape, interpolation, fallback rules | locale source, catalog loading, React/Ink presentation               |
 
 Current `sdk/common` already contains reusable REST and API types alongside React-oriented exports. Reuse of the REST client does not mean every current export is a public SDK. Move only confirmed, runtime-neutral behavior into `client/shared`; package/public-SDK decisions require separate stability and versioning work.
 

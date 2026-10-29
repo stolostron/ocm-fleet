@@ -10,10 +10,10 @@ The server must trust the issuer and API access-token audience. See [AIO configu
 
 The shell projects identity from standard OIDC claims:
 
-| Shell value | Source |
-| --- | --- |
-| `id` | `sub` |
-| `username` | First nonempty string among `preferred_username`, `email`, `name`, then `sub` |
+| Shell value    | Source                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------- |
+| `id`           | `sub`                                                                                       |
+| `username`     | First nonempty string among `preferred_username`, `email`, `name`, then `sub`               |
 | `display_name` | Capitalized `preferred_username` when present; otherwise `name`, then the resolved username |
 
 Optional display claims are trimmed; empty or non-string values are ignored. The shell does not infer local `ops`/`dev` roles from `realm_access` or another provider-specific role claim. Display claims and navigation visibility do not establish API permissions. Issuer-scoped identity and authorization are server concerns; see the [authentication design](../design/authentication.md).

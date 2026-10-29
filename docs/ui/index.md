@@ -8,21 +8,21 @@ This documentation describes verified implementation and explicitly identified p
 
 Start with [Plugin System](plugin-system.md) to understand how domain plugins extend a generic shell, including packages, build output, and bootstrap. The resource manager currently reads a build-generated local registry and serves the packaged frontend under `/app`. Cluster discovery does not currently select the plugin set.
 
-| Reference | Why / read for |
-| --- | --- |
-| [Plugin discovery and asset distribution](plugin-discovery.md) | Identify available contributions; distinguish registry metadata, asset sources, target signals, and planned distribution |
-| [Authentication](authentication.md) | Configure OIDC login and understand console identity projection |
-| [Node remote producer](node-plugin.md) | Build Node-targeted Module Federation remotes with the private Rspack SDK producer |
-| [Feature contracts](feature-contracts.md) | Make independent contributions predictable; read for extension metadata, composition, routing, and feature search |
-| [Routes and route groups](route-groups.md) | Make new pages discoverable by default; read for generated links, grouping, visibility, ordering, and identity limits |
-| [Extension validation](extension-validation.md) | Catch incompatible contributions; distinguish current build/SDK/consumer checks from proposed host-owned runtime validation |
-| [Navigation customization](nav-customization.md) | Organize frequent tasks without changing URLs; read for browser-local overrides, reconciliation, reset behavior, and limits |
-| [Search-result renderers](search-result-renderer-contract.md) | Separate inventory retrieval from domain display and links; read for renderer contracts, query policy, and fallbacks |
-| [Advanced CEL search](cel-advanced-search.md) | Express precise fleet filters; read for editing, execution, history, and future inventory-driven discovery/cache |
-| [API access](api-requirements.md) | Query fleet inventory without browser fan-out; distinguish current resource APIs from intended live-target access |
-| [Cross-plugin navigation](cross-plugin-navigation.md) | Decouple links from destination URLs and handle missing optional pages; read for scope/module resolution and helper limits |
-| [State management](state-management.md) | Avoid accidental coupling and shared-cache assumptions; read for consumer-local state and explicitly shared stores/subscriptions |
-| [Dashboard and navigation customization](customization.md) | Tailor existing views to user tasks; read for bounded widget/layout changes and local persistence |
+| Reference                                                      | Why / read for                                                                                                                   |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| [Plugin discovery and asset distribution](plugin-discovery.md) | Identify available contributions; distinguish registry metadata, asset sources, target signals, and planned distribution         |
+| [Authentication](authentication.md)                            | Configure OIDC login and understand console identity projection                                                                  |
+| [Node remote producer](node-plugin.md)                         | Build Node-targeted Module Federation remotes with the private Rspack SDK producer                                               |
+| [Feature contracts](feature-contracts.md)                      | Make independent contributions predictable; read for extension metadata, composition, routing, and feature search                |
+| [Routes and route groups](route-groups.md)                     | Make new pages discoverable by default; read for generated links, grouping, visibility, ordering, and identity limits            |
+| [Extension validation](extension-validation.md)                | Catch incompatible contributions; distinguish current build/SDK/consumer checks from proposed host-owned runtime validation      |
+| [Navigation customization](nav-customization.md)               | Organize frequent tasks without changing URLs; read for browser-local overrides, reconciliation, reset behavior, and limits      |
+| [Search-result renderers](search-result-renderer-contract.md)  | Separate inventory retrieval from domain display and links; read for renderer contracts, query policy, and fallbacks             |
+| [Advanced CEL search](cel-advanced-search.md)                  | Express precise fleet filters; read for editing, execution, history, and future inventory-driven discovery/cache                 |
+| [API access](api-requirements.md)                              | Query fleet inventory without browser fan-out; distinguish current resource APIs from intended live-target access                |
+| [Cross-plugin navigation](cross-plugin-navigation.md)          | Decouple links from destination URLs and handle missing optional pages; read for scope/module resolution and helper limits       |
+| [State management](state-management.md)                        | Avoid accidental coupling and shared-cache assumptions; read for consumer-local state and explicitly shared stores/subscriptions |
+| [Dashboard and navigation customization](customization.md)     | Tailor existing views to user tasks; read for bounded widget/layout changes and local persistence                                |
 
 Source-linked references live directly in `docs/ui/` and document implemented behavior and important gaps, with future sections explicitly marked. Remaining files under `spikes/` are outside the current UI reference set: CLI proposals or retired link stubs. They are not active UI implementation documentation.
 

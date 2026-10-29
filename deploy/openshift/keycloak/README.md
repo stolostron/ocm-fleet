@@ -72,20 +72,20 @@ oc get secret keycloak-initial-admin -n keycloak-prod \
 
 ## Clients
 
-| Client ID | Type | Purpose |
-|---|---|---|
-| `resource-manager` | Confidential (no flows) | Resource server — audience target and role container |
-| `ocm-fleet-console` | Public | UI authentication |
-| `fleetctl` | Public | CLI authentication + device auth |
-| `resource-manager-signing` | Public | Key enrollment / attestation |
-| `ocp-console` | Confidential | OCP console OIDC login |
+| Client ID                  | Type                    | Purpose                                              |
+| -------------------------- | ----------------------- | ---------------------------------------------------- |
+| `resource-manager`         | Confidential (no flows) | Resource server — audience target and role container |
+| `ocm-fleet-console`        | Public                  | UI authentication                                    |
+| `fleetctl`                 | Public                  | CLI authentication + device auth                     |
+| `resource-manager-signing` | Public                  | Key enrollment / attestation                         |
+| `ocp-console`              | Confidential            | OCP console OIDC login                               |
 
 ## Realm Users
 
-| Username | Roles | Password |
-|---|---|---|
-| `ops` | ops | Generated at deploy time |
-| `dev` | dev | Generated at deploy time |
-| `admin` | ops, dev | Generated at deploy time |
+| Username | Roles    | Password                 |
+| -------- | -------- | ------------------------ |
+| `ops`    | ops      | Generated at deploy time |
+| `dev`    | dev      | Generated at deploy time |
+| `admin`  | ops, dev | Generated at deploy time |
 
 Test user passwords are printed once during deploy and are not stored in a Kubernetes secret.

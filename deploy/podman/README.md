@@ -73,18 +73,18 @@ Changing `.env` and restarting does not replace a persisted AuthMethod; configur
 
 Commands for this Podman stack use Nx `deploy:podman:*` targets.
 
-| Task | Description |
-|------|-------------|
-| `deploy:podman:up` | Start the AIO stack (prebuilt image) |
-| `deploy:podman:dev` | Build the AIO image from source, then up |
-| `deploy:podman:down` | Stop containers, preserve data |
-| `deploy:podman:clean` | Stop + delete volumes and `.certs` |
-| `deploy:podman:rebuild` | Stop, rebuild the AIO image, restart |
-| `image:aio` | Build the AIO image without restarting |
-| `deploy:podman:pull` | Pull the latest all-in-one image |
-| `deploy:podman:logs` | Follow logs from all containers |
-| `deploy:podman:status` | Show running containers |
-| `deploy:podman:clock-drift` | Check Podman machine clock drift |
+| Task                        | Description                              |
+| --------------------------- | ---------------------------------------- |
+| `deploy:podman:up`          | Start the AIO stack (prebuilt image)     |
+| `deploy:podman:dev`         | Build the AIO image from source, then up |
+| `deploy:podman:down`        | Stop containers, preserve data           |
+| `deploy:podman:clean`       | Stop + delete volumes and `.certs`       |
+| `deploy:podman:rebuild`     | Stop, rebuild the AIO image, restart     |
+| `image:aio`                 | Build the AIO image without restarting   |
+| `deploy:podman:pull`        | Pull the latest all-in-one image         |
+| `deploy:podman:logs`        | Follow logs from all containers          |
+| `deploy:podman:status`      | Show running containers                  |
+| `deploy:podman:clock-drift` | Check Podman machine clock drift         |
 
 ## Full Stack Dev Mode
 

@@ -105,15 +105,15 @@ Sources: [validator](../../client/web/src/components/Search/advanced/celValidato
 
 Use the [QueryResources CEL reference](../query-resources-cel-filters.md) for the complete supported subset, missing-field behavior, and value rules. Important distinctions for UI authors are:
 
-| Topic | Current semantics |
-|-------|-------------------|
-| Envelope variables | `name`, `resourceType`, and `resource` |
-| Field spelling | Canonical ProtoJSON names; `resourceType`, not `resource_type` |
-| Managed counters | `intentVersion` and `generation` are decimal strings, not numeric literals |
-| Timestamps | Response strings; wrap both operands in `timestamp()` for instant comparisons |
-| Presence | `has(resource.labels.team)` accepts a select; `has(resource.labels["team"])` is not supported |
-| Membership | Both value-list membership and string-key container membership are supported |
-| Resource fields | Availability depends on capabilities and the projected resource body |
+| Topic              | Current semantics                                                                             |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| Envelope variables | `name`, `resourceType`, and `resource`                                                        |
+| Field spelling     | Canonical ProtoJSON names; `resourceType`, not `resource_type`                                |
+| Managed counters   | `intentVersion` and `generation` are decimal strings, not numeric literals                    |
+| Timestamps         | Response strings; wrap both operands in `timestamp()` for instant comparisons                 |
+| Presence           | `has(resource.labels.team)` accepts a select; `has(resource.labels["team"])` is not supported |
+| Membership         | Both value-list membership and string-key container membership are supported                  |
+| Resource fields    | Availability depends on capabilities and the projected resource body                          |
 
 The backend compiles its supported CEL subset into parameterized SQL. Unsupported operations and rejected field paths fail the request. Cross-resource-type filters are supported without choosing a type first. A top-level conjunctive `resourceType == "..."` guard enables descriptor-backed validation of spec/observation paths when a descriptor exists; without that guard or descriptor, those paths can use structural JSON extraction.
 

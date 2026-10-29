@@ -37,16 +37,16 @@ local Fleetctl OIDC client config via issuer discovery.
 
 Tasks for this deployment use the `deploy:openshift:*` Nx targets.
 
-| Task | Description |
-|------|-------------|
-| `deploy:openshift:deploy` | Deploy OCM Fleet (manifests and images) |
-| `deploy:openshift:teardown` | Remove all resources and namespace |
-| `deploy:openshift:status` | Show pods, services, routes; warn if image override is active |
-| `deploy:openshift:logs` | Tail logs from resource-manager (all containers) |
-| `deploy:openshift:set-image TAG=<tag>` | Override the server image via ImageStream (e.g. PR testing) |
-| `deploy:openshift:reset-image` | Restore default `:latest` tag with scheduled import |
-| `deploy:openshift:import-images` | Force reimport of images from quay.io |
-| `deploy:openshift:register-redirect USER=<u> PASSWORD=<p>` | Register UI redirect URI in Keycloak |
+| Task                                                       | Description                                                   |
+| ---------------------------------------------------------- | ------------------------------------------------------------- |
+| `deploy:openshift:deploy`                                  | Deploy OCM Fleet (manifests and images)                       |
+| `deploy:openshift:teardown`                                | Remove all resources and namespace                            |
+| `deploy:openshift:status`                                  | Show pods, services, routes; warn if image override is active |
+| `deploy:openshift:logs`                                    | Tail logs from resource-manager (all containers)              |
+| `deploy:openshift:set-image TAG=<tag>`                     | Override the server image via ImageStream (e.g. PR testing)   |
+| `deploy:openshift:reset-image`                             | Restore default `:latest` tag with scheduled import           |
+| `deploy:openshift:import-images`                           | Force reimport of images from quay.io                         |
+| `deploy:openshift:register-redirect USER=<u> PASSWORD=<p>` | Register UI redirect URI in Keycloak                          |
 
 ## Configuration
 

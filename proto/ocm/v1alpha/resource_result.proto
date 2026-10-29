@@ -2,10 +2,10 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "google/api/field_behavior.proto";
 import "google/protobuf/struct.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // ResourceResult is one row returned by
 // [ResourceQueryService.QueryResources][ocm.v1alpha.ResourceQueryService.QueryResources].

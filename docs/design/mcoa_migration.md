@@ -8,7 +8,6 @@ This document explores adapting the existing MCOA (Multicluster Observability Ad
 
 New package: `[operators/pkg/platform/ocm/](operators/pkg/platform/ocm/)`. This is the only place OCM imports appear.
 
-
 | Platform Interface                      | OCM Adapter Wraps                                                                                | Current MCOA Code Location                                                                                                                                                                                                                                                                                                                            |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CapabilityService.Register`            | Creates `ClusterManagementAddOn` CR + `AddOnDeploymentConfig` CR + deploys addon-manager         | `[clustermanagementaddon.go](operators/multiclusterobservability/pkg/util/clustermanagementaddon.go)`, `[renderer_mcoa.go](operators/multiclusterobservability/pkg/rendering/renderer_mcoa.go)`, `[cluster_management_addon.yaml](operators/multiclusterobservability/manifests/base/multicluster-observability-addon/cluster_management_addon.yaml)` |
@@ -17,7 +16,6 @@ New package: `[operators/pkg/platform/ocm/](operators/pkg/platform/ocm/)`. This 
 | `DeliveryStatusService.Status`          | Reads `ManagedClusterAddOn.Status.Conditions` + `ManifestWork.Status.Conditions`                 | Addon-framework populates `ManagedClusterAddOn` status; ManifestWork status is per-cluster                                                                                                                                                                                                                                                            |
 | `AccessService.ResolveIdentity`         | OpenShift `users/~` API + cache                                                                  | `[util.go::GetUserName()](proxy/pkg/util/util.go)`, `[user_project.go](proxy/pkg/cache/user_project.go)`                                                                                                                                                                                                                                              |
 | `AccessService.LookupPermissions`       | `rbac-api-utils` + OpenShift Projects + merge → generic attrs                                    | `[modifier.go::getUserMetricsACLs()](proxy/pkg/metricquery/modifier.go)` lines 140-213. The OCM adapter performs the existing 3-source merge and converts to `ResourcePermission` tuples.                                                                                                                                                             |
-
 
 **What disappears from the adapter layer:**
 
@@ -263,4 +261,3 @@ This section collects all "MCOA depends on this for" annotations from the API en
 - **GET /usage:** Not directly consumed by addon code. The platform computes this from delivery records. However, MCOA could optionally report custom usage metrics (e.g., time series ingestion rate per cluster) through an addon telemetry extension.
 
 - **GET /capabilities/{name}:** Not directly. Platform-facing.
-

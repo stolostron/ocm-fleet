@@ -18,6 +18,7 @@ Remote cache for Nx task outputs backed by MinIO and a lightweight Go proxy (`nx
 The proxy enforces **immutable cache entries**: `PUT` returns `409 Conflict` if a hash already exists and hasn't expired. This prevents cache poisoning via modified CI workflows — a key vector in the CREEP vulnerability that affected `@nx/s3-cache`.
 
 Two bearer tokens control access:
+
 - **Read token** — can only `GET`. Intended for CI and container builds.
 - **Write token** — can `GET` and `PUT`. Intended for developers.
 
@@ -146,25 +147,25 @@ To retrieve credentials later (e.g., on a new machine), log in to the cluster an
 
 ### nx-cache-proxy environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `MINIO_ENDPOINT` | *(required)* | MinIO S3 endpoint (e.g., `minio:9000`) |
-| `MINIO_ACCESS_KEY` | *(required)* | MinIO access key |
-| `MINIO_SECRET_KEY` | *(required)* | MinIO secret key |
-| `MINIO_BUCKET` | `nx-cache` | Bucket name |
-| `MINIO_SECURE` | `false` | Use TLS for MinIO connection |
-| `NX_CACHE_READ_TOKEN` | *(required)* | Bearer token for read access |
-| `NX_CACHE_WRITE_TOKEN` | *(required)* | Bearer token for read+write access |
-| `CACHE_TTL` | `24h` | Cache entry time-to-live |
-| `PORT` | `8080` | HTTP listen port |
-| `LOG_LEVEL` | `info` | `info` or `debug` |
+| Variable               | Default      | Description                            |
+| ---------------------- | ------------ | -------------------------------------- |
+| `MINIO_ENDPOINT`       | _(required)_ | MinIO S3 endpoint (e.g., `minio:9000`) |
+| `MINIO_ACCESS_KEY`     | _(required)_ | MinIO access key                       |
+| `MINIO_SECRET_KEY`     | _(required)_ | MinIO secret key                       |
+| `MINIO_BUCKET`         | `nx-cache`   | Bucket name                            |
+| `MINIO_SECURE`         | `false`      | Use TLS for MinIO connection           |
+| `NX_CACHE_READ_TOKEN`  | _(required)_ | Bearer token for read access           |
+| `NX_CACHE_WRITE_TOKEN` | _(required)_ | Bearer token for read+write access     |
+| `CACHE_TTL`            | `24h`        | Cache entry time-to-live               |
+| `PORT`                 | `8080`       | HTTP listen port                       |
+| `LOG_LEVEL`            | `info`       | `info` or `debug`                      |
 
 ### Nx client environment variables
 
-| Variable | Description |
-|---|---|
-| `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` | Proxy URL (e.g., `http://localhost:8420`) |
-| `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` | Bearer token (read or write) |
+| Variable                                   | Description                               |
+| ------------------------------------------ | ----------------------------------------- |
+| `NX_SELF_HOSTED_REMOTE_CACHE_SERVER`       | Proxy URL (e.g., `http://localhost:8420`) |
+| `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` | Bearer token (read or write)              |
 
 Nx loads these from `.env` automatically.
 

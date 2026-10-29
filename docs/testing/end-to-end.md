@@ -209,14 +209,14 @@ Every test must pass `kindClusters` to the `test` helper exported from
 `tests/fixtures.ts`. The automatic fixture leases that many clusters before
 the body runs:
 
-| Declaration | Use when |
-| --- | --- |
-| `[{ access: "read-only", spec: "any", state: "any" }]` | query-only work; any topology |
-| `[{ access: "modifiable", spec: "any", state: "any" }]` | delivery, persona, or Kind API writes; any topology |
-| `[{ access: "read-only", spec: { nodes: [...] }, state: "any" }]` | need that create spec |
-| `[{ access: "read-only", spec: {}, state: "any" }]` | need the default create spec |
-| two modifiable requests | fan-out |
-| `[]` | gateway, login, bootstrap, or a private Kind lifecycle |
+| Declaration                                                       | Use when                                               |
+| ----------------------------------------------------------------- | ------------------------------------------------------ |
+| `[{ access: "read-only", spec: "any", state: "any" }]`            | query-only work; any topology                          |
+| `[{ access: "modifiable", spec: "any", state: "any" }]`           | delivery, persona, or Kind API writes; any topology    |
+| `[{ access: "read-only", spec: { nodes: [...] }, state: "any" }]` | need that create spec                                  |
+| `[{ access: "read-only", spec: {}, state: "any" }]`               | need the default create spec                           |
+| two modifiable requests                                           | fan-out                                                |
+| `[]`                                                              | gateway, login, bootstrap, or a private Kind lifecycle |
 
 `spec` is required. `"any"` is unconstrained: the fixture may lease any
 already-provisioned topology, and a newly created cluster uses the default
@@ -351,9 +351,9 @@ aio-image          # role: cache — build or restore this-checkout AIO tar
 e2e-published      # role: published — pull quay:latest, UI sanity only
 ```
 
-| Workflow | Image under test | What it runs | A failure means |
-| --- | --- | --- | --- |
-| `e2e.yml` | This checkout, built by Nx | Full UI + CLI e2e (including Kind) | The current branch's AIO is broken |
+| Workflow            | Image under test                                      | What it runs                           | A failure means                                                      |
+| ------------------- | ----------------------------------------------------- | -------------------------------------- | -------------------------------------------------------------------- |
+| `e2e.yml`           | This checkout, built by Nx                            | Full UI + CLI e2e (including Kind)     | The current branch's AIO is broken                                   |
 | `e2e-published.yml` | `quay.io/stolostron/ocm-fleet:latest` already on Quay | Sanity only: start, Dex login, console | The live published AIO failed basic function; users are affected now |
 
 `e2e-published.yml` runs on pull requests, pushes to `main`, a cron 30 minutes

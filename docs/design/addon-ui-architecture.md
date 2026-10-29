@@ -52,11 +52,11 @@ At least one capability is required. UI and CLI capabilities activate when
 their declared dependencies are satisfied — they do not inherently require
 a backend capability in the same addon.
 
-| Component | What it is | Where it runs | When it activates |
-|-----------|-----------|---------------|-------------------|
-| **Backend** | Addon workload (any process) | Cluster, sidecar, or standalone | At Connect — when workload provides runtime assets |
-| **UI** | Scalprum plugin (OCI artifact: JS bundle + manifest) | Browser (assets hosted externally) | At Enable — when declared dependencies are satisfied |
-| **CLI** | CLI extension commands | Developer workstation | At Enable — when declared dependencies are satisfied |
+| Component   | What it is                                           | Where it runs                      | When it activates                                    |
+| ----------- | ---------------------------------------------------- | ---------------------------------- | ---------------------------------------------------- |
+| **Backend** | Addon workload (any process)                         | Cluster, sidecar, or standalone    | At Connect — when workload provides runtime assets   |
+| **UI**      | Scalprum plugin (OCI artifact: JS bundle + manifest) | Browser (assets hosted externally) | At Enable — when declared dependencies are satisfied |
+| **CLI**     | CLI extension commands                               | Developer workstation              | At Enable — when declared dependencies are satisfied |
 
 **Key constraint**: An addon must declare its backend dependencies. It does
 not have to ship its own backend, but it must specify which backends it
@@ -66,8 +66,8 @@ the addon manifest as a dependency list:
 ```yaml
 name: my-custom-dashboard
 dependencies:
-  - core                    # depends on core platform APIs
-  - addon-monitoring        # depends on the monitoring addon's backend
+  - core # depends on core platform APIs
+  - addon-monitoring # depends on the monitoring addon's backend
 ```
 
 The platform validates these dependencies at enable time:
@@ -103,17 +103,17 @@ Each entry in the catalog is an `AddonDescriptor` extended with
 distribution metadata. The core fields come from the descriptor; the
 catalog adds versioning and asset location:
 
-| Field | Description |
-|-------|-------------|
-| `id` | Unique addon identifier (maps to `AddonDescriptor.ID`) |
-| `name` | Human-readable name (maps to `AddonDescriptor.Name`) |
-| `version` | Semver — used for upgrades and cache-busting |
-| `capabilities` | Declared capability types (maps to `AddonDescriptor.Capabilities`) |
-| `install_spec` | OCI artifact reference for the backend workload (e.g. `registry.example.com/org/addon-monitoring:v1.2.0`), if backend capabilities present |
-| `manifest_url` | URL to the `plugin-manifest.json` on the external asset host, if UI plugin capability present |
-| `assets_base_url` | Base URL where JS/CSS assets are hosted (e.g. `https://cdn.example.com/addons/monitoring/v1.2.0`), if UI plugin capability present |
-| `extends_core` | Which core plugin surface this addon extends (if any) |
-| `dependencies` | Other addons or core APIs this addon requires |
+| Field             | Description                                                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`              | Unique addon identifier (maps to `AddonDescriptor.ID`)                                                                                     |
+| `name`            | Human-readable name (maps to `AddonDescriptor.Name`)                                                                                       |
+| `version`         | Semver — used for upgrades and cache-busting                                                                                               |
+| `capabilities`    | Declared capability types (maps to `AddonDescriptor.Capabilities`)                                                                         |
+| `install_spec`    | OCI artifact reference for the backend workload (e.g. `registry.example.com/org/addon-monitoring:v1.2.0`), if backend capabilities present |
+| `manifest_url`    | URL to the `plugin-manifest.json` on the external asset host, if UI plugin capability present                                              |
+| `assets_base_url` | Base URL where JS/CSS assets are hosted (e.g. `https://cdn.example.com/addons/monitoring/v1.2.0`), if UI plugin capability present         |
+| `extends_core`    | Which core plugin surface this addon extends (if any)                                                                                      |
+| `dependencies`    | Other addons or core APIs this addon requires                                                                                              |
 
 The resource manager does **not** store or serve addon UI assets. The catalog
 stores metadata and URLs — pointers to where the assets live. The `install_spec`
@@ -299,14 +299,14 @@ An alternative model has each fleetlet discover addon UI assets from a shared
 volume and upload them to the resource manager server over gRPC. This was
 considered and rejected:
 
-| Concern | Push Model | Decoupled Model |
-|---------|-----------|-----------------|
-| Asset availability | Only after a cluster connects | Always available (hosted externally) |
-| Duplicate uploads | N clusters with same addon = N uploads | Zero uploads |
-| Offline clusters | No UI until cluster reconnects | UI always works |
-| Version consistency | Race between fleetlet instances uploading different versions | Single source of truth (OCI tag) |
-| Bandwidth | Large JS bundles over gRPC on every reconnect | Zero network cost to the resource manager server |
-| Complexity | Fleetlet needs asset discovery + upload logic | Assets served by static file host |
+| Concern             | Push Model                                                   | Decoupled Model                                  |
+| ------------------- | ------------------------------------------------------------ | ------------------------------------------------ |
+| Asset availability  | Only after a cluster connects                                | Always available (hosted externally)             |
+| Duplicate uploads   | N clusters with same addon = N uploads                       | Zero uploads                                     |
+| Offline clusters    | No UI until cluster reconnects                               | UI always works                                  |
+| Version consistency | Race between fleetlet instances uploading different versions | Single source of truth (OCI tag)                 |
+| Bandwidth           | Large JS bundles over gRPC on every reconnect                | Zero network cost to the resource manager server |
+| Complexity          | Fleetlet needs asset discovery + upload logic                | Assets served by static file host                |
 
 For addons installed through the platform, the resource manager already has
 their catalog entries; uploading UI assets from a cluster adds no discovery
@@ -469,11 +469,11 @@ previous version's directory — no rebuild, no redeployment of the artifact.
 
 The same OCI artifact works across all environments:
 
-| Environment | Asset Host | `assets_base_url` |
-|-------------|-----------|-------------------|
-| Dev (local) | `localhost:8001` | `http://localhost:8001/addons/monitoring/v1.2.0` |
-| Staging | Internal nginx | `https://assets.staging.internal/addons/monitoring/v1.2.0` |
-| Production | CDN | `https://cdn.example.com/addons/monitoring/v1.2.0` |
+| Environment | Asset Host       | `assets_base_url`                                          |
+| ----------- | ---------------- | ---------------------------------------------------------- |
+| Dev (local) | `localhost:8001` | `http://localhost:8001/addons/monitoring/v1.2.0`           |
+| Staging     | Internal nginx   | `https://assets.staging.internal/addons/monitoring/v1.2.0` |
+| Production  | CDN              | `https://cdn.example.com/addons/monitoring/v1.2.0`         |
 
 The artifact is built once. Where it is hosted and how it is registered
 are deployment decisions, not build decisions.
@@ -617,16 +617,16 @@ The Deployments page has:
 
 If an addon replaces the core Deployments plugin:
 
-| Dependency | What breaks |
-|-----------|-------------|
-| **Nested routes** | Unless the addon re-implements every nested route identically, deep links from other plugins return 404. A link to `/deployments/:id/yaml` fails if the replacement plugin doesn't have that route. |
-| **Extension points** | The monitoring addon injects a Metrics tab into the Deployments detail page. If the replacement plugin doesn't implement the same extension point slots, the tab disappears silently. |
-| **Cross-plugin navigation** | Pods detail links to "View Deployment" via scope reference to the core Deployments plugin. Core plugins are always present, and scopes must be unique — the addon *must* use a different scope. This means every cross-plugin link that references the core scope still resolves to the core plugin. The addon can never intercept those links without re-registering every other plugin's references. |
-| **Route uniqueness** | Routes must be unique. The replacement plugin either takes the same route (breaking the original) or uses a different route (breaking all inbound links). There is no safe middle ground. |
+| Dependency                  | What breaks                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Nested routes**           | Unless the addon re-implements every nested route identically, deep links from other plugins return 404. A link to `/deployments/:id/yaml` fails if the replacement plugin doesn't have that route.                                                                                                                                                                                                    |
+| **Extension points**        | The monitoring addon injects a Metrics tab into the Deployments detail page. If the replacement plugin doesn't implement the same extension point slots, the tab disappears silently.                                                                                                                                                                                                                  |
+| **Cross-plugin navigation** | Pods detail links to "View Deployment" via scope reference to the core Deployments plugin. Core plugins are always present, and scopes must be unique — the addon _must_ use a different scope. This means every cross-plugin link that references the core scope still resolves to the core plugin. The addon can never intercept those links without re-registering every other plugin's references. |
+| **Route uniqueness**        | Routes must be unique. The replacement plugin either takes the same route (breaking the original) or uses a different route (breaking all inbound links). There is no safe middle ground.                                                                                                                                                                                                              |
 
 ### The alternative: addons on separate routes
 
-An addon *can* create a custom Deployments-like page on its own route (e.g.
+An addon _can_ create a custom Deployments-like page on its own route (e.g.
 `/my-deployments`). Users can enable/disable nav items via the marketplace.
 But this does not replace the core plugin — it coexists alongside it:
 
@@ -647,14 +647,14 @@ routes, extension points, cross-plugin navigation — assumes the core plugin
 is the canonical owner of its routes and extension slots. Replacing it breaks
 that assumption for every other plugin that depends on it.
 
-What addons *can* do:
+What addons _can_ do:
 
 - **Extend** core plugin surfaces (add tabs, widgets, panels via extension
   points)
 - **Create new pages** on their own routes with their own nav items
 - **Consume core APIs** without shipping their own backend
 
-What addons *cannot* safely do:
+What addons _cannot_ safely do:
 
 - **Replace** a core plugin's routes (breaks inbound links)
 - **Override** a core plugin's extension points (breaks other addons'
@@ -672,11 +672,11 @@ used by the classic OpenShift console plugin model.
 
 These **pre-installed plugins** sit between core plugins and full addons:
 
-| Type | Backend dependency | Data path | Example |
-|------|-------------------|-----------|---------|
-| **Core plugin** | None (core K8s APIs) | fleetlet → K8s API | Pods, Namespaces, Nodes |
-| **Pre-installed plugin** | None (pre-existing CRDs) | fleetlet → K8s API (custom resources) | Security, service mesh, serverless |
-| **Addon plugin** | Addon backend (deployed by the resource manager) | fleetlet → addon sidecar → resource manager server | Custom monitoring, custom dashboards |
+| Type                     | Backend dependency                               | Data path                                          | Example                              |
+| ------------------------ | ------------------------------------------------ | -------------------------------------------------- | ------------------------------------ |
+| **Core plugin**          | None (core K8s APIs)                             | fleetlet → K8s API                                 | Pods, Namespaces, Nodes              |
+| **Pre-installed plugin** | None (pre-existing CRDs)                         | fleetlet → K8s API (custom resources)              | Security, service mesh, serverless   |
+| **Addon plugin**         | Addon backend (deployed by the resource manager) | fleetlet → addon sidecar → resource manager server | Custom monitoring, custom dashboards |
 
 ### From the UI, all plugins are the same
 

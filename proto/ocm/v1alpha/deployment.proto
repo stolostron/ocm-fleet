@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/timestamp.proto";
@@ -11,6 +9,8 @@ import "ocm/v1alpha/attestation.proto";
 import "ocm/v1alpha/manifest_strategy.proto";
 import "ocm/v1alpha/placement_strategy.proto";
 import "ocm/v1alpha/rollout_strategy.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // Deployment is the composition of manifest, placement, and rollout strategies.
 //

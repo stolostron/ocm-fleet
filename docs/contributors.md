@@ -6,13 +6,13 @@ This experiment builds on the work of the contributors below, including the impo
 
 Snapshot taken October 14, 2026, from the complete predecessor history reachable from commit `7d39d9fa05b47081ea06b17e415b43ece68120a6`. Author dates span February 23–October 14, 2026 in UTC. The history contains **574 commits: 524 non-merge commits and 50 merge commits**, with five named human authors and one shared service-account identity.
 
-| Contributor | Non-merge commits authored | Merge commits authored | Additional co-authored commits |
-| --- | ---: | ---: | ---: |
-| Alec Henninger | 182 | 9 | 2 |
-| Joshua Packer | 1 | 0 | 0 |
-| Martin Marosi | 202 | 39 | 1 |
-| Matthew Short | 102 | 1 | 3 |
-| Sherine Khoury | 7 | 1 | 0 |
+| Contributor    | Non-merge commits authored | Merge commits authored | Additional co-authored commits |
+| -------------- | -------------------------: | ---------------------: | -----------------------------: |
+| Alec Henninger |                        182 |                      9 |                              2 |
+| Joshua Packer  |                          1 |                      0 |                              0 |
+| Martin Marosi  |                        202 |                     39 |                              1 |
+| Matthew Short  |                        102 |                      1 |                              3 |
+| Sherine Khoury |                          7 |                      1 |                              0 |
 
 The service-account names `platex-rehor-bot` and `Řehoř` account for another 30 non-merge commits. Git also records tool co-author credits on 155 commits for Claude and 51 for Cursor; these are separate from the human credits above and are not additional commits.
 

@@ -14,7 +14,9 @@ const input = resolve(process.argv[2] ?? "sample-response.json");
 const output = resolve(process.argv[3] ?? "resource-patterns.json");
 
 const resources = JSON.parse(readFileSync(input, "utf8"));
-const items = Array.isArray(resources) ? resources : resources.resources ?? [];
+const items = Array.isArray(resources)
+  ? resources
+  : (resources.resources ?? []);
 
 // ── helpers ──────────────────────────────────────────────────────────
 
@@ -66,10 +68,14 @@ for (const [rt, group] of byType) {
   const names = group.map((r) => r.name);
 
   // name patterns
-  const prefixes = [...new Set(names.map((n) => {
-    const match = n.match(/^(\/\/[^/]+\/)/);
-    return match ? match[1] : n.split("/").slice(0, 3).join("/") + "/";
-  }))];
+  const prefixes = [
+    ...new Set(
+      names.map((n) => {
+        const match = n.match(/^(\/\/[^/]+\/)/);
+        return match ? match[1] : n.split("/").slice(0, 3).join("/") + "/";
+      }),
+    ),
+  ];
 
   // resource shape — merge paths from a sample (up to 200)
   const sample = group.slice(0, 200);
@@ -156,7 +162,8 @@ function inferNamePattern(rt, names) {
 
 // ── kubernetes.open-cluster-management.io/Object deep analysis ────────────────────
 
-const k8sObjects = byType.get("kubernetes.open-cluster-management.io/Object") ?? [];
+const k8sObjects =
+  byType.get("kubernetes.open-cluster-management.io/Object") ?? [];
 
 // kind distribution
 const kindCounts = {};
@@ -193,7 +200,8 @@ for (const item of k8sObjects) {
   if (conds) {
     for (const [name, val] of Object.entries(conds)) {
       allConditionNames.add(name);
-      if (!conditionStatusMap[name]) conditionStatusMap[name] = { statuses: new Set(), reasons: new Set() };
+      if (!conditionStatusMap[name])
+        conditionStatusMap[name] = { statuses: new Set(), reasons: new Set() };
       if (val.status) conditionStatusMap[name].statuses.add(val.status);
       if (val.reason) conditionStatusMap[name].reasons.add(val.reason);
     }
@@ -221,16 +229,29 @@ for (const item of k8sObjects) {
 
 // sort by count desc
 const sortedKinds = Object.entries(kindCounts).sort((a, b) => b[1] - a[1]);
-const sortedNamespaces = Object.entries(namespaceCounts).sort((a, b) => b[1] - a[1]);
+const sortedNamespaces = Object.entries(namespaceCounts).sort(
+  (a, b) => b[1] - a[1],
+);
 const sortedGvrs = Object.entries(gvrCounts).sort((a, b) => b[1] - a[1]);
-const sortedApiGroups = Object.entries(apiGroupCounts).sort((a, b) => b[1] - a[1]);
+const sortedApiGroups = Object.entries(apiGroupCounts).sort(
+  (a, b) => b[1] - a[1],
+);
 
 // ── cross-type patterns ─────────────────────────────────────────────
 
 const crossTypePatterns = {
-  commonFields: ["name", "resourceType", "resource.name", "resource.uid", "resource.etag", "resource.createTime", "resource.updateTime"],
+  commonFields: [
+    "name",
+    "resourceType",
+    "resource.name",
+    "resource.uid",
+    "resource.etag",
+    "resource.createTime",
+    "resource.updateTime",
+  ],
   topLevelNameFormat: "//{domain}/{resourcePath}",
-  nameSegmentConventions: "K8s objects use GVR format: {group}~{version}~{resource} with ~ separator. Names are URIs: //kubernetes.open-cluster-management.io/clusters/{cluster}/apiResources/{gvr}/objects/{uuid}",
+  nameSegmentConventions:
+    "K8s objects use GVR format: {group}~{version}~{resource} with ~ separator. Names are URIs: //kubernetes.open-cluster-management.io/clusters/{cluster}/apiResources/{gvr}/objects/{uuid}",
 
   observationKindDistribution: Object.fromEntries(sortedKinds),
   namespaceDistribution: Object.fromEntries(sortedNamespaces),
@@ -244,7 +265,7 @@ const crossTypePatterns = {
         statuses: [...(conditionStatusMap[name]?.statuses ?? [])].sort(),
         reasons: [...(conditionStatusMap[name]?.reasons ?? [])].sort(),
       },
-    ])
+    ]),
   ),
 
   extractedFieldsByKind: Object.fromEntries(
@@ -256,50 +277,138 @@ const crossTypePatterns = {
           Object.entries(fields).map(([k, vals]) => [
             k,
             vals.size <= 30 ? [...vals].sort() : { distinctCount: vals.size },
-          ])
+          ]),
         ),
-      ])
+      ]),
   ),
 
   filterableDimensions: {
     lowCardinality: [
-      { field: "resourceType", distinctCount: byType.size, values: [...byType.keys()] },
-      { field: "resource.observation.gvr.scope", distinctCount: 2, values: ["cluster", "namespaced"] },
-      { field: "resource.conditions.*.status", distinctCount: 3, values: ["True", "False", "Unknown"] },
+      {
+        field: "resourceType",
+        distinctCount: byType.size,
+        values: [...byType.keys()],
+      },
+      {
+        field: "resource.observation.gvr.scope",
+        distinctCount: 2,
+        values: ["cluster", "namespaced"],
+      },
+      {
+        field: "resource.conditions.*.status",
+        distinctCount: 3,
+        values: ["True", "False", "Unknown"],
+      },
     ],
     mediumCardinality: [
-      { field: "resource.observation.kind", distinctCount: Object.keys(kindCounts).length },
-      { field: "resource.observation.metadata.namespace", distinctCount: Object.keys(namespaceCounts).length },
-      { field: "resource.observation.gvr.group", distinctCount: Object.keys(apiGroupCounts).length },
+      {
+        field: "resource.observation.kind",
+        distinctCount: Object.keys(kindCounts).length,
+      },
+      {
+        field: "resource.observation.metadata.namespace",
+        distinctCount: Object.keys(namespaceCounts).length,
+      },
+      {
+        field: "resource.observation.gvr.group",
+        distinctCount: Object.keys(apiGroupCounts).length,
+      },
     ],
     highCardinality: [
-      { field: "resource.observation.metadata.name", description: "K8s object name" },
+      {
+        field: "resource.observation.metadata.name",
+        description: "K8s object name",
+      },
       { field: "name", description: "Full resource URI" },
       { field: "resource.uid", description: "Unique resource ID" },
     ],
   },
 
   suggestedCelFilters: [
-    { expression: 'resource.observation.kind == "Pod"', description: "Find all Pods" },
-    { expression: 'resource.observation.kind == "Deployment"', description: "Find all Deployments" },
-    { expression: 'resource.observation.kind == "Node"', description: "Find all Nodes" },
-    { expression: 'resource.observation.kind == "Service"', description: "Find all Services" },
-    { expression: 'resource.observation.kind in ["Pod", "Deployment", "DaemonSet", "StatefulSet", "ReplicaSet"]', description: "Find workload resources" },
-    { expression: 'resource.observation.kind in ["Service", "NetworkPolicy", "Ingress"]', description: "Find networking resources" },
-    { expression: 'resource.observation.kind in ["ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding", "ServiceAccount"]', description: "Find RBAC resources" },
-    { expression: 'resource.observation.gvr.scope == "namespaced"', description: "Find namespace-scoped resources" },
-    { expression: 'resource.observation.gvr.scope == "cluster"', description: "Find cluster-scoped resources" },
-    { expression: 'resource.observation.metadata.namespace == "kube-system"', description: "Find resources in kube-system" },
-    { expression: 'resource.conditions.Ready.status == "True"', description: "Find resources that are Ready" },
-    { expression: 'resource.conditions.Ready.status == "False"', description: "Find resources that are NOT ready" },
-    { expression: 'resource.conditions.Available.status == "True"', description: "Find Available resources" },
-    { expression: 'resource.conditions.Degraded.status != "False"', description: "Find potentially degraded resources" },
-    { expression: 'resource.observation.gvr.group == "apps"', description: "Find apps API group (Deployments, DaemonSets, etc.)" },
-    { expression: 'resource.observation.extracted.status == "Running"', description: "Find running Pods" },
-    { expression: 'resource.observation.extracted.phase == "Active"', description: "Find active Namespaces" },
-    { expression: 'resource.observation.kind == "CustomResourceDefinition"', description: "Find all CRDs" },
-    { expression: 'resourceType == "kind.open-cluster-management.io/Cluster"', description: "Find Kind clusters" },
-    { expression: 'name.startsWith("//kubernetes.open-cluster-management.io/clusters/")', description: "Find all K8s objects" },
+    {
+      expression: 'resource.observation.kind == "Pod"',
+      description: "Find all Pods",
+    },
+    {
+      expression: 'resource.observation.kind == "Deployment"',
+      description: "Find all Deployments",
+    },
+    {
+      expression: 'resource.observation.kind == "Node"',
+      description: "Find all Nodes",
+    },
+    {
+      expression: 'resource.observation.kind == "Service"',
+      description: "Find all Services",
+    },
+    {
+      expression:
+        'resource.observation.kind in ["Pod", "Deployment", "DaemonSet", "StatefulSet", "ReplicaSet"]',
+      description: "Find workload resources",
+    },
+    {
+      expression:
+        'resource.observation.kind in ["Service", "NetworkPolicy", "Ingress"]',
+      description: "Find networking resources",
+    },
+    {
+      expression:
+        'resource.observation.kind in ["ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding", "ServiceAccount"]',
+      description: "Find RBAC resources",
+    },
+    {
+      expression: 'resource.observation.gvr.scope == "namespaced"',
+      description: "Find namespace-scoped resources",
+    },
+    {
+      expression: 'resource.observation.gvr.scope == "cluster"',
+      description: "Find cluster-scoped resources",
+    },
+    {
+      expression: 'resource.observation.metadata.namespace == "kube-system"',
+      description: "Find resources in kube-system",
+    },
+    {
+      expression: 'resource.conditions.Ready.status == "True"',
+      description: "Find resources that are Ready",
+    },
+    {
+      expression: 'resource.conditions.Ready.status == "False"',
+      description: "Find resources that are NOT ready",
+    },
+    {
+      expression: 'resource.conditions.Available.status == "True"',
+      description: "Find Available resources",
+    },
+    {
+      expression: 'resource.conditions.Degraded.status != "False"',
+      description: "Find potentially degraded resources",
+    },
+    {
+      expression: 'resource.observation.gvr.group == "apps"',
+      description: "Find apps API group (Deployments, DaemonSets, etc.)",
+    },
+    {
+      expression: 'resource.observation.extracted.status == "Running"',
+      description: "Find running Pods",
+    },
+    {
+      expression: 'resource.observation.extracted.phase == "Active"',
+      description: "Find active Namespaces",
+    },
+    {
+      expression: 'resource.observation.kind == "CustomResourceDefinition"',
+      description: "Find all CRDs",
+    },
+    {
+      expression: 'resourceType == "kind.open-cluster-management.io/Cluster"',
+      description: "Find Kind clusters",
+    },
+    {
+      expression:
+        'name.startsWith("//kubernetes.open-cluster-management.io/clusters/")',
+      description: "Find all K8s objects",
+    },
   ],
 
   searchAutocompleteHints: {
@@ -322,4 +431,6 @@ const result = {
 
 writeFileSync(output, JSON.stringify(result, null, 2) + "\n");
 console.log(`Analyzed ${items.length} resources → ${output}`);
-console.log(`  ${byType.size} resource types, ${Object.keys(kindCounts).length} K8s kinds, ${Object.keys(namespaceCounts).length} namespaces`);
+console.log(
+  `  ${byType.size} resource types, ${Object.keys(kindCounts).length} K8s kinds, ${Object.keys(namespaceCounts).length} namespaces`,
+);

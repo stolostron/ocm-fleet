@@ -68,16 +68,16 @@ The core plugin package retains `@data-driven-forms/react-form-renderer` + `@dat
 
 All CSS classes are scoped with a prefix to prevent collisions across MF boundaries. BEM convention.
 
-| Scope | Prefix | Example |
-|-------|--------|---------|
-| Shell (web) | `ocm-fleet-` | `ocm-fleet-search`, `ocm-fleet-search__menu`, `ocm-fleet-search__menu--open` |
-| Core plugin | `ocm-fleet-core-` | `ocm-fleet-core-clusters`, `ocm-fleet-core-clusters__toolbar` |
-| Overview plugin | `ocm-fleet-overview-` | `ocm-fleet-overview-dashboard`, `ocm-fleet-overview-capacity__bar` |
-| Day One plugin | `ocm-fleet-day-one-` | `ocm-fleet-day-one-welcome`, `ocm-fleet-day-one-welcome__card` |
-| Signing plugin | `ocm-fleet-signing-` | `ocm-fleet-signing-keys`, `ocm-fleet-signing-keys__form` |
-| Management plugin | `ocm-fleet-mgmt-` | `ocm-fleet-mgmt-targets`, `ocm-fleet-mgmt-targets__row` |
-| Kind plugin | `ocm-fleet-kind-` | `ocm-fleet-kind-wizard`, `ocm-fleet-kind-wizard__step` |
-| Settings plugin | `ocm-fleet-settings-` | `ocm-fleet-settings-nav-order`, `ocm-fleet-settings-nav-order__item` |
+| Scope             | Prefix                | Example                                                                      |
+| ----------------- | --------------------- | ---------------------------------------------------------------------------- |
+| Shell (web)       | `ocm-fleet-`          | `ocm-fleet-search`, `ocm-fleet-search__menu`, `ocm-fleet-search__menu--open` |
+| Core plugin       | `ocm-fleet-core-`     | `ocm-fleet-core-clusters`, `ocm-fleet-core-clusters__toolbar`                |
+| Overview plugin   | `ocm-fleet-overview-` | `ocm-fleet-overview-dashboard`, `ocm-fleet-overview-capacity__bar`           |
+| Day One plugin    | `ocm-fleet-day-one-`  | `ocm-fleet-day-one-welcome`, `ocm-fleet-day-one-welcome__card`               |
+| Signing plugin    | `ocm-fleet-signing-`  | `ocm-fleet-signing-keys`, `ocm-fleet-signing-keys__form`                     |
+| Management plugin | `ocm-fleet-mgmt-`     | `ocm-fleet-mgmt-targets`, `ocm-fleet-mgmt-targets__row`                      |
+| Kind plugin       | `ocm-fleet-kind-`     | `ocm-fleet-kind-wizard`, `ocm-fleet-kind-wizard__step`                       |
+| Settings plugin   | `ocm-fleet-settings-` | `ocm-fleet-settings-nav-order`, `ocm-fleet-settings-nav-order__item`         |
 
 Enforced by stylelint (`stylelint.config.mjs`) with per-plugin overrides. Run `npx nx run web:lint:css` / `npx nx run plugins:lint:css` to check.
 
@@ -99,11 +99,15 @@ import clsx from "clsx";
 ```scss
 // GOOD — scoped override
 .ocm-fleet-core-clusters__toolbar {
-  .pf-v6-c-toolbar__item { flex-basis: auto; }
+  .pf-v6-c-toolbar__item {
+    flex-basis: auto;
+  }
 }
 
 // BAD — unscoped top-level vendor selector
-.pf-v6-c-toolbar__item { flex-basis: auto; }
+.pf-v6-c-toolbar__item {
+  flex-basis: auto;
+}
 ```
 
 ## Plugins

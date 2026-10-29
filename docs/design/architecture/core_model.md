@@ -129,30 +129,30 @@ The shared threat model and security choices live in
 
 `inline` and `template` are (potentially) built-in convenience types. The `addon` type is the primary model for non-trivial generation.
 
-| Type | Source | What triggers re-generation |
-| --- | --- | --- |
-| `addon` | Registered capability's `ManifestGenerator` callback | Addon calls `InvalidateManifests` |
-| `inline` | Manifests provided directly in deployment spec | User PATCHes the deployment |
-| `template` | Template and values rendered per target | User updates values or template |
+| Type       | Source                                               | What triggers re-generation       |
+| ---------- | ---------------------------------------------------- | --------------------------------- |
+| `addon`    | Registered capability's `ManifestGenerator` callback | Addon calls `InvalidateManifests` |
+| `inline`   | Manifests provided directly in deployment spec       | User PATCHes the deployment       |
+| `template` | Template and values rendered per target              | User updates values or template   |
 
 ### Placement strategy types
 
 The built-in types cover static selection. Non-trivial placement is addon-driven.
 
-| Type | Resolution | What triggers re-evaluation |
-| --- | --- | --- |
-| `selector` | Label selector against the workspace target pool | Target fleet changes such as labels, joins, and leaves |
-| `static` | Explicit target list validated against workspace scope | User PATCHes the deployment |
-| `all` | Every target in workspace scope, including children | Target fleet changes |
-| `local` | Resolves to the platform itself | N/A |
+| Type       | Resolution                                             | What triggers re-evaluation                            |
+| ---------- | ------------------------------------------------------ | ------------------------------------------------------ |
+| `selector` | Label selector against the workspace target pool       | Target fleet changes such as labels, joins, and leaves |
+| `static`   | Explicit target list validated against workspace scope | User PATCHes the deployment                            |
+| `all`      | Every target in workspace scope, including children    | Target fleet changes                                   |
+| `local`    | Resolves to the platform itself                        | N/A                                                    |
 
 ### Rollout strategy types
 
 `immediate` is the sole built-in rollout strategy. Non-trivial rollout is addon-driven.
 
-| Type | Behavior | What triggers progression |
-| --- | --- | --- |
-| `immediate` | All targets receive changes simultaneously | N/A |
+| Type        | Behavior                                   | What triggers progression |
+| ----------- | ------------------------------------------ | ------------------------- |
+| `immediate` | All targets receive changes simultaneously | N/A                       |
 
 ## Declarative placement and safety
 

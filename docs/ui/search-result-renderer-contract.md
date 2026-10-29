@@ -8,14 +8,14 @@ This contract is implemented. Renderer lookup is extensible, but the current sim
 
 The extension type is the static string `ocm-fleet.render-search`; the backend resource type is a property, not encoded into the extension type.
 
-| Property | Contract |
-|----------|----------|
-| `id` | Required local ID matching `/^[a-z][a-z0-9-]*$/` |
-| `label` | Required display string, used as a result badge |
-| `resourceType` | Required nonempty backend type identity |
-| `resolve` | Required CodeRef to a synchronous resolver |
-| `icon` | Optional CodeRef to a result icon |
-| `component` | Optional CodeRef accepted by the build contract, but not consumed by the current renderer path |
+| Property       | Contract                                                                                       |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| `id`           | Required local ID matching `/^[a-z][a-z0-9-]*$/`                                               |
+| `label`        | Required display string, used as a result badge                                                |
+| `resourceType` | Required nonempty backend type identity                                                        |
+| `resolve`      | Required CodeRef to a synchronous resolver                                                     |
+| `icon`         | Optional CodeRef to a result icon                                                              |
+| `component`    | Optional CodeRef accepted by the build contract, but not consumed by the current renderer path |
 
 ```typescript
 createSearchResultRenderer({
@@ -46,9 +46,7 @@ interface SearchResultRender {
   navigable?: boolean;
 }
 
-type SearchResultResolve = (
-  resource: InventoryResource,
-) => SearchResultRender;
+type SearchResultResolve = (resource: InventoryResource) => SearchResultRender;
 ```
 
 The resolver is synchronous: its job is to map already-fetched data to display and navigation properties. The description is rendered as a React node, allowing text or plugin-supplied badges/layout. The optional title overrides the default final segment of `resource.name`.
@@ -66,8 +64,9 @@ export function resolveKindCluster(
     module: "ClustersModule",
     to: clusterId,
     description:
-      ((resource.resource as Record<string, unknown>).state as string)
-        ?.toLowerCase() ?? "unknown",
+      (
+        (resource.resource as Record<string, unknown>).state as string
+      )?.toLowerCase() ?? "unknown",
   };
 }
 ```
@@ -110,10 +109,10 @@ Sources: [result mapping](../../client/web/src/hooks/useInventorySearch.tsx), [m
 
 Simple inventory search makes two parallel requests after a 300 ms input debounce:
 
-| Query | Filter scope | Requested page size |
-|-------|--------------|---------------------|
-| Clusters | Kind Cluster type; relative name starts with the term or `clusters/` plus the term | 5 |
-| Kubernetes objects | Kubernetes Object type; Pod, Namespace, or Node; observation metadata name starts with the term | 5 |
+| Query              | Filter scope                                                                                    | Requested page size |
+| ------------------ | ----------------------------------------------------------------------------------------------- | ------------------- |
+| Clusters           | Kind Cluster type; relative name starts with the term or `clusters/` plus the term              | 5                   |
+| Kubernetes objects | Kubernetes Object type; Pod, Namespace, or Node; observation metadata name starts with the term | 5                   |
 
 The term is escaped for backslashes and double quotes before insertion into CEL. These are prefix queries, not Orama full-text queries over all inventory fields. Registering another renderer does not automatically add its type to simple search.
 

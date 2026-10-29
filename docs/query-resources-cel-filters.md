@@ -35,11 +35,11 @@ string methods other than `startsWith`).
 
 ### Boolean structure
 
-| Form | Meaning |
-|------|---------|
-| `a && b` | Both must match |
+| Form       | Meaning          |
+| ---------- | ---------------- |
+| `a && b`   | Both must match  |
 | `a \|\| b` | Either may match |
-| `!a` | Negation |
+| `!a`       | Negation         |
 
 Short-circuiting matters for missing fields: a left-hand `true \|\| …`
 still matches even when the right-hand side would not (see
@@ -47,14 +47,14 @@ still matches even when the right-hand side would not (see
 
 ### Comparisons and membership
 
-| Form | Meaning |
-|------|---------|
-| `a == b`, `a != b` | Equality / inequality |
-| `a < b`, `a <= b`, `a > b`, `a >= b` | Ordering (when both sides are comparable) |
-| `a in […]` | Value membership in a list of literals |
-| `"key" in field` | Container membership (object key or list value; see below) |
-| `has(field.path)` | Presence of a select path on the projected resource body |
-| `field.startsWith("prefix")` | String prefix match |
+| Form                                 | Meaning                                                    |
+| ------------------------------------ | ---------------------------------------------------------- |
+| `a == b`, `a != b`                   | Equality / inequality                                      |
+| `a < b`, `a <= b`, `a > b`, `a >= b` | Ordering (when both sides are comparable)                  |
+| `a in […]`                           | Value membership in a list of literals                     |
+| `"key" in field`                     | Container membership (object key or list value; see below) |
+| `has(field.path)`                    | Presence of a select path on the projected resource body   |
+| `field.startsWith("prefix")`         | String prefix match                                        |
 
 Operands on each side of a comparison must be consistent with the
 field’s value rules (see [Value types](#value-types)). Ordered
@@ -142,13 +142,13 @@ Message fields use their **canonical ProtoJSON JSON names** (normally
 lowerCamelCase, or an explicit `json_name` on the schema). There are
 **no** proto-name / snake_case aliases.
 
-| Use | Do not use |
-|-----|------------|
-| `resourceType` | `resource_type` |
-| `resource.intentVersion` | `resource.intent_version` |
-| `resource.pauseReason` | `resource.pause_reason` |
-| `resource.localUpdateTime` | `resource.local_update_time` |
-| `resource.conditions["Ready"].lastTransitionTime` | `…last_transition_time` |
+| Use                                               | Do not use                   |
+| ------------------------------------------------- | ---------------------------- |
+| `resourceType`                                    | `resource_type`              |
+| `resource.intentVersion`                          | `resource.intent_version`    |
+| `resource.pauseReason`                            | `resource.pause_reason`      |
+| `resource.localUpdateTime`                        | `resource.local_update_time` |
+| `resource.conditions["Ready"].lastTransitionTime` | `…last_transition_time`      |
 
 ### Map and Struct keys: exact literals
 
@@ -157,10 +157,10 @@ Keys in maps and `google.protobuf.Struct`-shaped JSON (`labels`,
 paths without a typed message field) are **exact, case-sensitive data
 keys**. They are never rewritten to camelCase.
 
-| Equivalent when the key is the same string | Distinct keys |
-|--------------------------------------------|---------------|
-| `resource.labels.team` and `resource.labels["team"]` | `node_role` vs `nodeRole` |
-| `resource.localLabels["node-role"]` | `Ready` vs `ready` (condition type) |
+| Equivalent when the key is the same string           | Distinct keys                       |
+| ---------------------------------------------------- | ----------------------------------- |
+| `resource.labels.team` and `resource.labels["team"]` | `node_role` vs `nodeRole`           |
+| `resource.localLabels["node-role"]`                  | `Ready` vs `ready` (condition type) |
 
 Use bracket form when the key is not a legal CEL identifier (hyphens,
 dots, leading digits, quotes, and similar):
@@ -187,10 +187,10 @@ Always copy keys from the response JSON for the type you are querying.
 
 ## Envelope fields
 
-| Field | Type | Notes |
-|-------|------|--------|
-| `name` | string | Full resource name: `//{service}/{collection}/{id}` |
-| `resourceType` | string | Type identity: `{service}/{TypeName}` |
+| Field          | Type   | Notes                                               |
+| -------------- | ------ | --------------------------------------------------- |
+| `name`         | string | Full resource name: `//{service}/{collection}/{id}` |
+| `resourceType` | string | Type identity: `{service}/{TypeName}`               |
 
 Examples:
 
@@ -215,16 +215,16 @@ rejected as unsupported for the field set.
 
 ### Common / managed
 
-| Field | Type in filters | Notes |
-|-------|-----------------|--------|
-| `resource.name` | string | Relative name: `{collection}/{id}` |
-| `resource.uid` | string | Resource UID as a string |
-| `resource.labels` | map\<string, string\> | User / extension labels on the managed resource |
-| `resource.intentVersion` | string | ProtoJSON int64 as a **decimal string** |
-| `resource.generation` | string | ProtoJSON int64 as a **decimal string** |
-| `resource.state` | string | Fulfillment state **enum name** (e.g. `"ACTIVE"`, `"CREATING"`) |
-| `resource.pauseReason` | string | Pause reason text |
-| `resource.spec` | typed or open JSON | Addon-defined intent; see naming rules above |
+| Field                    | Type in filters       | Notes                                                           |
+| ------------------------ | --------------------- | --------------------------------------------------------------- |
+| `resource.name`          | string                | Relative name: `{collection}/{id}`                              |
+| `resource.uid`           | string                | Resource UID as a string                                        |
+| `resource.labels`        | map\<string, string\> | User / extension labels on the managed resource                 |
+| `resource.intentVersion` | string                | ProtoJSON int64 as a **decimal string**                         |
+| `resource.generation`    | string                | ProtoJSON int64 as a **decimal string**                         |
+| `resource.state`         | string                | Fulfillment state **enum name** (e.g. `"ACTIVE"`, `"CREATING"`) |
+| `resource.pauseReason`   | string                | Pause reason text                                               |
+| `resource.spec`          | typed or open JSON    | Addon-defined intent; see naming rules above                    |
 
 `resource.state` matches the API / ProtoJSON enum spelling only (for
 example `"CREATING"`). Storage or lowercase spellings such as
@@ -232,17 +232,17 @@ example `"CREATING"`). Storage or lowercase spellings such as
 
 ### Inventory / observed state
 
-| Field | Type in filters | Notes |
-|-------|-----------------|--------|
-| `resource.localLabels` | map\<string, string\> | Reporter-local labels |
-| `resource.conditions` | map of condition objects | Keyed by **condition type** |
-| `resource.conditions["T"].status` | string | e.g. `"True"`, `"False"`, `"Unknown"` |
-| `resource.conditions["T"].reason` | string | |
-| `resource.conditions["T"].message` | string | |
-| `resource.conditions["T"].lastTransitionTime` | string | ProtoJSON timestamp string |
-| `resource.observation` | open / typed JSON | Latest observation payload |
-| `resource.localUpdateTime` | string | ProtoJSON timestamp of last local observation |
-| `resource.indexUpdateTime` | string | ProtoJSON timestamp of last index update |
+| Field                                         | Type in filters          | Notes                                         |
+| --------------------------------------------- | ------------------------ | --------------------------------------------- |
+| `resource.localLabels`                        | map\<string, string\>    | Reporter-local labels                         |
+| `resource.conditions`                         | map of condition objects | Keyed by **condition type**                   |
+| `resource.conditions["T"].status`             | string                   | e.g. `"True"`, `"False"`, `"Unknown"`         |
+| `resource.conditions["T"].reason`             | string                   |                                               |
+| `resource.conditions["T"].message`            | string                   |                                               |
+| `resource.conditions["T"].lastTransitionTime` | string                   | ProtoJSON timestamp string                    |
+| `resource.observation`                        | open / typed JSON        | Latest observation payload                    |
+| `resource.localUpdateTime`                    | string                   | ProtoJSON timestamp of last local observation |
+| `resource.indexUpdateTime`                    | string                   | ProtoJSON timestamp of last index update      |
 
 Condition type keys are case-sensitive (`"Ready"` ≠ `"ready"`).
 
@@ -259,13 +259,13 @@ unsupported.
 Filters follow ProtoJSON / CEL typing. There is **no** silent
 string↔number or string↔bool coercion.
 
-| Stored JSON / field form | Literal that matches `==` |
-|--------------------------|---------------------------|
-| JSON string `"5"` | `"5"` only |
-| JSON number `5` | `5` (numeric) only |
-| JSON boolean `true` | `true` only |
-| ProtoJSON int64 string field (`intentVersion`, `generation`) | `"1"` (string), not `1` |
-| Known string fields (`state`, `pauseReason`, labels, …) | string literals |
+| Stored JSON / field form                                     | Literal that matches `==` |
+| ------------------------------------------------------------ | ------------------------- |
+| JSON string `"5"`                                            | `"5"` only                |
+| JSON number `5`                                              | `5` (numeric) only        |
+| JSON boolean `true`                                          | `true` only               |
+| ProtoJSON int64 string field (`intentVersion`, `generation`) | `"1"` (string), not `1`   |
+| Known string fields (`state`, `pauseReason`, labels, …)      | string literals           |
 
 For a **present** value of an incompatible type:
 
@@ -342,9 +342,9 @@ label or observation strings that hold RFC 3339 text).
 
 `order_by` is a non-CEL request parameter:
 
-| Value | Meaning |
-|-------|---------|
-| _(empty)_ | Server default stable order |
+| Value                | Meaning                           |
+| -------------------- | --------------------------------- |
+| _(empty)_            | Server default stable order       |
 | `resource_type,name` | Order by resource type, then name |
 
 Unsupported values fail the request. Page tokens are bound to the

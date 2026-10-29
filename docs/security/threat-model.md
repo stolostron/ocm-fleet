@@ -16,7 +16,7 @@ OCM Fleet manages declarative infrastructure for multiple tenants and targets. T
 ## 2. Trust boundaries and data flow
 
 ```mermaid
-flowchart 
+flowchart
     direction TD
     %% External Actors
     subgraph ExternalActors
@@ -33,7 +33,7 @@ flowchart
 
     end
 
-  
+
 
     %% Keep targets below the resource manager while services remain to its right.
     subgraph ResourceManagerColumn[" "]
@@ -48,7 +48,7 @@ flowchart
             Storage[(STORAGE)]
         end
 
-        
+
             %% External Services
         subgraph ExternalServices
             direction TD
@@ -93,7 +93,7 @@ flowchart
     InventorySearch --> Fleetlet
     AddOn <--> Target
 
-        
+
     %% Hide the layout-only wrappers' borders.
     style ResourceManagerColumn fill:transparent,stroke:transparent,stroke-width:0px
 
@@ -103,66 +103,66 @@ The resource manager is trusted for ordinary API authorization and availability 
 
 ## 3. Deployment profiles
 
-| Profile | Main boundary | Important residual risk |
-| --- | --- | --- |
-| Local/sandbox | One operator and one instance | Host privileges and setup exposure dominate. |
-| Shared multi-tenant (a target belongs to 1 tenant) | Tenant/workspace authorization inside one platform | RM, database, addon, and shared-runtime compromise can have broad blast radius. |
+| Profile                                                                                | Main boundary                                                  | Important residual risk                                                                     |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Local/sandbox                                                                          | One operator and one instance                                  | Host privileges and setup exposure dominate.                                                |
+| Shared multi-tenant (a target belongs to 1 tenant)                                     | Tenant/workspace authorization inside one platform             | RM, database, addon, and shared-runtime compromise can have broad blast radius.             |
 | Provider/factory (targets belong to the platform and each host multi-tenant resources) | Consumer intent crosses a provider boundary to factory targets | Factory credentials, channel profiles, and tenant intent must be independently constrained. |
 
 ## 4. Assumptions
 
-- Cryptographic algorithms, TLS, and platform isolation work as specified. *(documented, Trust model v3 §3)*
-- Trust roots, identity providers, target APIs, and target verifiers are separately administered authorities. *(TBC, see [Q9](#10-open-questions))*
-- Bootstrap and explicit recovery are controlled ceremonies. *(TBC, see [Q4](#10-open-questions))*
-- A verifier that has been initialized never silently returns to TOFU. *(documented, Trust model v3 §3 and §6)*
-- Users and automation protect their signing keys and approve the intended content. *(documented, Trust model v3 §3, controlled-client considerations)*
-- Exact security properties apply only on paths that reach an enforcing delivery agent. *(documented, Trust model v3 §3, enforcement boundary)*
+- Cryptographic algorithms, TLS, and platform isolation work as specified. _(documented, Trust model v3 §3)_
+- Trust roots, identity providers, target APIs, and target verifiers are separately administered authorities. _(TBC, see [Q9](#10-open-questions))_
+- Bootstrap and explicit recovery are controlled ceremonies. _(TBC, see [Q4](#10-open-questions))_
+- A verifier that has been initialized never silently returns to TOFU. _(documented, Trust model v3 §3 and §6)_
+- Users and automation protect their signing keys and approve the intended content. _(documented, Trust model v3 §3, controlled-client considerations)_
+- Exact security properties apply only on paths that reach an enforcing delivery agent. _(documented, Trust model v3 §3, enforcement boundary)_
 
 ## 5. Adversaries
 
-| Actor | In scope | Capabilities excluded | Goals |
-| --- | --- | --- | --- |
-| Network attacker | Intercept, replay, delay, or reorder traffic | Break cryptography or compromise both endpoints | Spoofing, tampering, disclosure, denial of service |
-| Malicious tenant user | Submit authorized API requests and crafted inputs | Provider trust-root control or another tenant's credentials | Cross-tenant access, unauthorized delivery, data disclosure, denial of service |
-| Compromised resource manager | Alter database state, bypass RM checks, omit or replay evidence, route traffic, update trust configuration | Forge retained user provenance | Unauthorized changes, tenant escape, denial of service, control over targets |
-| Compromised addon/UI plugin | Execute declared addon or browser code and send its protocol traffic | Undeclared signing-key, trust-root, or platform-admin authority | Malicious output, data theft, unauthorized changes, lateral movement |
-| Compromised fleetlet/agent | Control one target-side transport or verifier | Other targets' local credentials and trust state | Local compromise, lateral movement, channel abuse |
-| Compromised target/host | Control one target or host | RM, other targets, or independent trust roots | Local persistence, credential theft, lateral movement |
-| Malicious or compromised authority | Issue valid credentials or trust updates within its authority | Authority outside its configured scope | Identity takeover, broad signing, trust substitution |
-| Insider/colluding actors | Combine the capabilities of named actors | Capabilities not supplied by the collusion | Defeat separation of duties and accountability |
+| Actor                              | In scope                                                                                                   | Capabilities excluded                                           | Goals                                                                          |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Network attacker                   | Intercept, replay, delay, or reorder traffic                                                               | Break cryptography or compromise both endpoints                 | Spoofing, tampering, disclosure, denial of service                             |
+| Malicious tenant user              | Submit authorized API requests and crafted inputs                                                          | Provider trust-root control or another tenant's credentials     | Cross-tenant access, unauthorized delivery, data disclosure, denial of service |
+| Compromised resource manager       | Alter database state, bypass RM checks, omit or replay evidence, route traffic, update trust configuration | Forge retained user provenance                                  | Unauthorized changes, tenant escape, denial of service, control over targets   |
+| Compromised addon/UI plugin        | Execute declared addon or browser code and send its protocol traffic                                       | Undeclared signing-key, trust-root, or platform-admin authority | Malicious output, data theft, unauthorized changes, lateral movement           |
+| Compromised fleetlet/agent         | Control one target-side transport or verifier                                                              | Other targets' local credentials and trust state                | Local compromise, lateral movement, channel abuse                              |
+| Compromised target/host            | Control one target or host                                                                                 | RM, other targets, or independent trust roots                   | Local persistence, credential theft, lateral movement                          |
+| Malicious or compromised authority | Issue valid credentials or trust updates within its authority                                              | Authority outside its configured scope                          | Identity takeover, broad signing, trust substitution                           |
+| Insider/colluding actors           | Combine the capabilities of named actors                                                                   | Capabilities not supplied by the collusion                      | Defeat separation of duties and accountability                                 |
 
 Root on the host running OCM Fleet or a target is not expected to preserve that host's own security. The model instead tests whether compromise spreads beyond that host or target.
 
 ## 6. Security properties provided
 
-| ID | Property and conditions | Violation symptom | Tier | Evidence |
-| --- | --- | --- | --- | --- |
-| P-AUTHZ | Honest RM enforces tenant, workspace, resource, and target authorization. | integrity-bypass | security-critical | *(documented, tenancy_and_permissions.md, Resource hierarchy)* |
-| P-PROV | An enforcing verifier rejects altered or fabricated provenance and exact signed content. | integrity-bypass | security-critical | *(documented, security.md §Governing Principle)* |
-| P-TRUST | Initialized verifiers reject unauthorized trust replacement and rollback. | integrity-bypass | security-critical | *(documented, trust_model_v3.md §3 and §6)* |
-| P-GEN | Targets reject stale generations and replayed work after newer accepted work. | wrong-output | security-critical | *(documented, target_delivery_contract.md §Generation ordering)* |
-| P-SCOPE | Evidence binds tenant, target, fulfillment, purpose, and relevant constraints. | integrity-bypass | security-critical | *(documented, provenance.md §Evidence and Attestation Semantics)* |
-| P-CRED | Selected credential presentation uses the configured identity and scope. | spoofing / integrity-bypass | security-critical | *(documented, authentication.md §Credential Verification)* |
-| P-RETRY | Accepted delivery is durable enough for safe retry and idempotent convergence. | wrong-output / x-unsafe-retry | security-critical | *(documented, target_delivery_contract.md §Guarantees)* |
-| P-CAP | Enabled addons receive only declared capability paths. | integrity-bypass | security-critical | *(maintainer, 2026-10)* |
-| P-LATERAL | Compromise of one target or addon does not itself authorize other targets or tenants. | integrity-bypass | security-critical | *(maintainer, 2026-10)* |
-| P-AVAIL | An unprivileged tenant cannot create an unbounded or cross-tenant outage in an honest deployment. | x-cross-tenant-outage | security-critical | *(maintainer, 2026-10)* |
+| ID        | Property and conditions                                                                           | Violation symptom             | Tier              | Evidence                                                          |
+| --------- | ------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------- | ----------------------------------------------------------------- |
+| P-AUTHZ   | Honest RM enforces tenant, workspace, resource, and target authorization.                         | integrity-bypass              | security-critical | _(documented, tenancy_and_permissions.md, Resource hierarchy)_    |
+| P-PROV    | An enforcing verifier rejects altered or fabricated provenance and exact signed content.          | integrity-bypass              | security-critical | _(documented, security.md §Governing Principle)_                  |
+| P-TRUST   | Initialized verifiers reject unauthorized trust replacement and rollback.                         | integrity-bypass              | security-critical | _(documented, trust_model_v3.md §3 and §6)_                       |
+| P-GEN     | Targets reject stale generations and replayed work after newer accepted work.                     | wrong-output                  | security-critical | _(documented, target_delivery_contract.md §Generation ordering)_  |
+| P-SCOPE   | Evidence binds tenant, target, fulfillment, purpose, and relevant constraints.                    | integrity-bypass              | security-critical | _(documented, provenance.md §Evidence and Attestation Semantics)_ |
+| P-CRED    | Selected credential presentation uses the configured identity and scope.                          | spoofing / integrity-bypass   | security-critical | _(documented, authentication.md §Credential Verification)_        |
+| P-RETRY   | Accepted delivery is durable enough for safe retry and idempotent convergence.                    | wrong-output / x-unsafe-retry | security-critical | _(documented, target_delivery_contract.md §Guarantees)_           |
+| P-CAP     | Enabled addons receive only declared capability paths.                                            | integrity-bypass              | security-critical | _(maintainer, 2026-10)_                                           |
+| P-LATERAL | Compromise of one target or addon does not itself authorize other targets or tenants.             | integrity-bypass              | security-critical | _(maintainer, 2026-10)_                                           |
+| P-AVAIL   | An unprivileged tenant cannot create an unbounded or cross-tenant outage in an honest deployment. | x-cross-tenant-outage         | security-critical | _(maintainer, 2026-10)_                                           |
 
 P-AVAIL is not yet backed by defined quotas and resource limits. The stronger goal of continued service after RM/database compromise is currently a design gap, not a provided property.
 
 ## 7. Properties not provided
 
-| ID | Disclaimer | Tier |
-| --- | --- | --- |
-| D-RM-CONF | A compromised RM and database can read platform-held desired state, inventory, credentials it stores, and query data. | security-critical |
-| D-RM-READ | A compromised RM can omit, delay, or falsify ordinary reads and observations. | security-critical |
-| D-RM-DOS | A compromised RM can withhold delivery or cause `PausedAuth` and denial of service. | security-critical |
-| D-TARGET-ROOT | OCM Fleet does not preserve a target's integrity after target-host or verifier-root compromise. | security-critical |
-| D-GLOBAL-FORK | Continuity/v3 does not provide global fork detection without witnesses or gossip. | correctness-only |
-| D-WALL-CLOCK | Continuity/v3 does not provide trusted wall-clock freshness by itself. | correctness-only |
-| D-CRED-ONLY | Credential-only delivery does not bind exact content against a compromised courier. | security-critical |
-| D-POLICY-REPLICA | A target does not reproduce all RM tenant/workspace policy. | security-critical |
-| D-QUOTA | Exact resource quotas and cross-tenant resource-performance isolation are not defined. | security-critical |
+| ID               | Disclaimer                                                                                                            | Tier              |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| D-RM-CONF        | A compromised RM and database can read platform-held desired state, inventory, credentials it stores, and query data. | security-critical |
+| D-RM-READ        | A compromised RM can omit, delay, or falsify ordinary reads and observations.                                         | security-critical |
+| D-RM-DOS         | A compromised RM can withhold delivery or cause `PausedAuth` and denial of service.                                   | security-critical |
+| D-TARGET-ROOT    | OCM Fleet does not preserve a target's integrity after target-host or verifier-root compromise.                       | security-critical |
+| D-GLOBAL-FORK    | Continuity/v3 does not provide global fork detection without witnesses or gossip.                                     | correctness-only  |
+| D-WALL-CLOCK     | Continuity/v3 does not provide trusted wall-clock freshness by itself.                                                | correctness-only  |
+| D-CRED-ONLY      | Credential-only delivery does not bind exact content against a compromised courier.                                   | security-critical |
+| D-POLICY-REPLICA | A target does not reproduce all RM tenant/workspace policy.                                                           | security-critical |
+| D-QUOTA          | Exact resource quotas and cross-tenant resource-performance isolation are not defined.                                | security-critical |
 
 ## 8. Downstream responsibilities
 
@@ -213,7 +213,7 @@ P-AVAIL is not yet backed by defined quotas and resource limits. The stronger go
 - **Q8** — What historical findings and maintainer rulings should be used for backtesting?
   - Proposed answer: assemble a de-identified corpus before acceptance.
   - Lands in: backtest and §1.15.
-- **Q9** - Are target verifiers administered separately from the resource manager? *(TBC)*
+- **Q9** - Are target verifiers administered separately from the resource manager? _(TBC)_
 
 ## 11. Triage dispositions
 
