@@ -144,25 +144,6 @@ test("uses absolute diagnostic paths from the shared config", async (t) => {
   });
 });
 
-test("reports same-package domain field reads through the custom analyzer", async (t) => {
-  const { directory, lint } = await fixture(t);
-  await writeDomainFixture(directory, "f.generation");
-  await assert.rejects(lint(), (error) => {
-    assert.equal(error.code, 1);
-    assert.match(
-      error.stdout + error.stderr,
-      /access Fulfillment\.generation through Fulfillment methods.*fleetdomain/,
-    );
-    return true;
-  });
-});
-
-test("allows the domain's own methods and external getter calls", async (t) => {
-  const { directory, lint } = await fixture(t);
-  await writeDomainFixture(directory, "f.Generation()");
-  await assert.doesNotReject(lint());
-});
-
 test("reports unchecked Close errors in production code", async (t) => {
   const { directory, lint } = await fixture(t);
   await writeFile(
@@ -343,26 +324,6 @@ async function fixture(t) {
 
 const uncheckedError =
   'package lintfixture\n\nimport "os"\n\nfunc Check() {\n\tos.Chdir(".")\n}\n';
-
-async function writeDomainFixture(directory, expression) {
-  await writeFile(
-    join(directory, "go.mod"),
-    "module github.com/stolostron/ocm-fleet/server/internal/domain\n\ngo 1.26.0\n",
-  );
-  await writeFile(
-    join(directory, "main.go"),
-    `package domain
-
-type Fulfillment struct{ generation int }
-
-func (f *Fulfillment) Generation() int { return f.generation }
-
-func Read(f *Fulfillment) int {
-\treturn ${expression}
-}
-`,
-  );
-}
 
 const invalidRegexp =
   'package lintfixture\n\nimport "regexp"\n\nfunc Pattern() *regexp.Regexp {\n\treturn regexp.MustCompile("[")\n}\n';

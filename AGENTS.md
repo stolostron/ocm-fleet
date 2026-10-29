@@ -57,7 +57,7 @@ Regenerate: `npx nx run ocm-fleet:generate-agents`.
 - deploy-aio (deploy/aio) - Startup and proxy utilities for the OCM Fleet all-in-one container.
 - e2e-cli (e2e/cli) - End-to-end tests for Fleetctl workflows.
 - e2e-web (e2e/web) - End-to-end tests for the OCM Fleet web console.
-- go-lint-tool (tools/golangci-lint) - Custom Go linter and analyzers, built from an isolated tools module.
+- go-lint-tool (tools/golangci-lint) - Go lint tooling built from an isolated module, ready for custom analyzers.
 - node-plugin (sdk/node-plugin) - Private Node.js Module Federation producer plugin for Rspack.
 - nx-cache-proxy (sdk/nx-cache-proxy) - Nx remote cache proxy backed by MinIO.
 - ocm-fleet (.) - Workspace tasks for building, packaging, and deploying OCM Fleet.

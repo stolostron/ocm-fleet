@@ -1,7 +1,7 @@
 {
   "name": "go-lint-tool",
   "metadata": {
-    "description": "Custom Go linter and analyzers, built from an isolated tools module."
+    "description": "Go lint tooling built from an isolated module, ready for custom analyzers."
   },
   "root": "tools/golangci-lint",
   "projectType": "application",
@@ -25,7 +25,7 @@
         },
         {
           "projects": ["ocm-fleet"],
-          "target": "test:golangci-lint-analyzers"
+          "target": "test:golangci-lint-module"
         },
         {
           "projects": ["ocm-fleet"],

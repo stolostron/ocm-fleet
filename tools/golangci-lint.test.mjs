@@ -13,28 +13,23 @@ import {
   updateGolangciLint,
 } from "./golangci-lint.mjs";
 
-test("CodeQL's application compiler can load the linter and analyzer fixtures", async () => {
+test("CodeQL's application compiler can load the linter module", async () => {
   const env = await toolEnvironment(
     fileURLToPath(new URL("../server/", import.meta.url)),
   );
-  for (const [directory, expectedPackage] of [
-    ["./golangci-lint/", "github.com/stolostron/ocm-fleet/tools/golangci-lint"],
-    [
-      "./golangci-lint/domainaccess/testdata/domain/",
-      "github.com/stolostron/ocm-fleet/server/internal/domain",
-    ],
-  ]) {
-    const packages = execFileSync(
-      "go",
-      ["list", "-mod=readonly", "-deps", "./..."],
-      {
-        cwd: fileURLToPath(new URL(directory, import.meta.url)),
-        env,
-        encoding: "utf8",
-      },
-    ).split("\n");
-    assert.equal(packages.includes(expectedPackage), true);
-  }
+  const packages = execFileSync(
+    "go",
+    ["list", "-mod=readonly", "-deps", "./..."],
+    {
+      cwd: fileURLToPath(new URL("./golangci-lint/", import.meta.url)),
+      env,
+      encoding: "utf8",
+    },
+  ).split("\n");
+  assert.equal(
+    packages.includes("github.com/stolostron/ocm-fleet/tools/golangci-lint"),
+    true,
+  );
 });
 
 test("builds a real module for the host with the module's compiler pin", async (t) => {

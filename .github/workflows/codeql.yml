@@ -60,7 +60,7 @@ jobs:
         if: matrix.language == 'go'
         run: |
           set -euo pipefail
-          # Analyzer fixtures are exercised by their tests, not standalone builds.
+          # Test fixtures are exercised by their tests, not standalone builds.
           while IFS= read -r mod; do
             dir=$(dirname "$mod")
             echo "Building $dir..."

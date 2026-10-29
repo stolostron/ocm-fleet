@@ -152,9 +152,7 @@ standalone `poc/` modules are outside this workflow.
 
 Go quality tasks build or restore the cached tool and validate the shared config
 automatically. The checked-in [`.golangci.yaml`](.golangci.yaml) starts from OCM's
-config, with its source revision recorded in the file. It checks standard linters,
-stock Staticcheck, Go/import formatting, and our `fleetdomain` analyzer for domain
-field encapsulation. Production and tests are checked; generated code is excluded.
+config, with its source revision recorded in the file. It checks linters and Go/import formatting. Production and tests are checked; generated code is excluded.
 Upstream exclusion presets are disabled. The targeted test exception allows
 best-effort deferred transaction rollback. Standalone `poc/` modules are not
 included.

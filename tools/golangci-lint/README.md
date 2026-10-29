@@ -1,9 +1,9 @@
 # Go lint tooling
 
-We build golangci-lint in this isolated Go module so we can add analyzers for our
-domain and architecture rules. The first, `fleetdomain`, checks private domain
-field access outside the owning type's methods, following
-[the domain guide](../../server/docs/domain.md#field-access-and-getters).
+We build golangci-lint in this isolated Go module so we can add custom analyzers
+for domain and architecture rules later. Only stock linters are enabled now;
+the domain field-access analyzer is deferred to follow-up work in the contributor
+effectiveness epic.
 
 ## Why a dedicated module
 
@@ -30,8 +30,8 @@ explicitly.
 We considered these alternatives:
 
 - **Upstream release binaries with our archive hashes:** fast setup and upstream's
-  release build, but our analyzers need a custom executable. We would also keep
-  maintaining a platform-specific installer and hash updater.
+  release build, but adding analyzers would require a custom executable. We would
+  also keep maintaining a platform-specific installer and hash updater.
 - **Versioned `go install`:** convenient for the upstream executable, but it
   ignores our local module files and does not compile in our analyzers.
 - **`golangci-lint custom`:** the documented automatic module-plugin builder.
@@ -41,7 +41,7 @@ We considered these alternatives:
 - **Go `.so` plugins:** require matching build environments and CGO. Upstream
   recommends the Module Plugin System instead.
 
-We use that recommended module-plugin API with a small executable wrapper,
+Our small executable wrapper can host that recommended module-plugin API,
 similar to Kubernetes. The cost is maintaining the wrapper, reviewing dependency
 changes, and a slower first build. Go and Nx caches make subsequent builds cheap.
 See [upstream plugin guidance](https://golangci-lint.run/docs/plugins/module-plugins/),
@@ -65,7 +65,7 @@ npx nx run go-lint-tool:verify
 
 # Tool development and updates:
 npx nx run ocm-fleet:setup:golangci-lint
-npx nx run ocm-fleet:test:golangci-lint-analyzers
+npx nx run ocm-fleet:test:golangci-lint-module
 npx nx run ocm-fleet:lint:golangci-lint
 npx nx run ocm-fleet:test:golangci-lint-config
 npx nx run ocm-fleet:test:go-quality
@@ -81,7 +81,7 @@ the tests independent of terminal colors and progress-message formatting.
 does that first, then runs lint and the normal tests. `fix:go` additionally applies
 supported linter fixes before rechecking; review those changes. These workspace
 targets select Nx projects tagged `type:go-module`. Use each project's `fmt`,
-`verify`, or `fix` target to limit scope. Generated files and analyzer `testdata`
+`verify`, or `fix` target to limit scope. Generated files and `testdata`
 fixtures are excluded from rewrites. A fix pass can leave findings behind, so
 verification still runs and fails if those findings or test failures remain.
 `lint:go` remains a check without source edits for CI and other callers that need
@@ -127,9 +127,9 @@ remains at `bin/tools/golangci-lint`.
 Choose an explicit stable v2 release when updating. The update task uses Go's
 module tooling in a disposable copy, then publishes `go.mod` and `go.sum` for
 review. Review release notes, dependency changes, and compiler compatibility;
-raise the compiler pin explicitly when needed. Run the analyzer, setup, and
-configuration tests and lint the tooling before committing. Ordinary builds use read-only module
-resolution and staged dependency files, rejecting any checksum changes.
+raise the compiler pin explicitly when needed. Run the tool module, setup, and
+configuration tests and lint the tooling before committing. Ordinary builds use
+read-only module resolution and staged dependency files, rejecting any checksum changes.
 
 The executable goes to `bin/tools/golangci-lint`. Nx caches it using tool source,
 module files, the build helper, and the selected compiler and host settings.
@@ -142,12 +142,12 @@ The custom version includes the executable's SHA-256 hash, which also identifies
 golangci-lint's analysis cache. Changes to our analyzers, dependencies, or compiler
 therefore invalidate native cached findings as well as Nx results.
 
-To add an analyzer, implement a standard `go/analysis.Analyzer`, cover accepted
-and rejected examples with `analysistest`, and register it through `plugin`.
-The current field-access check covers private fields with a matching exported,
-zero-argument getter of the same result type. It respects constructors and the
-documented `snapshot.go` / `etag.go` exceptions, including in tests. Fields without
-such getters and mutation through returned references remain outside its scope.
+To add an analyzer, implement a standard `go/analysis.Analyzer` and cover accepted
+and rejected examples with `analysistest`. Register it with `register.Plugin` from
+`github.com/golangci/plugin-module-register/register` in an adapter package,
+blank-import that package from `main.go`, and enable the module plugin in
+`.golangci.yaml`. Run the tool module, setup, configuration, and workflow tests.
+
 Application cleanup and CI lint enforcement remain deferred; CI tests the tool
-and its configuration. CodeQL builds the tool module alongside the application
-modules, excluding analyzer `testdata` fixtures.
+and its configuration. CodeQL builds the tool module alongside application modules,
+excluding test fixtures from standalone builds.

@@ -4,11 +4,7 @@ go 1.26.0
 
 toolchain go1.26.6
 
-require (
-	github.com/golangci/golangci-lint/v2 v2.15.0
-	github.com/golangci/plugin-module-register v0.1.2
-	golang.org/x/tools v0.52.0
-)
+require github.com/golangci/golangci-lint/v2 v2.15.0
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.4.0 // indirect
@@ -96,6 +92,7 @@ require (
 	github.com/golangci/gofmt v0.0.0-20260820135601-e84e05053792 // indirect
 	github.com/golangci/golines v0.16.0 // indirect
 	github.com/golangci/misspell v0.8.0 // indirect
+	github.com/golangci/plugin-module-register v0.1.2 // indirect
 	github.com/golangci/revgrep v0.8.0 // indirect
 	github.com/golangci/rowserrcheck v0.0.0-20261005233414-e0740d52dee8 // indirect
 	github.com/golangci/swaggoswag v0.0.0-20250504205917-77f2aca3143e // indirect
@@ -212,6 +209,7 @@ require (
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

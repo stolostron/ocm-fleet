@@ -1,4 +1,4 @@
-// Command golangci-lint runs the upstream linters and OCM Fleet's module plugins.
+// Command golangci-lint runs upstream linters from an isolated tools module.
 package main
 
 import (
@@ -11,13 +11,10 @@ import (
 
 	"github.com/golangci/golangci-lint/v2/pkg/commands"
 	"github.com/golangci/golangci-lint/v2/pkg/exitcodes"
-
-	// Importing the adapter registers our analyzers with golangci-lint.
-	_ "github.com/stolostron/ocm-fleet/tools/golangci-lint/plugin"
 )
 
 func main() {
-	// Package loading must use the compiler that built our analyzers. A newer
+	// Package loading must use the compiler that built the linter. A newer
 	// host Go can expose standard-library syntax this binary cannot parse, and
 	// changes config verification's Go-version fallback outside a module.
 	goVersion := runtime.Version()

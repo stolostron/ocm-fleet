@@ -249,7 +249,7 @@
       },
       "cache": false
     },
-    "test:golangci-lint-analyzers": {
+    "test:golangci-lint-module": {
       "executor": "nx:run-commands",
       "options": {
         "command": "node tools/golangci-lint.mjs test"
