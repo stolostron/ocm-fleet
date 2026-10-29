@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect -- Vitest test callbacks are not Playwright tests. */
 import { describe, expect, it } from "vitest";
 
 import { CleanupStack } from "./cleanup";

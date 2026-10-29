@@ -81,6 +81,7 @@
       "dependsOn": [
         "lint:workspace",
         "test:generate-agents",
+        "test:eslint-config",
         "test:workspace-quality",
         {
           "projects": ["*", "!ocm-fleet"],
@@ -140,6 +141,13 @@
       "outputs": []
     },
     "refresh:inputs": {},
+    "test:eslint-config": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test tools/eslint-config.test.mjs"
+      },
+      "cache": false
+    },
     "test:workspace-quality": {
       "executor": "nx:run-commands",
       "options": {

@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect */
 import { expect, type Page, test as setup } from "@playwright/test";
 import fs from "fs";
 import path from "path";

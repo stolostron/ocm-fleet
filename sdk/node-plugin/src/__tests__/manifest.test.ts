@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect -- These are Vitest tests. */
 import { describe, expect, it } from "vitest";
 
 import { createNodeRemoteManifest, identifyRemoteEntry } from "../manifest.ts";

@@ -1,4 +1,3 @@
-/* eslint playwright/expect-expect: ["error", { "assertFunctionNames": ["equal", "match", "rejects", "ok"] }] */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {

@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect -- Vitest test callbacks are not Playwright tests. */
 import { execPath } from "node:process";
 
 import { describe, expect, it } from "vitest";

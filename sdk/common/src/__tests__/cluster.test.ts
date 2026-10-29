@@ -1,5 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect */
-
 import { describe, expect, it } from "vitest";
 
 import { extractClusterId } from "../objects/cluster.js";

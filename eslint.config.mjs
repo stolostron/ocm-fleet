@@ -7,77 +7,84 @@ import reactHooksPlugin from "eslint-plugin-react-hooks";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 
 export default [
-    playwright.configs["flat/recommended"],
-    {
-        ignores: [
-            "**/dist/**",
-            "**/node_modules/**",
-            "**/.mf/**",
-            "**/generated/**",
-            "**/test-results/**",
-            "**/playwright-report/**",
-        ],
+  {
+    ...playwright.configs["flat/recommended"],
+    files: ["**/*.ct.tsx", "e2e/{cli,web}/tests/**/*.ts", "e2e/shared/**/*.ts"],
+    // Unit tests use Vitest even alongside Playwright helpers.
+    ignores: ["**/*.test.ts"],
+  },
+  {
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/.mf/**",
+      "**/generated/**",
+      "**/test-results/**",
+      "**/playwright-report/**",
+    ],
+  },
+  {
+    files: ["**/*.{ts,tsx}"],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: "latest",
+        sourceType: "module",
+      },
     },
-    {
-        files: ["**/*.{ts,tsx}"],
-        languageOptions: {
-            parser: tsParser,
-            parserOptions: {
-                ecmaVersion: "latest",
-                sourceType: "module",
-            },
-        },
-        plugins: {
-            "@typescript-eslint": tsPlugin,
-            prettier: prettierPlugin,
-            "react-hooks": reactHooksPlugin,
-            "simple-import-sort": simpleImportSort,
-        },
-        rules: {
-            ...tsPlugin.configs.recommended.rules,
-            ...prettierConfig.rules,
-            "prettier/prettier": "error",
-            "@typescript-eslint/no-explicit-any": "error",
-            "@typescript-eslint/no-unsafe-function-type": "off",
-            "react-hooks/rules-of-hooks": "error",
-            "react-hooks/exhaustive-deps": "warn",
-            "simple-import-sort/imports": "error",
-            "simple-import-sort/exports": "error",
-            "@typescript-eslint/no-unused-vars": [
-                "error",
-                {
-                    argsIgnorePattern: "^_",
-                    varsIgnorePattern: "^_",
-                    caughtErrorsIgnorePattern: "^_",
-                    destructuredArrayIgnorePattern: "^_",
-                    ignoreRestSiblings: true,
-                },
-            ],
-            "no-restricted-syntax": [
-                "error",
-                {
-                    selector: "JSXOpeningElement[name.name=/^[a-z]/] > JSXAttribute[name.name='style']",
-                    message: "Inline styles on HTML elements are banned. Use PF utility classes or SCSS classes with the ocm-fleet-* prefix. Exception: dynamic viewport-based sizing — disable with // eslint-disable-next-line and explain why.",
-                },
-            ],
-        },
+    plugins: {
+      "@typescript-eslint": tsPlugin,
+      prettier: prettierPlugin,
+      "react-hooks": reactHooksPlugin,
+      "simple-import-sort": simpleImportSort,
     },
-    {
-        files: ["**/*.{js,mjs}"],
-        plugins: {
-            prettier: prettierPlugin,
+    rules: {
+      ...tsPlugin.configs.recommended.rules,
+      ...prettierConfig.rules,
+      "prettier/prettier": "error",
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-unsafe-function-type": "off",
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
+      "simple-import-sort/imports": "error",
+      "simple-import-sort/exports": "error",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          destructuredArrayIgnorePattern: "^_",
+          ignoreRestSiblings: true,
         },
-        rules: {
-            ...prettierConfig.rules,
-            "prettier/prettier": "error",
-            "no-unused-vars": [
-                "error",
-                {
-                    argsIgnorePattern: "^_",
-                    varsIgnorePattern: "^_",
-                    caughtErrorsIgnorePattern: "^_",
-                },
-            ],
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "JSXOpeningElement[name.name=/^[a-z]/] > JSXAttribute[name.name='style']",
+          message:
+            "Inline styles on HTML elements are banned. Use PF utility classes or SCSS classes with the ocm-fleet-* prefix. Exception: dynamic viewport-based sizing — disable with // eslint-disable-next-line and explain why.",
         },
+      ],
     },
+  },
+  {
+    files: ["**/*.{js,mjs}"],
+    plugins: {
+      prettier: prettierPlugin,
+    },
+    rules: {
+      ...prettierConfig.rules,
+      "prettier/prettier": "error",
+      "no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 ];
