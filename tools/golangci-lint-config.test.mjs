@@ -37,6 +37,28 @@ test("accepts formatted Go code with checked errors", async (t) => {
   await assert.doesNotReject(lint());
 });
 
+test("loads packages with its build toolchain despite an ambient override", async (t) => {
+  const { lint } = await fixture(t);
+  await assert.doesNotReject(
+    lint({ GOTOOLCHAIN: "invalid-ambient-toolchain" }),
+  );
+});
+
+test("still rejects modules requiring a newer Go version than the linter supports", async (t) => {
+  const { directory, lint } = await fixture(t);
+  await writeFile(
+    join(directory, "go.mod"),
+    "module lintfixture\n\ngo 1.99.0\n",
+  );
+  await assert.rejects(lint({ GOTOOLCHAIN: "local" }), (error) => {
+    assert.match(
+      error.stdout + error.stderr,
+      /used to build golangci-lint is lower than the targeted Go version \(1\.99\.0\)/,
+    );
+    return true;
+  });
+});
+
 test("reports unchecked production errors with a failing exit status", async (t) => {
   const { directory, lint } = await fixture(t);
   await writeFile(join(directory, "main.go"), uncheckedError);
@@ -46,6 +68,16 @@ test("reports unchecked production errors with a failing exit status", async (t)
       error.stdout + error.stderr,
       /main\.go.*os\.Chdir.*not checked.*errcheck/,
     );
+    return true;
+  });
+});
+
+test("uses absolute diagnostic paths from the shared config", async (t) => {
+  const { directory, lint } = await fixture(t);
+  await writeFile(join(directory, "main.go"), uncheckedError);
+  await assert.rejects(lint(), (error) => {
+    assert.equal(error.code, 1);
+    assert.match(error.stdout + error.stderr, /^\/[^\n]*\/main\.go:\d+:\d+:/m);
     return true;
   });
 });
@@ -239,15 +271,11 @@ async function fixture(t) {
   );
   return {
     directory,
-    lint: () =>
-      run(
-        binary,
-        ["run", "--config", config, "--allow-serial-runners", "./..."],
-        {
-          cwd: directory,
-          env: { ...process.env, GOWORK: "off" },
-        },
-      ),
+    lint: (env = {}) =>
+      run(binary, ["run", "--config", config, "./..."], {
+        cwd: directory,
+        env: { ...process.env, ...env, GOWORK: "off" },
+      }),
   };
 }
 

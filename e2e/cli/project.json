@@ -6,8 +6,14 @@
   "root": "e2e/cli",
   "sourceRoot": "e2e/cli/tests",
   "projectType": "library",
-  "tags": ["scope:cli", "scope:e2e", "type:e2e"],
+  "tags": ["scope:cli", "scope:e2e", "type:e2e", "type:js-project"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "test": {
       "executor": "nx:run-commands",
       "options": {

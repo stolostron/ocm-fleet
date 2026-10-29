@@ -91,12 +91,7 @@ jobs:
         run: npm ci
 
       - name: Test Go lint tooling and configuration
-        run: |
-          npx nx run ocm-fleet:test:golangci-lint-setup
-          npx nx run ocm-fleet:test:golangci-lint-analyzers
-          npx nx run ocm-fleet:lint:golangci-lint
-          npx nx run ocm-fleet:test:golangci-lint-config
-          npx nx run ocm-fleet:test:go-workflow
+        run: npx nx run go-lint-tool:check
 
       - name: Check repository files stayed unchanged
         run: git diff --exit-code

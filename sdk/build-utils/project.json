@@ -6,18 +6,21 @@
   "root": "sdk/build-utils",
   "sourceRoot": "sdk/build-utils/src",
   "projectType": "library",
-  "tags": ["scope:ui", "type:lib"],
+  "tags": ["scope:ui", "type:lib", "type:js-project"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "build": {
       "executor": "nx:run-commands",
       "options": {
         "command": "tsc",
         "cwd": "sdk/build-utils"
       },
-      "inputs": [
-        "{projectRoot}/src/**/*",
-        "{projectRoot}/tsconfig*.json"
-      ],
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig*.json"],
       "outputs": ["{projectRoot}/dist"]
     },
     "lint": {

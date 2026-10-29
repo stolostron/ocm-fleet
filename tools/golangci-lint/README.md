@@ -18,6 +18,15 @@ The tooling currently uses Go 1.26.6, matching the application and CodeQL builds
 Custom analyzers do not require a Go upgrade. Keep compiler upgrades separate
 from linter changes and check compatibility with CodeQL when raising the minimum.
 
+At startup, the custom executable sets `GOTOOLCHAIN` to its build compiler's
+version for its own Go subprocesses. This also covers config checks outside a
+Go module. A newer host Go can otherwise select a newer standard library that
+the linter cannot parse. The version comes from the executable, so there is no
+second compiler pin to maintain. This overrides ambient `GOTOOLCHAIN` for the
+linter only; application builds and tests keep their own Go environment. Modules
+requiring a newer Go version still fail until the linter's compiler is upgraded
+explicitly.
+
 We considered these alternatives:
 
 - **Upstream release binaries with our archive hashes:** fast setup and upstream's
@@ -49,30 +58,64 @@ npx nx run ocm-fleet:fmt:go
 npx nx run ocm-fleet:fix:go
 npx nx run ocm-fleet:lint:go
 
-# Select projects by their Nx names; ocm-fleet selects the lint tooling.
-npx nx run ocm-fleet:verify:go --projects=server
+# Use the per-project targets and standard Nx project selection:
+npx nx run server:verify
+npx nx run-many --targets=verify --projects=server,deploy-aio
+npx nx run go-lint-tool:verify
 
 # Tool development and updates:
 npx nx run ocm-fleet:setup:golangci-lint
 npx nx run ocm-fleet:test:golangci-lint-analyzers
 npx nx run ocm-fleet:lint:golangci-lint
 npx nx run ocm-fleet:test:golangci-lint-config
-npx nx run ocm-fleet:test:go-workflow
+npx nx run ocm-fleet:test:go-quality
 npx nx run ocm-fleet:update:golangci-lint --release=v2.15.0
 ```
 
+The quality integration tests run real Nx, Go, and linter commands in disposable
+workspaces. They check source files on disk, per-module completion markers, lint
+failure propagation, and Nx's exported task dependencies. These contracts keep
+the tests independent of terminal colors and progress-message formatting.
+
 `fmt:go` applies the shared formatters, including import organization. `verify:go`
 does that first, then runs lint and the normal tests. `fix:go` additionally applies
-supported linter fixes before rechecking; review those changes. All three accept
-comma-separated `--projects` and otherwise cover the application Go projects and
-this module. Generated files and analyzer `testdata` fixtures are excluded from
-rewrites. A fix pass can leave findings behind, so verification still runs and
-fails if those findings or test failures remain. `lint:go` remains a check without
-source edits for CI and other callers that need that behavior.
+supported linter fixes before rechecking; review those changes. These workspace
+targets select Nx projects tagged `type:go-module`. Use each project's `fmt`,
+`verify`, or `fix` target to limit scope. Generated files and analyzer `testdata`
+fixtures are excluded from rewrites. A fix pass can leave findings behind, so
+verification still runs and fails if those findings or test failures remain.
+`lint:go` remains a check without source edits for CI and other callers that need
+that behavior.
 
 Source-rewriting tasks are uncached. They finish editing before starting a fresh
 Nx invocation for lint and tests, ensuring checks hash the resulting source.
 The tool build and individual checks retain their normal cache settings.
+
+After successful rewrites, `refresh:inputs` discards only Nx's `nx_files.nxt`
+file-hash metadata, preserving task cache records and outputs. Nx 23.1.2
+[compares whole-second modification times](https://github.com/nrwl/nx/blob/23.1.2/packages/nx/src/native/workspace/files_hashing.rs),
+so a fast rewrite can otherwise reuse a stale hash even in a new process.
+This workaround belongs to the shared task stages and can be revisited when Nx
+is upgraded.
+
+The common task stages live in `nx.json`'s `targetDefaults`, scoped to projects
+tagged `type:go-module`. Each module opts in with empty `fmt`, `verify`, `fix`,
+`fix:lint`, `refresh:inputs`, `check`, and `lint` target objects, overriding
+cache inputs where needed and keeping its own normal test target. Nx substitutes
+the project root and name; commands use `NX_WORKSPACE_ROOT` for the common
+executable and config. The tag filter keeps these defaults separate from
+JavaScript lint tasks.
+
+The shared `fix:lint` definition uses golangci-lint's `--issues-exit-code=0` so
+unfixable findings do not prevent the final `check` target from running lint and
+tests. That check still fails on remaining findings. Keep this override on the
+fix stage; putting it in `.golangci.yaml` would also silence failures from normal
+lint checks. Tool failures still stop the fix stage. Shared locking and diagnostic
+path settings live in `.golangci.yaml` instead of repeated command arguments.
+
+The retained JavaScript helper manages compiler selection, staged builds, and
+dependency updates, while Nx handles task orchestration. The custom executable
+remains at `bin/tools/golangci-lint`.
 
 Choose an explicit stable v2 release when updating. The update task uses Go's
 module tooling in a disposable copy, then publishes `go.mod` and `go.sum` for
@@ -83,9 +126,10 @@ resolution and staged dependency files, rejecting any checksum changes.
 
 The executable goes to `bin/tools/golangci-lint`. Nx caches it using tool source,
 module files, the build helper, and the selected compiler and host settings.
-Application lint cache keys include these inputs too. Compiler selection is
-isolated from application linting; building the tool disables CGO and ambient
-Go flags, experiments, and workspace overrides.
+Application lint cache keys include these inputs too. Building the tool disables
+CGO and ambient Go flags, experiments, and workspace overrides. During analysis,
+only the compiler selection is pinned; application Go flags and CGO settings
+remain in effect.
 
 The custom version includes the executable's SHA-256 hash, which also identifies
 golangci-lint's analysis cache. Changes to our analyzers, dependencies, or compiler

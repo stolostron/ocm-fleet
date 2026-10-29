@@ -10,6 +10,8 @@ run:
   timeout: 5m
   # Evaluate exclusion paths relative to this shared configuration.
   relative-path-mode: cfg
+  # Concurrent Nx tasks wait for the shared lock instead of failing to acquire it.
+  allow-serial-runners: true
 
 formatters:
   exclusions:
@@ -78,3 +80,7 @@ issues:
   # Keep the full report by disabling per-linter and repeated-message limits.
   max-issues-per-linter: 0
   max-same-issues: 0
+
+output:
+  # Keep diagnostics unambiguous when Nx runs tasks from different modules.
+  path-mode: abs

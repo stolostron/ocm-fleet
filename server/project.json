@@ -6,20 +6,17 @@
   },
   "root": "server",
   "projectType": "application",
-  "tags": ["lang:go", "scope:backend"],
+  "tags": ["lang:go", "scope:backend", "type:go-module"],
   "implicitDependencies": ["proto"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "lint": {
-      "executor": "nx:run-commands",
-      "dependsOn": [{ "projects": ["ocm-fleet"], "target": "lint:go:config" }],
-      "options": {
-        "command": "../bin/tools/golangci-lint run --config ../.golangci.yaml --allow-serial-runners --path-mode=abs ./...",
-        "cwd": "server",
-        "env": { "GOWORK": "off" }
-      },
-      "cache": true,
-      "inputs": ["goSource", "^default", "goLintConfig"],
-      "outputs": []
+      "inputs": ["goSource", "^default", "goLintConfig"]
     },
     "build": {
       "executor": "nx:run-commands",

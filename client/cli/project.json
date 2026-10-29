@@ -6,8 +6,14 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "client/cli/src",
   "projectType": "application",
-  "tags": ["lang:typescript", "scope:cli"],
+  "tags": ["lang:typescript", "scope:cli", "type:js-project"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "build": {
       "executor": "nx:run-commands",
       "dependsOn": ["typecheck"],

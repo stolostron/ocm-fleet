@@ -7,6 +7,50 @@
   "projectType": "library",
   "tags": ["lang:proto", "scope:api"],
   "targets": {
+    "fmt": {
+      "executor": "nx:run-commands",
+      "options": {
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        },
+        "commands": [
+          "buf format --write proto",
+          "npx nx run proto:refresh:inputs"
+        ],
+        "parallel": false
+      },
+      "cache": false
+    },
+    "verify": {},
+    "fix": {},
+    "fix:lint": {
+      "executor": "nx:noop",
+      "cache": false
+    },
+    "refresh:inputs": {},
+    "check": {},
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        },
+        "commands": ["buf format --diff --exit-code proto", "buf lint"],
+        "parallel": false
+      },
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/**/*.proto",
+        "{workspaceRoot}/buf.yaml",
+        "{workspaceRoot}/buf.lock",
+        {
+          "runtime": "buf --version"
+        }
+      ],
+      "outputs": []
+    },
     "generate": {
       "executor": "nx:run-commands",
       "options": {
@@ -17,9 +61,7 @@
         "{workspaceRoot}/buf.yaml",
         "{workspaceRoot}/buf.gen.yaml"
       ],
-      "outputs": [
-        "{workspaceRoot}/server/gen"
-      ]
+      "outputs": ["{workspaceRoot}/server/gen"]
     }
   }
 }

@@ -6,8 +6,14 @@
   "root": "extensions/core/client",
   "sourceRoot": "extensions/core/client/src",
   "projectType": "library",
-  "tags": ["scope:ui", "type:lib", "federation:remote"],
+  "tags": ["scope:ui", "type:lib", "federation:remote", "type:js-project"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "build": {
       "executor": "nx:run-commands",
       "options": {
@@ -28,10 +34,7 @@
         "command": "rm -rf dist node_modules/.cache && for name in overview management core routing setup configuration virtualization addon-demo settings; do echo \"--- $name ---\" && rspack build --config-name $name || exit 1; done",
         "cwd": "extensions/core/client"
       },
-      "inputs": [
-        "{projectRoot}/src/**/*",
-        "{projectRoot}/rspack.config.*"
-      ],
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/rspack.config.*"],
       "outputs": ["{projectRoot}/dist"],
       "dependsOn": ["common:build"]
     },
@@ -55,6 +58,7 @@
         "command": "stylelint 'src/**/*.{css,scss}' --config ../../../stylelint.config.mjs --ignore-pattern '**/node_modules/**' --ignore-pattern '**/dist/**'",
         "cwd": "extensions/core/client"
       }
-    }
+    },
+    "fix:css": {}
   }
 }

@@ -1,0 +1,42 @@
+{
+  "name": "go-lint-tool",
+  "metadata": {
+    "description": "Custom Go linter and analyzers, built from an isolated tools module."
+  },
+  "root": "tools/golangci-lint",
+  "projectType": "application",
+  "tags": ["lang:go", "type:go-module", "scope:tooling"],
+  "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
+    "lint": {
+      "inputs": ["goLintConfig"]
+    },
+    "test": {
+      "executor": "nx:noop",
+      "dependsOn": [
+        {
+          "projects": ["ocm-fleet"],
+          "target": "test:golangci-lint-setup"
+        },
+        {
+          "projects": ["ocm-fleet"],
+          "target": "test:golangci-lint-analyzers"
+        },
+        {
+          "projects": ["ocm-fleet"],
+          "target": "test:golangci-lint-config"
+        },
+        {
+          "projects": ["ocm-fleet"],
+          "target": "test:go-quality"
+        }
+      ],
+      "cache": false
+    }
+  }
+}

@@ -110,26 +110,45 @@ Nx builds our custom Go linter from the isolated
 [`tools/golangci-lint`](tools/golangci-lint) module into
 `bin/tools/golangci-lint`. Its Go dependencies and source hashes are committed in
 `go.mod` and `go.sum`, and its compiler is pinned separately from application Go
-versions. The [tooling rationale](tools/golangci-lint/README.md#why-a-dedicated-module)
+versions. The linter also uses that compiler for package loading, so a newer
+installed Go does not change its analysis environment. The
+[tooling rationale](tools/golangci-lint/README.md#why-a-dedicated-module)
 explains the alternatives and provenance tradeoffs.
 
 ```bash
-npx nx run ocm-fleet:verify:go # format/import fixes, then lint and tests
-npx nx run ocm-fleet:fmt:go    # formatting and import organization only
-npx nx run ocm-fleet:fix:go    # also apply supported linter fixes, then lint and tests
-npx nx run ocm-fleet:lint:go   # check all Go modules without editing source
-npx nx run server:lint        # check one Go project
+npx nx run ocm-fleet:verify # format/import fixes, then checks across projects
+npx nx run ocm-fleet:fmt    # formatting and import organization only
+npx nx run ocm-fleet:fix    # also apply broader linter fixes, then check
+npx nx run ocm-fleet:lint   # lint across projects without editing source
+npx nx run ocm-fleet:check  # all checks without formatting first
 
-# Limit source changes and verification to selected projects:
-npx nx run ocm-fleet:verify:go --projects=server,deploy-aio
+# Select a project or subset with standard Nx commands:
+npx nx run server:verify
+npx nx run cli:verify
+npx nx run-many --targets=verify --projects=web,plugins
+npx nx run ocm-fleet:verify:go # Go-only aliases remain available
 ```
 
-Local verification fixes formatting and imports automatically. Broader linter
-rewrites require the explicit `fix:go` task; review its diff. Both tasks run the
-selected projects' normal lint and test targets after rewriting, and fail if
-findings or failing tests remain. By default these tasks cover server, deploy-aio,
-nx-cache-proxy, and the lint tooling; they leave generated files and analyzer
-`testdata` fixtures alone. Application lint still reports the existing backlog.
+The workspace targets collect each project's supported checks: Go uses our
+custom golangci-lint; JavaScript/TypeScript uses Prettier and ESLint; styles use
+Prettier and stylelint; protobuf uses Buf. Shared scripts and configuration have
+workspace formatting and lint targets too. Verification includes normal tests,
+browser component tests, and existing type checks where available. Install
+Playwright's Chromium browser with `npx playwright install chromium` for component
+tests. Integration and end-to-end suites remain explicit.
+
+Local verification fixes formatting and imports automatically. Broader ESLint,
+stylelint, and Go linter rewrites require `fix`; review its diff. Both workflows
+finish with checks and fail if findings or test failures remain. Existing lint
+backlogs remain; these tasks do not enable CI enforcement.
+
+Shared lifecycle definitions live in `nx.json`, scoped to `type:go-module`,
+`type:js-project`, and `lang:proto` as appropriate. Projects opt in with target
+entries in their Nx configuration. `check` collects available lint, style, test,
+component test, and typecheck targets; `fix:lint` applies broader fixes before
+that check. Nx handles project selection and ordering without a task wrapper.
+Generated files and analyzer `testdata` fixtures retain their formatting;
+standalone `poc/` modules are outside this workflow.
 
 Go quality tasks build or restore the cached tool and validate the shared config
 automatically. The checked-in [`.golangci.yaml`](.golangci.yaml) starts from OCM's
@@ -143,19 +162,17 @@ included.
 Nx caches the tool build and successful lint results using source, configuration,
 dependency pins, and Go environment. Go's build cache and golangci-lint's analysis
 cache also reduce repeated work. Concurrent lint tasks wait for the linter's
-shared lock. Source-rewriting tasks always run; verification starts a fresh Nx
-invocation after edits so checks hash the resulting files. CI uses checks without
-source rewrites and tests the tooling and configuration; application cleanup and CI
-lint enforcement remain deferred. Lint reports all findings and fails when issues
-remain.
+shared lock. Source-rewriting tasks always run and refresh Nx's file-hash metadata;
+verification starts a fresh Nx invocation so checks hash the resulting files.
+CI uses checks without source rewrites and tests the tooling and configuration;
+application cleanup and CI lint enforcement remain deferred. Lint reports all
+findings and fails when issues remain.
 
 To update the linter, select an explicit stable v2 release:
 
 ```bash
 npx nx run ocm-fleet:update:golangci-lint --release=v2.15.0
-npx nx run ocm-fleet:test:golangci-lint-setup
-npx nx run ocm-fleet:test:golangci-lint-analyzers
-npx nx run ocm-fleet:test:golangci-lint-config
+npx nx run go-lint-tool:verify
 ```
 
 Replace the example version with your chosen release, review the module diff and

@@ -7,9 +7,15 @@
   "root": "client/web",
   "sourceRoot": "client/web/src",
   "projectType": "application",
-  "tags": ["scope:ui", "type:app"],
+  "tags": ["scope:ui", "type:app", "type:js-project"],
   "implicitDependencies": ["plugins", "@ocm-fleet/kind-plugin"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "build": {
       "executor": "nx:run-commands",
       "options": {
@@ -64,6 +70,7 @@
         "command": "stylelint 'src/**/*.{css,scss}' --config ../../stylelint.config.mjs --ignore-pattern '**/node_modules/**' --ignore-pattern '**/dist/**'",
         "cwd": "client/web"
       }
-    }
+    },
+    "fix:css": {}
   }
 }

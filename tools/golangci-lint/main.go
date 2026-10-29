@@ -17,6 +17,15 @@ import (
 )
 
 func main() {
+	// Package loading must use the compiler that built our analyzers. A newer
+	// host Go can expose standard-library syntax this binary cannot parse, and
+	// changes config verification's Go-version fallback outside a module.
+	goVersion := runtime.Version()
+	if err := os.Setenv("GOTOOLCHAIN", goVersion); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(exitcodes.Failure)
+	}
+
 	// Config verification needs the upstream version, not this module's version.
 	version := ""
 	if info, ok := debug.ReadBuildInfo(); ok {
@@ -36,7 +45,7 @@ func main() {
 	// invalidates cached findings when our analyzers, dependencies, or compiler
 	// change, while the upstream prefix keeps config verification working.
 	version += "-fleet." + identity
-	if err := commands.Execute(commands.BuildInfo{Version: version, GoVersion: runtime.Version()}); err != nil {
+	if err := commands.Execute(commands.BuildInfo{Version: version, GoVersion: goVersion}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(exitcodes.Failure)
 	}

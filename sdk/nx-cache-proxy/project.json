@@ -3,20 +3,15 @@
   "metadata": {
     "description": "Nx remote cache proxy backed by MinIO."
   },
-  "tags": ["lang:go"],
+  "tags": ["lang:go", "type:go-module"],
   "targets": {
-    "lint": {
-      "executor": "nx:run-commands",
-      "dependsOn": [{ "projects": ["ocm-fleet"], "target": "lint:go:config" }],
-      "options": {
-        "command": "../../bin/tools/golangci-lint run --config ../../.golangci.yaml --allow-serial-runners --path-mode=abs ./...",
-        "cwd": "sdk/nx-cache-proxy",
-        "env": { "GOWORK": "off" }
-      },
-      "cache": true,
-      "inputs": ["goSource", "goLintConfig"],
-      "outputs": []
-    },
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
+    "lint": {},
     "build": {
       "command": "cd sdk/nx-cache-proxy && go build -o ../../bin/nx-cache-proxy ./cmd/nx-cache-proxy/",
       "outputs": ["{workspaceRoot}/bin/nx-cache-proxy"]

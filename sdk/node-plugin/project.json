@@ -3,8 +3,14 @@
   "root": "sdk/node-plugin",
   "sourceRoot": "sdk/node-plugin/src",
   "projectType": "library",
-  "tags": ["scope:ui", "type:lib", "visibility:private"],
+  "tags": ["scope:ui", "type:lib", "visibility:private", "type:js-project"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "build": {
       "executor": "nx:run-commands",
       "options": {

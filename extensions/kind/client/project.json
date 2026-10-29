@@ -6,9 +6,15 @@
   "root": "extensions/kind/client",
   "sourceRoot": "extensions/kind/client/src",
   "projectType": "library",
-  "tags": ["scope:ui", "type:lib", "federation:remote"],
+  "tags": ["scope:ui", "type:lib", "federation:remote", "type:js-project"],
   "implicitDependencies": ["@ocm-fleet/kind-server"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "build": {
       "executor": "nx:run-commands",
       "options": {
@@ -35,6 +41,7 @@
         "command": "stylelint 'src/**/*.{css,scss}' --config ../../../stylelint.config.mjs --ignore-pattern '**/node_modules/**' --ignore-pattern '**/dist/**'",
         "cwd": "extensions/kind/client"
       }
-    }
+    },
+    "fix:css": {}
   }
 }

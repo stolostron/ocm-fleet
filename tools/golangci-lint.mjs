@@ -177,16 +177,8 @@ if (
           await toolEnvironment(),
         );
         break;
-      case "fmt":
-        for (const directory of [
-          moduleRoot,
-          join(moduleRoot, "domainaccess/testdata/domain"),
-        ]) {
-          runGo(["fmt", "./..."], directory, await toolEnvironment());
-        }
-        break;
       default:
-        throw new Error("Expected build, update, env, test, or fmt");
+        throw new Error("Expected build, update, env, or test");
     }
   } catch (error) {
     console.error(error.message);
