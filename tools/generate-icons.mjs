@@ -29,13 +29,6 @@ function toPascalCase(kebab) {
     .join("");
 }
 
-/** Derive search keywords from the kebab-case stem. */
-function deriveKeywords(stem) {
-  // Remove trailing "-icon" suffix, split remaining parts
-  const base = stem.replace(/-icon$/, "");
-  return base.split("-").filter((w) => w.length > 0);
-}
-
 const files = readdirSync(iconsDir).filter(
   (f) => f.endsWith(".js") && !f.endsWith(".d.ts"),
 );
