@@ -8,7 +8,6 @@ import {
   parseCommand,
   parseOwnedKindNodes,
   sandboxLogLevel,
-  sandboxLookup,
   sandboxRunArgs,
   sanitize,
   usesPrebuiltImage,
@@ -40,9 +39,7 @@ describe("buildTestEnvironment", () => {
     );
 
     expect(env.EXISTING).toBe("kept");
-    expect(env.NODE_OPTIONS).toContain("--max-old-space-size=1024");
-    expect(env.NODE_OPTIONS).toContain("--require=");
-    expect(env.NODE_OPTIONS).toContain("e2e/sandbox/localhost-dns.cjs");
+    expect(env.NODE_OPTIONS).toBe("--max-old-space-size=1024");
     expect(env.BASE_URL).toBe("https://ocm-fleet.localhost:8085");
     expect(env.OCM_RM_GRPC_TARGET).toBe("127.0.0.1:50051");
     expect(env.OCM_RM_CA_FILE).toBe("/tmp/run/ca.crt");
@@ -119,23 +116,6 @@ describe("sandboxLogLevel", () => {
     expect(sandboxLogLevel({ LOG_LEVEL: "debug" })).toBe("debug");
     expect(sandboxLogLevel({ LOG_LEVEL: "info" })).toBe("info");
     expect(sandboxLogLevel({ LOG_LEVEL: "  warn  " })).toBe("warn");
-  });
-});
-
-describe("sandboxLookup", () => {
-  it("resolves the sandbox localhost origin to IPv4 loopback", async () => {
-    const result = await new Promise((resolve, reject) => {
-      sandboxLookup(
-        "ocm-fleet.localhost",
-        { family: 4 },
-        (error, address, family) => {
-          if (error) reject(error);
-          else resolve({ address, family });
-        },
-      );
-    });
-
-    expect(result).toEqual({ address: "127.0.0.1", family: 4 });
   });
 });
 
