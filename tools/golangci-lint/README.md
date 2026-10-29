@@ -75,7 +75,11 @@ npx nx run ocm-fleet:update:golangci-lint --release=v2.15.0
 The quality integration tests run real Nx, Go, and linter commands in disposable
 workspaces. They check source files on disk, per-module completion markers, lint
 failure propagation, and Nx's exported task dependencies. These contracts keep
-the tests independent of terminal colors and progress-message formatting.
+the tests independent of terminal colors and progress-message formatting. One
+workspace lint-failure test exercises propagation; graphs exported from the actual
+workspace commands check module coverage. Individual failure cases use project
+targets. Nx caches these suites against tooling inputs, rather than application
+source changes.
 
 `fmt:go` applies the shared formatters, including import organization. `verify:go`
 does that first, then runs lint and the normal tests. `fix:go` additionally applies
@@ -94,9 +98,17 @@ We dropped `gci` because it removes spacing before some import comments that
 `goimports` requires, leaving formatted code that still fails lint. Reordering
 the formatters cannot reconcile their independent checks.
 
+Formatting uses `bin/tools/format-go`, a small Go command that reads the same
+configuration and reuses golangci-lint's exclusion and simplification code. It
+batches eligible files through the official `bin/tools/goimports` CLI, which
+reuses its import resolver across files; golangci-lint's formatter creates one
+per file. Generated files and excluded directories never reach goimports. The
+tools module pins both programs' dependencies and compiler; no separate installer
+or version list is needed. Nx still handles task ordering and failure propagation.
+
 Source-rewriting tasks are uncached. They finish editing before starting a fresh
 Nx invocation for lint and tests, ensuring checks hash the resulting source.
-The tool build and individual checks retain their normal cache settings.
+The tool build and successful checks are cached against their actual inputs.
 
 After successful rewrites, `refresh:inputs` discards only Nx's `nx_files.nxt`
 file-hash metadata, preserving task cache records and outputs. Nx 23.1.2
@@ -122,7 +134,7 @@ path settings live in `.golangci.yaml` instead of repeated command arguments.
 
 The retained JavaScript helper manages compiler selection, staged builds, and
 dependency updates, while Nx handles task orchestration. The custom executable
-remains at `bin/tools/golangci-lint`.
+remains at `bin/tools/golangci-lint`, alongside `goimports` and `format-go`.
 
 Choose an explicit stable v2 release when updating. The update task uses Go's
 module tooling in a disposable copy, then publishes `go.mod` and `go.sum` for
@@ -131,7 +143,7 @@ raise the compiler pin explicitly when needed. Run the tool module, setup, and
 configuration tests and lint the tooling before committing. Ordinary builds use
 read-only module resolution and staged dependency files, rejecting any checksum changes.
 
-The executable goes to `bin/tools/golangci-lint`. Nx caches it using tool source,
+The executables go to `bin/tools/`. Nx caches them using tool source,
 module files, the build helper, and the selected compiler and host settings.
 Application lint cache keys include these inputs too. Building the tool disables
 CGO and ambient Go flags, experiments, and workspace overrides. During analysis,

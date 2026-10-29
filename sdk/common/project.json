@@ -6,7 +6,7 @@
   "root": "sdk/common",
   "sourceRoot": "sdk/common/src",
   "projectType": "library",
-  "tags": ["scope:ui", "type:lib", "type:js-project"],
+  "tags": ["scope:ui", "type:lib", "type:js-project", "test:vitest"],
   "targets": {
     "fmt": {},
     "verify": {},
@@ -30,12 +30,6 @@
         "lintFilePatterns": ["{projectRoot}/src/**/*.{ts,tsx}"]
       }
     },
-    "test": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "npx vitest run --config vitest.config.ts"
-      },
-      "inputs": ["{projectRoot}/src/**/*", "{workspaceRoot}/vitest.config.ts"]
-    }
+    "test": {}
   }
 }

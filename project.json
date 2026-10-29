@@ -98,8 +98,8 @@
           "NX_DAEMON": "false"
         },
         "commands": [
-          "prettier --write --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" \"*.{json,yaml,yml,md,mjs}\" \".github/**/*.{yml,yaml,json,md}\" \"docs/**/*.{md,json,yaml,yml}\" \"tools/*.{mjs,md,json}\" \"scripts/**/*.{mjs,json,yaml,yml,md}\" \"deploy/**/*.{mjs,json,yaml,yml,md}\" \"e2e/{shared,sandbox}/**/*.{ts,mjs,json,md}\" --no-error-on-unmatched-pattern",
-          "eslint \"{tools,scripts,deploy}/**/*.mjs\" \"*.mjs\" --no-error-on-unmatched-pattern --fix --fix-type layout --exit-on-fatal-error || test \"$?\" -eq 1",
+          "prettier --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/workspace/prettier\" --write --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" \"*.{json,yaml,yml,md,mjs}\" \".github/**/*.{yml,yaml,json,md}\" \"docs/**/*.{md,json,yaml,yml}\" \"tools/*.{mjs,md,json}\" \"scripts/**/*.{mjs,json,yaml,yml,md}\" \"deploy/**/*.{mjs,json,yaml,yml,md}\" \"e2e/{shared,sandbox}/**/*.{ts,mjs,json,md}\" --no-error-on-unmatched-pattern",
+          "eslint --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/workspace/eslint-layout\" \"{tools,scripts,deploy}/**/*.mjs\" \"*.mjs\" --no-error-on-unmatched-pattern --fix --fix-type layout --exit-on-fatal-error || test \"$?\" -eq 1",
           "npx nx run ocm-fleet:refresh:inputs"
         ],
         "parallel": false
@@ -146,7 +146,13 @@
       "options": {
         "command": "node --test tools/eslint-config.test.mjs"
       },
-      "cache": false
+      "cache": true,
+      "inputs": [
+        "eslintConfig",
+        "{workspaceRoot}/tools/eslint-config.test.mjs",
+        "jsRuntime"
+      ],
+      "outputs": []
     },
     "test:workspace-quality": {
       "executor": "nx:run-commands",
@@ -157,8 +163,17 @@
         },
         "command": "node --test tools/workspace-quality.test.mjs"
       },
-      "cache": false,
-      "dependsOn": ["setup:golangci-lint"]
+      "cache": true,
+      "dependsOn": ["setup:golangci-lint"],
+      "inputs": [
+        "qualityTaskConfig",
+        "eslintConfig",
+        "{workspaceRoot}/tools/workspace-quality.test.mjs",
+        "{workspaceRoot}/stylelint.config.mjs",
+        "{workspaceRoot}/.gitignore",
+        "{workspaceRoot}/e2e/cli/playwright.config.ts"
+      ],
+      "outputs": []
     },
     "fmt:go": {
       "executor": "nx:run-commands",
@@ -216,7 +231,9 @@
       "options": {
         "command": "bin/tools/golangci-lint config verify --config .golangci.yaml"
       },
-      "cache": false
+      "cache": true,
+      "inputs": ["goLintConfig"],
+      "outputs": []
     },
     "setup:golangci-lint": {
       "executor": "nx:run-commands",
@@ -225,7 +242,11 @@
       },
       "cache": true,
       "inputs": ["goLintTool"],
-      "outputs": ["{workspaceRoot}/bin/tools/golangci-lint"]
+      "outputs": [
+        "{workspaceRoot}/bin/tools/golangci-lint",
+        "{workspaceRoot}/bin/tools/goimports",
+        "{workspaceRoot}/bin/tools/format-go"
+      ]
     },
     "update:golangci-lint": {
       "executor": "nx:run-commands",
@@ -239,7 +260,14 @@
       "options": {
         "command": "node --test tools/golangci-lint.test.mjs"
       },
-      "cache": false
+      "cache": true,
+      "inputs": [
+        "goLintTool",
+        "{workspaceRoot}/tools/golangci-lint.test.mjs",
+        "{workspaceRoot}/server/go.mod",
+        "jsRuntime"
+      ],
+      "outputs": []
     },
     "test:golangci-lint-config": {
       "executor": "nx:run-commands",
@@ -247,7 +275,15 @@
       "options": {
         "command": "node --test tools/golangci-lint-config.test.mjs"
       },
-      "cache": false
+      "cache": true,
+      "inputs": [
+        "goLintConfig",
+        "{workspaceRoot}/tools/golangci-lint-config.test.mjs",
+        "{workspaceRoot}/nx.json",
+        "{workspaceRoot}/project.json",
+        "jsRuntime"
+      ],
+      "outputs": []
     },
     "test:go-quality": {
       "executor": "nx:run-commands",
@@ -255,7 +291,12 @@
       "options": {
         "command": "node --test tools/go-quality.test.mjs"
       },
-      "cache": false
+      "cache": true,
+      "inputs": [
+        "qualityTaskConfig",
+        "{workspaceRoot}/tools/go-quality.test.mjs"
+      ],
+      "outputs": []
     },
     "test:golangci-lint-module": {
       "executor": "nx:run-commands",
@@ -298,7 +339,13 @@
       "options": {
         "command": "node --test tools/generate-agents.test.mjs"
       },
-      "cache": false
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/tools/generate-agents.mjs",
+        "{workspaceRoot}/tools/generate-agents.test.mjs",
+        "jsRuntime"
+      ],
+      "outputs": []
     },
     "fleetctl": {
       "executor": "nx:run-commands",
@@ -362,7 +409,10 @@
         "command": "node tools/generate-icons.mjs"
       },
       "cache": true,
-      "inputs": ["{workspaceRoot}/tools/generate-icons.mjs"],
+      "inputs": [
+        "{workspaceRoot}/tools/generate-icons.mjs",
+        "{workspaceRoot}/package-lock.json"
+      ],
       "outputs": ["{workspaceRoot}/sdk/common/src/generated/pf-icons.json"]
     },
     "web:generate-registry": {

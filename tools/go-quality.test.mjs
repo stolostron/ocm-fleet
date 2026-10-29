@@ -120,22 +120,22 @@ test("workspace verification formats every Go module before running their checks
 });
 
 test("Nx declares formatting before verification and includes lint and tests in checks", async (t) => {
-  const { graph } = await fixture(t);
+  const { graph, configuredGraph } = await fixture(t);
   const workspace = await graph(["run", "ocm-fleet:verify:go"]);
   assert.equal(
     workspace.dependencies["ocm-fleet:verify:go"].includes("ocm-fleet:fmt:go"),
     true,
   );
-  const modules = await graph([
-    "run-many",
-    "--targets=verify,check",
-    "--projects=tag:type:go-module",
-  ]);
+  const formatting = await configuredGraph("fmt:go");
+  const modules = await configuredGraph("verify:go");
   for (const { name } of goModules) {
-    assert.equal(
-      modules.dependencies[`${name}:verify`].includes(`${name}:fmt`),
-      true,
-      `${name}:verify must depend on formatting`,
+    assert.ok(
+      formatting.tasks[`${name}:fmt`],
+      `${name} must participate in workspace formatting`,
+    );
+    assert.ok(
+      modules.tasks[`${name}:check`],
+      `${name} must participate in workspace verification`,
     );
     for (const target of ["lint", "test"]) {
       assert.equal(
@@ -147,25 +147,26 @@ test("Nx declares formatting before verification and includes lint and tests in 
   }
 });
 
-test("workspace verification propagates lint failures from every selected Go module", async (t) => {
-  for (const { name, directory } of goModules) {
-    await t.test(name, async (subtest) => {
-      const { root, task } = await fixture(subtest);
-      await writeWorkspaceChecks(root);
-      const path = join(root, directory, "main.go");
-      let source = await readFile(path, "utf8");
-      if (name !== "server") {
-        source = source.replace(
-          "package example",
-          'package example\n\nimport "os"',
-        );
-      }
-      // This compiles and survives formatting, but errcheck must reject it.
-      await writeFile(path, source + '\nfunc Unchecked() { os.Chdir(".") }\n');
-      await assert.rejects(task("verify:go", "ocm-fleet"), { code: 1 });
-      await assertWorkspaceChecksPassed(root);
-    });
-  }
+test("workspace verification propagates a selected module's lint failure while running normal tests", async (t) => {
+  const { root, task } = await fixture(t);
+  await writeWorkspaceChecks(root);
+  const path = join(root, "deploy/aio/main.go");
+  const source = await readFile(path, "utf8");
+  // Use a non-server module to catch orchestration accidentally tied to server.
+  // This compiles and survives formatting, but errcheck must reject it.
+  await writeFile(
+    path,
+    source.replace("package example", 'package example\n\nimport "os"') +
+      '\nfunc Unchecked() { os.Chdir(".") }\n',
+  );
+  await assert.rejects(task("verify:go", "ocm-fleet"), (error) => {
+    assert.equal(error.code, 1);
+    assert.match(error.stdout + error.stderr, /os\.Chdir/);
+    return true;
+  });
+  await assertWorkspaceChecksPassed(root);
+  await writeFile(path, source);
+  await task("verify:go", "ocm-fleet");
 });
 
 test("workspace lint reports findings without editing source", async (t) => {
@@ -340,10 +341,12 @@ async function fixture(t) {
     join(root, "node_modules"),
     "dir",
   );
-  await symlink(
-    join(repository, "bin/tools/golangci-lint"),
-    join(root, "bin/tools/golangci-lint"),
-  );
+  for (const name of ["golangci-lint", "goimports", "format-go"]) {
+    await symlink(
+      join(repository, "bin/tools", name),
+      join(root, "bin/tools", name),
+    );
+  }
   await cp(join(repository, ".golangci.yaml"), join(root, ".golangci.yaml"));
   const { targetDefaults } = JSON.parse(
     await readFile(join(repository, "nx.json"), "utf8"),
@@ -485,6 +488,30 @@ func TestClean(t *testing.T) {
     source,
     task: (target, project = "server") =>
       runNx(["run", `${project}:${target}`, "--outputStyle=static"]),
+    configuredGraph: async (target) => {
+      const path = join(root, ".nx", "configured-task-graph.json");
+      await mkdir(dirname(path), { recursive: true });
+      await run(
+        "sh",
+        [
+          "-c",
+          project.targets[target].options.command + ' --graph="$1"',
+          "graph",
+          path,
+        ],
+        {
+          cwd: root,
+          env: {
+            ...process.env,
+            NX_DAEMON: "false",
+            NX_ISOLATE_PLUGINS: "false",
+            NX_NO_CLOUD: "true",
+            GOWORK: "off",
+          },
+        },
+      );
+      return JSON.parse(await readFile(path, "utf8")).tasks;
+    },
     graph: async (args) => {
       const path = join(root, ".nx", "quality-task-graph.json");
       await mkdir(dirname(path), { recursive: true });

@@ -83,16 +83,93 @@ test("fmt leaves broader fixes for fix and ignores generated files", async (t) =
 test("formatter parse failures and unfixable lint findings remain failures", async (t) => {
   const { root, task } = await fixture(t);
   const path = join(root, "client/cli/src/example.ts");
+  await task("fmt");
   await writeFile(path, "export const = ;\n");
-  await assert.rejects(task("fmt"), { code: 1 });
+  await assert.rejects(task("fmt", "cli"), (error) => {
+    assert.equal(error.code, 1);
+    assert.match(error.stdout + error.stderr, /Parsing error|SyntaxError/);
+    return true;
+  });
   await writeFile(path, "export const value: any = 'hello'\n");
-  await assert.rejects(task("fix"), { code: 1 });
+  await assert.rejects(task("fix", "cli"), (error) => {
+    assert.equal(error.code, 1);
+    assert.match(error.stdout + error.stderr, /no-explicit-any/);
+    return true;
+  });
   await writeFile(path, 'export const value = "hello";\n');
   await writeFile(
     join(root, "client/cli/src/example.css"),
     "a { color: #zzzzzz; }\n",
   );
-  await assert.rejects(task("fix"), { code: 1 });
+  await assert.rejects(task("fix", "cli"), (error) => {
+    assert.equal(error.code, 1);
+    assert.match(error.stdout + error.stderr, /color-no-invalid-hex/);
+    return true;
+  });
+});
+
+test("project unit tests stay scoped and invalidate their cache for source and dependency changes", async (t) => {
+  const { root, task } = await fixture(t);
+  await cp(
+    join(repository, "vitest.config.ts"),
+    join(root, "vitest.config.ts"),
+  );
+  for (const [name, directory] of [
+    ["common", "sdk/common"],
+    ["build-utils", "sdk/build-utils"],
+  ]) {
+    const project = await json(`${directory}/project.json`);
+    await mkdir(join(root, directory, "src/__tests__"), { recursive: true });
+    await writeJSON(root, `${directory}/project.json`, {
+      name,
+      root: directory,
+      tags: project.tags,
+      implicitDependencies: name === "build-utils" ? ["common"] : [],
+      targets: { test: project.targets.test, "refresh:inputs": {} },
+    });
+    await writeFile(
+      join(root, directory, "src/__tests__/scope.test.ts"),
+      `
+import { appendFileSync } from "node:fs";
+import { expect, test } from "vitest";
+import { value } from ${JSON.stringify(join(root, "sdk/common/src/value.ts"))};
+test("reads real source", () => {
+  expect(value).toBeGreaterThan(0);
+  appendFileSync(${JSON.stringify(join(root, `${name}-tested`))}, "passed");
+});
+`,
+    );
+  }
+  const source = join(root, "sdk/common/src/value.ts");
+  const marker = (name) => readFile(join(root, `${name}-tested`), "utf8");
+  await writeFile(source, "export const value = 1;\n");
+  await task("test", "common");
+  assert.equal(await marker("common"), "passed");
+  await assert.rejects(marker("build-utils"), { code: "ENOENT" });
+  await task("test", "common");
+  assert.equal(
+    await marker("common"),
+    "passed",
+    "unchanged tests must reuse the cache",
+  );
+  await writeFile(source, "export const value = 2;\n");
+  await task("refresh:inputs", "common");
+  await task("test", "common");
+  assert.equal(
+    await marker("common"),
+    "passedpassed",
+    "source changes must rerun tests",
+  );
+  await task("test", "build-utils");
+  assert.equal(await marker("build-utils"), "passed");
+  await writeFile(source, "export const value = 3;\n");
+  await task("refresh:inputs", "common");
+  await task("test", "build-utils");
+  assert.equal(
+    await marker("build-utils"),
+    "passedpassed",
+    "dependency changes must rerun consumers' tests",
+  );
 });
 
 test("Nx checks include component tests and omit inferred end-to-end suites", async (t) => {
@@ -142,10 +219,12 @@ async function fixture(t) {
     join(root, "node_modules"),
     "dir",
   );
-  await symlink(
-    join(repository, "bin/tools/golangci-lint"),
-    join(root, "bin/tools/golangci-lint"),
-  );
+  for (const name of ["golangci-lint", "goimports", "format-go"]) {
+    await symlink(
+      join(repository, "bin/tools", name),
+      join(root, "bin/tools", name),
+    );
+  }
   for (const path of [".golangci.yaml", ".prettierignore"]) {
     await cp(join(repository, path), join(root, path));
   }
@@ -308,8 +387,8 @@ await appendFile(process.argv[2], "passed");
     });
   return {
     root,
-    task: (target) =>
-      runNx(["run", `ocm-fleet:${target}`, "--outputStyle=static"]),
+    task: (target, project = "ocm-fleet") =>
+      runNx(["run", `${project}:${target}`, "--outputStyle=static"]),
     graph: async (target) => {
       const path = join(root, ".nx", "quality-task-graph.json");
       await mkdir(dirname(path), { recursive: true });

@@ -9,13 +9,13 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const moduleRoot = fileURLToPath(new URL("./golangci-lint/", import.meta.url));
-const binaryPath = fileURLToPath(
-  new URL("../bin/tools/golangci-lint", import.meta.url),
+const outputDirectory = fileURLToPath(
+  new URL("../bin/tools/", import.meta.url),
 );
 const moduleFiles = ["go.mod", "go.sum"];
 
@@ -40,32 +40,38 @@ export async function toolEnvironment(directory = moduleRoot) {
   return { ...env, GOOS: host.GOHOSTOS, GOARCH: host.GOHOSTARCH };
 }
 
-// Stage module files and the executable so failed builds preserve the installed
-// tool and ordinary builds cannot silently add unreviewed dependency checksums.
-export async function buildGolangciLint({
+// Stage module files and all executables so failed builds preserve the installed
+// tools and ordinary builds cannot silently add unreviewed dependency checksums.
+export async function buildGoTools({
   directory = moduleRoot,
-  output = binaryPath,
+  output = outputDirectory,
+  programs = {
+    "golangci-lint": ".",
+    goimports: "golang.org/x/tools/cmd/goimports",
+    "format-go": "./cmd/format-go",
+  },
 } = {}) {
   const env = await toolEnvironment(directory);
-  await mkdir(dirname(output), { recursive: true });
-  const staging = await mkdtemp(join(dirname(output), ".golangci-lint-build-"));
+  await mkdir(output, { recursive: true });
+  const staging = await mkdtemp(join(output, ".go-tools-build-"));
   try {
     for (const name of moduleFiles)
       await cp(join(directory, name), join(staging, name));
-    runGo(
-      [
-        "build",
-        "-mod=readonly",
-        `-modfile=${join(staging, "go.mod")}`,
-        "-trimpath",
-        "-buildvcs=false",
-        "-o",
-        join(staging, "golangci-lint"),
-        ".",
-      ],
-      directory,
-      env,
-    );
+    for (const [name, source] of Object.entries(programs))
+      runGo(
+        [
+          "build",
+          "-mod=readonly",
+          `-modfile=${join(staging, "go.mod")}`,
+          "-trimpath",
+          "-buildvcs=false",
+          "-o",
+          join(staging, name),
+          source,
+        ],
+        directory,
+        env,
+      );
     for (const name of moduleFiles) {
       if (
         (await readFile(join(directory, name), "utf8")) !==
@@ -76,7 +82,8 @@ export async function buildGolangciLint({
         );
       }
     }
-    await rename(join(staging, "golangci-lint"), output);
+    for (const name of Object.keys(programs))
+      await rename(join(staging, name), join(output, name));
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
@@ -140,7 +147,7 @@ if (
     });
     switch (positionals[0]) {
       case "build":
-        await buildGolangciLint();
+        await buildGoTools();
         break;
       case "update":
         await updateGolangciLint({ version: values.release });

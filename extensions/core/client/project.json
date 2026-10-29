@@ -6,7 +6,13 @@
   "root": "extensions/core/client",
   "sourceRoot": "extensions/core/client/src",
   "projectType": "library",
-  "tags": ["scope:ui", "type:lib", "federation:remote", "type:js-project"],
+  "tags": [
+    "scope:ui",
+    "type:lib",
+    "federation:remote",
+    "type:js-project",
+    "test:vitest"
+  ],
   "targets": {
     "fmt": {},
     "verify": {},
@@ -44,7 +50,7 @@
         "command": "playwright test",
         "cwd": "extensions/core/client"
       },
-      "cache": false
+      "dependsOn": ["ocm-fleet:web:generate-icons"]
     },
     "lint": {
       "executor": "@nx/eslint:lint",
@@ -59,6 +65,7 @@
         "cwd": "extensions/core/client"
       }
     },
-    "fix:css": {}
+    "fix:css": {},
+    "test": {}
   }
 }

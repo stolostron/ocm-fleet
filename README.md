@@ -101,7 +101,7 @@ dependency graph, affected detection, and parallel execution.
 ```bash
 npx nx show projects        # list all projects
 npx nx graph                # visualize dependency graph
-npx nx run server:test      # run a single target (cached)
+npx nx run server:test      # run a single target
 npx nx run-many -t test     # run target across all projects (parallel)
 npx nx affected -t test     # only test what changed
 ```
@@ -163,6 +163,12 @@ dependency pins, and Go environment. Go's build cache and golangci-lint's analys
 cache also reduce repeated work. Concurrent lint tasks wait for the linter's
 shared lock. Source-rewriting tasks always run and refresh Nx's file-hash metadata;
 verification starts a fresh Nx invocation so checks hash the resulting files.
+Prettier and ESLint use content-based file caches within those rewrite stages.
+Tooling regression tests are cached against their scripts, task definitions,
+configuration, and tool versions. UI unit tests run per project, with dependency
+sources included in their cache keys. Component tests consume source directly,
+so they generate the icon manifest but skip production builds. Server tests still
+run each time, including their container checks.
 CI uses checks without source rewrites and tests the tooling and configuration;
 application cleanup and CI lint enforcement remain deferred. Lint reports all
 unsuppressed findings and fails when issues remain.
@@ -242,7 +248,7 @@ helpers), `plugins` (core MF remotes), and `@ocm-fleet/kind-plugin`.
 ```bash
 npx nx run-many -t test     # unit tests for Nx projects
 npx nx affected -t test     # only test what changed
-npx nx run server:test      # Go server tests (cached)
+npx nx run server:test      # Go server tests, including container checks
 npx nx run deploy-aio:test  # AIO packaging unit tests
 npx nx run common:test      # shared UI lib tests
 

@@ -37,9 +37,7 @@
     "goLintConfig": [
       "{workspaceRoot}/.golangci.yaml",
       "goLintTool",
-      {
-        "runtime": "go env GOVERSION GOOS GOARCH CGO_ENABLED GOFLAGS GOEXPERIMENT GOTOOLCHAIN CC CXX CGO_CFLAGS CGO_CPPFLAGS CGO_CXXFLAGS CGO_LDFLAGS"
-      }
+      "goRuntime"
     ],
     "uiSource": [
       "{projectRoot}/src/**/*.{ts,tsx,js,jsx}",
@@ -50,15 +48,52 @@
       "{workspaceRoot}/eslint.config.mjs",
       "{workspaceRoot}/package-lock.json",
       "{workspaceRoot}/.prettierignore"
+    ],
+    "jsRuntime": [
+      "{workspaceRoot}/package-lock.json",
+      {
+        "runtime": "node -p \"JSON.stringify([process.version, process.platform, process.arch])\""
+      }
+    ],
+    "qualityTaskConfig": [
+      "{workspaceRoot}/nx.json",
+      "{workspaceRoot}/project.json",
+      "{workspaceRoot}/**/project.json",
+      "goLintConfig",
+      "jsRuntime"
+    ],
+    "goRuntime": [
+      {
+        "runtime": "go env GOVERSION GOOS GOARCH CGO_ENABLED GOFLAGS GOEXPERIMENT GOTOOLCHAIN CC CXX CGO_CFLAGS CGO_CPPFLAGS CGO_CXXFLAGS CGO_LDFLAGS"
+      }
     ]
   },
   "targetDefaults": {
     "build": {
       "cache": true
     },
-    "test": {
-      "cache": true
-    },
+    "test": [
+      {
+        "cache": true
+      },
+      {
+        "filter": {
+          "projects": ["tag:test:vitest"]
+        },
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "vitest run --config vitest.config.ts {projectRoot}/src"
+        },
+        "cache": true,
+        "inputs": [
+          "default",
+          "^default",
+          "{workspaceRoot}/vitest.config.ts",
+          "jsRuntime"
+        ],
+        "outputs": []
+      }
+    ],
     "fmt": [
       {
         "filter": {
@@ -76,7 +111,7 @@
         ],
         "options": {
           "commands": [
-            "\"$NX_WORKSPACE_ROOT/bin/tools/golangci-lint\" fmt --config \"$NX_WORKSPACE_ROOT/.golangci.yaml\" ./...",
+            "\"$NX_WORKSPACE_ROOT/bin/tools/format-go\" --config \"$NX_WORKSPACE_ROOT/.golangci.yaml\" .",
             "npx nx run {projectName}:refresh:inputs"
           ],
           "parallel": false,
@@ -97,8 +132,8 @@
             "NX_DAEMON": "false"
           },
           "commands": [
-            "prettier --write --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" .",
-            "eslint . --fix --fix-type layout --exit-on-fatal-error || test \"$?\" -eq 1",
+            "prettier --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/{projectName}/prettier\" --write --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" .",
+            "eslint --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/{projectName}/eslint-layout\" . --fix --fix-type layout --exit-on-fatal-error || test \"$?\" -eq 1",
             "npx nx run {projectName}:refresh:inputs"
           ],
           "parallel": false,
@@ -278,7 +313,14 @@
     },
     "test:ct": {
       "cache": true,
-      "dependsOn": ["^build"]
+      "inputs": [
+        "default",
+        "^default",
+        "jsRuntime",
+        {
+          "env": "CI"
+        }
+      ]
     },
     "refresh:inputs": {
       "metadata": {

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
-  buildGolangciLint,
+  buildGoTools,
   toolEnvironment,
   updateGolangciLint,
 } from "./golangci-lint.mjs";
@@ -43,20 +43,40 @@ test("builds a real module for the host with the module's compiler pin", async (
   assert.equal(env.GOTOOLCHAIN, "go1.26.6");
   assert.equal(env.GOWORK, "off");
   assert.equal(env.CGO_ENABLED, "0");
-  await buildGolangciLint(options);
-  assert.equal(execFileSync(options.output, { encoding: "utf8" }), "fixture\n");
+  await buildGoTools(options);
+  assert.equal(
+    execFileSync(join(options.output, "fixture"), { encoding: "utf8" }),
+    "fixture\n",
+  );
   assert.equal(await readFile(join(options.directory, "go.sum"), "utf8"), "");
 });
 
-test("failed compilation preserves the last working executable", async (t) => {
+test("a failed companion build preserves all installed executables", async (t) => {
   const options = await fixture(t);
-  await buildGolangciLint(options);
+  await mkdir(join(options.directory, "companion"));
+  await writeFile(
+    join(options.directory, "companion/main.go"),
+    'package main\nimport "fmt"\nfunc main() { fmt.Println("companion") }\n',
+  );
+  options.programs.companion = "./companion";
+  await buildGoTools(options);
   await writeFile(
     join(options.directory, "main.go"),
+    'package main\nimport "fmt"\nfunc main() { fmt.Println("changed") }\n',
+  );
+  await writeFile(
+    join(options.directory, "companion/main.go"),
     "package main\nnot valid Go\n",
   );
-  await assert.rejects(buildGolangciLint(options));
-  assert.equal(execFileSync(options.output, { encoding: "utf8" }), "fixture\n");
+  await assert.rejects(buildGoTools(options));
+  assert.equal(
+    execFileSync(join(options.output, "fixture"), { encoding: "utf8" }),
+    "fixture\n",
+  );
+  assert.equal(
+    execFileSync(join(options.output, "companion"), { encoding: "utf8" }),
+    "companion\n",
+  );
 });
 
 test("ordinary builds reject missing checksums without changing module files", async (t) => {
@@ -69,7 +89,7 @@ test("ordinary builds reject missing checksums without changing module files", a
     join(options.directory, "main.go"),
     'package main\nimport "golang.org/x/mod/semver"\nfunc main() { println(semver.IsValid("v1.0.0")) }\n',
   );
-  await assert.rejects(buildGolangciLint(options));
+  await assert.rejects(buildGoTools(options));
   assert.equal(await readFile(path, "utf8"), source);
   assert.equal(await readFile(join(options.directory, "go.sum"), "utf8"), "");
 });
@@ -125,5 +145,9 @@ async function fixture(t) {
     join(directory, "main.go"),
     'package main\nimport "fmt"\nfunc main() { fmt.Println("fixture") }\n',
   );
-  return { directory, output: join(directory, "bin", "fixture") };
+  return {
+    directory,
+    output: join(directory, "bin"),
+    programs: { fixture: "." },
+  };
 }

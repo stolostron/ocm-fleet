@@ -7,7 +7,7 @@
   "root": "client/web",
   "sourceRoot": "client/web/src",
   "projectType": "application",
-  "tags": ["scope:ui", "type:app", "type:js-project"],
+  "tags": ["scope:ui", "type:app", "type:js-project", "test:vitest"],
   "implicitDependencies": ["plugins", "@ocm-fleet/kind-plugin"],
   "targets": {
     "fmt": {},
@@ -62,7 +62,8 @@
       "options": {
         "command": "playwright test",
         "cwd": "client/web"
-      }
+      },
+      "dependsOn": ["ocm-fleet:web:generate-icons"]
     },
     "lint:css": {
       "executor": "nx:run-commands",
@@ -71,6 +72,7 @@
         "cwd": "client/web"
       }
     },
-    "fix:css": {}
+    "fix:css": {},
+    "test": {}
   }
 }
