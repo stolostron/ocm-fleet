@@ -52,7 +52,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("CreateAndGet", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		fid := domain.FulfillmentID("f-create-get")
 		if err := tx.Fulfillments().Create(ctx, sampleFulfillment(fid)); err != nil {
@@ -85,7 +85,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("CreateDuplicate", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		fid := domain.FulfillmentID("f-dup")
 		if err := tx.Fulfillments().Create(ctx, sampleFulfillment(fid)); err != nil {
@@ -104,7 +104,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("GetNotFound", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		_, err := tx.Deployments().Get(ctx, "deployments/nonexistent-deployment")
 		if !errors.Is(err, domain.ErrNotFound) {
@@ -114,7 +114,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("GetView", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		f := sampleFulfillment("f-view")
 		f.AdvanceRolloutStrategy(&domain.RolloutStrategySpec{
@@ -164,7 +164,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("ListView", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		for _, pair := range []struct {
 			depName domain.ResourceName
@@ -206,7 +206,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("Delete", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		fid := domain.FulfillmentID("f-del")
 		if err := tx.Fulfillments().Create(ctx, sampleFulfillment(fid)); err != nil {
@@ -228,7 +228,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("DeleteNotFound", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		err := tx.Deployments().Delete(ctx, "deployments/nonexistent-deployment")
 		if !errors.Is(err, domain.ErrNotFound) {

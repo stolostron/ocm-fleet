@@ -212,7 +212,7 @@ func (s *InventoryReportService) ReplaceBatch(ctx context.Context, in InventoryR
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	now := s.now()
 	res := newReportResolver(tx)
@@ -295,7 +295,7 @@ func (s *InventoryReportService) ApplyDeltaBatch(ctx context.Context, in Invento
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	now := s.now()
 	res := newReportResolver(tx)

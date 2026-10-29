@@ -364,7 +364,7 @@ func reportConvergence(ctx context.Context, t *testing.T, store domain.Store) (v
 		return nil, 0, 0
 	}
 	views, err = tx.Deployments().ListView(ctx)
-	tx.Rollback()
+	tx.RollbackOnExit()
 	if err != nil {
 		t.Logf("could not list deployments: %v", err)
 		return nil, 0, 0

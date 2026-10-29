@@ -72,7 +72,7 @@ func (s *ResourceQueryService) QueryResources(ctx context.Context, in QueryResou
 	if err != nil {
 		return domain.QueryResourcesPage{}, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	page, err := tx.Queries().QueryResources(ctx, domain.QueryResourcesRequest{
 		Filter:    in.Filter,

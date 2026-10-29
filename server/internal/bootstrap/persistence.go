@@ -3,8 +3,10 @@ package bootstrap
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
+	"github.com/stolostron/ocm-fleet/server/internal/infrastructure/observability"
 	pgstore "github.com/stolostron/ocm-fleet/server/internal/infrastructure/postgres"
 	"github.com/stolostron/ocm-fleet/server/internal/infrastructure/sqlite"
 	"github.com/stolostron/ocm-fleet/server/internal/transport/extensionresource"
@@ -21,8 +23,9 @@ type persistence struct {
 
 // openPersistence opens the selected database and constructs concrete stores.
 // activeResources starts empty and is populated as managed schemas activate.
-func openPersistence(database Database) (persistence, error) {
+func openPersistence(database Database, logger *slog.Logger) (persistence, error) {
 	activeResources := extensionresource.NewActiveResourceRegistry()
+	observer := observability.NewStoreObserver(logger.With("database", databaseKind(database)))
 	switch db := database.(type) {
 	case Postgres:
 		sqlDB, err := pgstore.Open(db.DriverDSN)
@@ -31,7 +34,7 @@ func openPersistence(database Database) (persistence, error) {
 		}
 		return persistence{
 			db:              sqlDB,
-			store:           &pgstore.Store{DB: sqlDB, SchemaProvider: activeResources},
+			store:           &pgstore.Store{DB: sqlDB, SchemaProvider: activeResources, Observer: observer},
 			vault:           &pgstore.VaultStore{DB: sqlDB},
 			authMethodRepo:  &pgstore.AuthMethodRepo{DB: sqlDB},
 			activeResources: activeResources,
@@ -43,7 +46,7 @@ func openPersistence(database Database) (persistence, error) {
 		}
 		return persistence{
 			db:              sqlDB,
-			store:           &sqlite.Store{DB: sqlDB, SchemaProvider: activeResources},
+			store:           &sqlite.Store{DB: sqlDB, SchemaProvider: activeResources, Observer: observer},
 			vault:           &sqlite.VaultStore{DB: sqlDB},
 			authMethodRepo:  &sqlite.AuthMethodRepo{DB: sqlDB},
 			activeResources: activeResources,

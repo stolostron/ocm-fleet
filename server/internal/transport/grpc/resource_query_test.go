@@ -84,24 +84,24 @@ func setupResourceQuery(t *testing.T) *resourceQueryEnv {
 		),
 	)
 	if err := tx.ExtensionResources().CreateType(ctx, typeDef); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("CreateType: %v", err)
 	}
 	fID := domain.FulfillmentID("query-api-ful")
 	if err := tx.Fulfillments().Create(ctx, domain.FulfillmentFromSnapshot(domain.FulfillmentSnapshot{
 		ID: fID, State: domain.FulfillmentStateActive, CreatedAt: now, UpdatedAt: now,
 	})); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("Create fulfillment: %v", err)
 	}
 	er := domain.NewExtensionResource(domain.NewExtensionResourceUID(), cfg.ResourceType,
 		domain.ResourceName("clusters/query-1"), now, domain.WithManagedState(fID))
 	if _, err := er.RecordIntent(json.RawMessage(`{"name":"query-1"}`), now); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("RecordIntent: %v", err)
 	}
 	if err := tx.ExtensionResources().Create(ctx, er); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("Create resource: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -253,13 +253,13 @@ func TestResourceQuery_InactiveTypeReturnsEmptyPage(t *testing.T) {
 	if err := tx.ExtensionResources().CreateType(ctx, domain.NewExtensionResourceType(
 		rt, "v1", "clusters", now, domain.WithInventory(),
 	)); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("CreateType: %v", err)
 	}
 	if err := tx.ExtensionResources().Create(ctx, domain.NewExtensionResource(
 		domain.NewExtensionResourceUID(), rt, "clusters/orphan", now,
 	)); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("Create: %v", err)
 	}
 	if err := tx.Commit(); err != nil {

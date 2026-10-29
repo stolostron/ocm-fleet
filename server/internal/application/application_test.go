@@ -130,7 +130,7 @@ func awaitDeploymentState(ctx context.Context, t *testing.T, store domain.Store,
 			t.Fatalf("Begin: %v", err)
 		}
 		view, err := tx.Deployments().GetView(ctx, name)
-		tx.Rollback()
+		tx.RollbackOnExit()
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("GetView(%s): %v", name, err)
 		}
@@ -153,7 +153,7 @@ func awaitDeploymentPaused(ctx context.Context, t *testing.T, store domain.Store
 			t.Fatalf("Begin: %v", err)
 		}
 		view, err := tx.Deployments().GetView(ctx, name)
-		tx.Rollback()
+		tx.RollbackOnExit()
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("GetView(%s): %v", name, err)
 		}
@@ -174,7 +174,7 @@ func queryDeliveries(ctx context.Context, t *testing.T, store domain.Store, name
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	view, err := tx.Deployments().GetView(ctx, name)
 	if err != nil {
 		t.Fatalf("GetView: %v", err)
@@ -509,7 +509,7 @@ func queryDeployment(ctx context.Context, t *testing.T, store domain.Store, name
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	return tx.Deployments().GetView(ctx, name)
 }
 
@@ -521,7 +521,7 @@ func awaitDeploymentGone(ctx context.Context, t *testing.T, store domain.Store, 
 			t.Fatalf("Begin: %v", err)
 		}
 		_, err = tx.Deployments().GetView(ctx, name)
-		tx.Rollback()
+		tx.RollbackOnExit()
 		if errors.Is(err, domain.ErrNotFound) {
 			return
 		}
@@ -554,7 +554,7 @@ func seedDeployment(t *testing.T, store domain.Store, name domain.ResourceName, 
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if err := tx.Fulfillments().Create(ctx, f); err != nil {
 		t.Fatalf("Create fulfillment: %v", err)
 	}
@@ -579,7 +579,7 @@ func reconcileFulfillmentState(t *testing.T, store domain.Store, fID domain.Fulf
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	f, err := tx.Fulfillments().Get(ctx, fID)
 	if err != nil {
 		t.Fatalf("Get fulfillment: %v", err)
@@ -605,7 +605,7 @@ func pauseFulfillment(t *testing.T, store domain.Store, fID domain.FulfillmentID
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	f, err := tx.Fulfillments().Get(ctx, fID)
 	if err != nil {
 		t.Fatalf("Get fulfillment: %v", err)
@@ -642,7 +642,7 @@ func advanceFulfillmentToGeneration(t *testing.T, store domain.Store, fID domain
 			t.Fatalf("Get fulfillment: %v", err)
 		}
 		if f.Generation() >= targetGen {
-			tx.Rollback()
+			tx.RollbackOnExit()
 			return
 		}
 		f.Touch(now)

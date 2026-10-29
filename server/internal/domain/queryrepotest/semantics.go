@@ -19,7 +19,7 @@ import (
 func runSemanticFilterTests(t *testing.T, factory Factory) {
 	t.Run("MessageFieldsUseCanonicalCamelCase", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		wantName := extensionEnvelopeName(fx.ManagedType, fx.ManagedName)
 		results := queryAll(t, tx, `resource.intentVersion == "1"`)
@@ -43,7 +43,7 @@ func runSemanticFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("OpenMapKeysAreExactLiterals", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		// Without a SchemaProvider, spec/observation paths accept any
@@ -79,7 +79,7 @@ func runSemanticFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("MapKeysAreCaseSensitiveLiterals", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		if err := tx.ExtensionResources().ReplaceInventory(ctx, []domain.InventoryReplacement{{
@@ -149,7 +149,7 @@ func runSemanticFilterTests(t *testing.T, factory Factory) {
 		// the stored entry — including on SQLite, where labels /
 		// conditions / open JSON paths use quoted json_extract members.
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		const key = `has"quote`
@@ -193,7 +193,7 @@ func runSemanticFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("DirectTimestampStringsMatchResponseSpelling", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		// 500ms → ProtoJSON "…T12:00:00.500Z" (not ".5Z").
@@ -239,7 +239,7 @@ func runSemanticFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("TimestampFunctionComparesInstants", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		at500 := time.Date(2026, 6, 1, 12, 0, 0, 500_000_000, time.UTC)
@@ -322,7 +322,7 @@ func runSemanticFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("TimestampMissingInvalidAndNonString", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		obs := json.RawMessage(`{"badWhen":"2026-06-01","notString":5,"when":"2026-06-01T12:00:00Z"}`)
@@ -366,7 +366,7 @@ func runSemanticFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("HeterogeneousJSONEqualityAndMissing", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		obs := json.RawMessage(`{"str":"5","num":5,"flag":true}`)

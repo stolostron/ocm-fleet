@@ -204,7 +204,7 @@ func awaitFulfillment(ctx context.Context, t *testing.T, store domain.Store, fID
 			t.Fatalf("Begin: %v", err)
 		}
 		f, err := tx.Fulfillments().Get(ctx, fID)
-		_ = tx.Rollback()
+		tx.RollbackOnExit()
 
 		if err == nil {
 			got := f.State()

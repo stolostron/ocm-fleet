@@ -31,7 +31,7 @@ func seedInventoryType(t *testing.T, store domain.Store) {
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	def := domain.NewExtensionResourceType(inventoryReportTestType, "v1", "clusters", time.Now(), domain.WithInventory())
 	if err := tx.ExtensionResources().CreateType(ctx, def); err != nil {
 		t.Fatalf("CreateType: %v", err)
@@ -50,7 +50,7 @@ func seedManagedOnlyType(t *testing.T, store domain.Store, rt domain.ResourceTyp
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	relation := domain.NewRegisteredSelfTarget(domain.TargetID("addon-widget"), domain.ManifestType("api.test.widget"))
 	def := domain.NewExtensionResourceType(rt, "v1", "widgets", time.Now(),
 		domain.WithManagement(relation, domain.Signature{
@@ -75,7 +75,7 @@ func seedManagedPlusInventoryType(t *testing.T, store domain.Store, rt domain.Re
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	relation := domain.NewRegisteredSelfTarget(domain.TargetID("addon-widget"), domain.ManifestType("api.test.widget"))
 	def := domain.NewExtensionResourceType(rt, "v1", "widgets", time.Now(),
 		domain.WithManagement(relation, domain.Signature{
@@ -99,7 +99,7 @@ func getExtensionResource(t *testing.T, store domain.Store, name domain.Resource
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	er, err := tx.ExtensionResources().Get(ctx, inventoryReportTestType.FullName(name))
 	if err != nil {
 		t.Fatalf("Get(%s): %v", name, err)
@@ -153,7 +153,7 @@ func TestInventoryReportService_ReplaceBatch_ByName_CreatesIdentityAndInventory(
 	}
 	pr, err := tx.ResourceIdentities().GetByName(ctx, name)
 	if err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("GetByName: %v", err)
 	}
 	if len(pr.Representations()) != 1 {
@@ -162,7 +162,7 @@ func TestInventoryReportService_ReplaceBatch_ByName_CreatesIdentityAndInventory(
 	if pr.Representations()[0].ServiceName() != "kind.open-cluster-management.io" {
 		t.Errorf("representation service = %q, want kind.open-cluster-management.io", pr.Representations()[0].ServiceName())
 	}
-	tx.Rollback()
+	tx.RollbackOnExit()
 
 	// Extension resource exists with the resolved inventory state.
 	er := getExtensionResource(t, store, name)
@@ -189,7 +189,7 @@ func TestInventoryReportService_ReplaceBatch_ByName_CreatesIdentityAndInventory(
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx2.Rollback()
+	defer tx2.RollbackOnExit()
 	obs, err := tx2.ExtensionResources().ListObservations(ctx, er.UID(), 10)
 	if err != nil {
 		t.Fatalf("ListObservations: %v", err)
@@ -250,7 +250,7 @@ func TestInventoryReportService_ReplaceBatch_ByNamePlusAlias_StoresAliasAsPendin
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	pr, err := tx.ResourceIdentities().GetByName(ctx, name)
 	if err != nil {
 		t.Fatalf("GetByName: %v", err)
@@ -276,7 +276,7 @@ func seedAcceptedAlias(t *testing.T, store domain.Store, name domain.ResourceNam
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	pr := domain.NewPlatformResource(name, nil, time.Now())
 	if err := pr.AddAlias(alias); err != nil {
 		t.Fatalf("AddAlias: %v", err)
@@ -660,7 +660,7 @@ func TestInventoryReportService_ReplaceBatch_DuplicateAcrossChunkBoundaryFails(t
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	for _, name := range []domain.ResourceName{name0, name1, name2} {
 		if _, err := tx.ResourceIdentities().GetByName(ctx, name); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("GetByName(%s) err = %v, want ErrNotFound (no partial write across chunks)", name, err)
@@ -710,7 +710,7 @@ func TestInventoryReportService_ReplaceBatch_DuplicateResolvedUIDWithinBatchFail
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if _, err := tx.ExtensionResources().Get(ctx, inventoryReportTestType.FullName(name)); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("Get err = %v, want ErrNotFound (no partial write)", err)
 	}
@@ -813,7 +813,7 @@ func TestInventoryReportService_ReplaceBatch_ObservationNilLeavesLatestUnchanged
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	obs, err := tx.ExtensionResources().ListObservations(ctx, er.UID(), 10)
 	if err != nil {
 		t.Fatalf("ListObservations: %v", err)
@@ -1131,7 +1131,7 @@ func TestInventoryReportService_ApplyDeltaBatch_ObservationNilVsReplace(t *testi
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	obs, err := tx.ExtensionResources().ListObservations(ctx, er.UID(), 10)
 	if err != nil {
 		t.Fatalf("ListObservations: %v", err)
@@ -1249,7 +1249,7 @@ func getPlatformResource(t *testing.T, store domain.Store, name domain.ResourceN
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	pr, err := tx.ResourceIdentities().GetByName(ctx, name)
 	if err != nil {
 		t.Fatalf("GetByName(%s): %v", name, err)
@@ -1345,7 +1345,7 @@ func TestInventoryReportService_ReplaceBatch_IsDelete_DeletesPreviouslyReplacedR
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if _, err := tx.ExtensionResources().Get(ctx, inventoryReportTestType.FullName(name)); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("Get after IsDelete: got %v, want ErrNotFound", err)
 	}
@@ -1543,7 +1543,7 @@ func TestInventoryReportService_ReplaceBatch_MixedUpsertAndDelete(t *testing.T) 
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if _, err := tx.ExtensionResources().Get(ctx, inventoryReportTestType.FullName(gone)); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("Get(gone1) after mixed ReplaceBatch: got %v, want ErrNotFound", err)
 	}

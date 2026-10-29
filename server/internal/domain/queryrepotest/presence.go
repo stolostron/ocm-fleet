@@ -16,7 +16,7 @@ import (
 func runPresenceFilterTests(t *testing.T, factory Factory) {
 	t.Run("ConditionDefaultOmission", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		// Valid status, empty reason/message, zero transition time —
 		// inventory JSON stores those keys; ProtoJSON omits the defaults.
@@ -56,7 +56,7 @@ func runPresenceFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("CapabilityMissingInventory", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		managedName := extensionEnvelopeName(fx.ManagedType, fx.ManagedName)
 		// Managed-only: no inventory capability / row.
@@ -106,7 +106,7 @@ func runPresenceFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("ContainersMapsAndScalars", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		managedName := extensionEnvelopeName(fx.ManagedType, fx.ManagedName)
 		invName := extensionEnvelopeName(fx.InventoryType, fx.InventoryName)
@@ -136,7 +136,7 @@ func runPresenceFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("InvariantBodyFields", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		managedName := extensionEnvelopeName(fx.ManagedType, fx.ManagedName)
 		invName := extensionEnvelopeName(fx.InventoryType, fx.InventoryName)
 		assertResultNames(t, queryAll(t, tx, `has(resource.name)`), managedName, invName)

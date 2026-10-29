@@ -62,6 +62,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
+	"github.com/stolostron/ocm-fleet/server/internal/infrastructure/sqltxtest"
 )
 
 func aliasSet(aliases ...domain.Alias) domain.AliasSet {
@@ -886,7 +887,7 @@ func timeReplace(t *testing.T, db *sql.DB, scenario string, batchSize int, build
 		}
 		repo := &ExtensionResourceRepo{DB: tx}
 		if err := repo.ReplaceInventory(ctx, reps); err != nil {
-			tx.Rollback()
+			sqltxtest.Rollback(t, tx)
 			t.Fatalf("%s round %d: %v", scenario, round, err)
 		}
 		if err := tx.Commit(); err != nil {
@@ -910,7 +911,7 @@ func timeApplyDeltas(t *testing.T, db *sql.DB, scenario string, batchSize int, b
 		}
 		repo := &ExtensionResourceRepo{DB: tx}
 		if err := repo.ApplyInventoryDeltas(ctx, deltas); err != nil {
-			tx.Rollback()
+			sqltxtest.Rollback(t, tx)
 			t.Fatalf("%s round %d: %v", scenario, round, err)
 		}
 		if err := tx.Commit(); err != nil {

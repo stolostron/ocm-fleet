@@ -111,7 +111,7 @@ func mutateManifest(
 	if err != nil {
 		return "", 0, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	dep, err := tx.Deployments().Get(ctx, depName)
 	if err != nil {
@@ -156,7 +156,7 @@ func stressConvergenceLoop(
 			return fmt.Errorf("begin read tx: %w", err)
 		}
 		f, err := tx.Fulfillments().Get(ctx, fID)
-		tx.Rollback()
+		tx.RollbackOnExit()
 		if err != nil {
 			return fmt.Errorf("load fulfillment %q: %w", fID, err)
 		}

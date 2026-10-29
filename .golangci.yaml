@@ -40,12 +40,6 @@ linters:
     warn-unused: true
     # Review each diagnostic exception explicitly.
     presets: []
-    rules:
-      # Deferred transaction rollback is best-effort cleanup in tests.
-      - path: '_test\.go$'
-        linters:
-          - errcheck
-        source: '^\s*defer\s+[\w.]+\.Rollback\(\)\s*(//.*)?$'
   settings:
     errcheck:
       # Keep the defaults for assertions and explicit blank-identifier discards.

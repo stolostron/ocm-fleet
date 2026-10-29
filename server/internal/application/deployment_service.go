@@ -39,7 +39,7 @@ func (s *DeploymentService) Create(ctx context.Context, in domain.CreateDeployme
 		if err != nil {
 			return domain.DeploymentView{}, fmt.Errorf("begin read tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		prov, err := s.ProvenanceSvc.BuildDeploymentProvenance(
 			ctx, tx.SignerEnrollments(), ac.Subject,
 			in.Name, in.ManifestStrategy, in.PlacementStrategy,
@@ -75,7 +75,7 @@ func (s *DeploymentService) Get(ctx context.Context, name domain.ResourceName) (
 	if err != nil {
 		return domain.DeploymentView{}, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	view, err := tx.Deployments().GetView(ctx, name)
 	if err != nil {
@@ -90,7 +90,7 @@ func (s *DeploymentService) List(ctx context.Context) ([]domain.DeploymentView, 
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	views, err := tx.Deployments().ListView(ctx)
 	if err != nil {
@@ -125,7 +125,7 @@ func (s *DeploymentService) Resume(ctx context.Context, in ResumeInput) (domain.
 	if err != nil {
 		return domain.DeploymentView{}, fmt.Errorf("begin read tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	dep, err := tx.Deployments().Get(ctx, in.Name)
 	if err != nil {
@@ -184,7 +184,7 @@ func (s *DeploymentService) Delete(ctx context.Context, name domain.ResourceName
 	if err != nil {
 		return domain.DeploymentView{}, fmt.Errorf("begin read tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	dep, err := tx.Deployments().Get(ctx, name)
 	if err != nil {

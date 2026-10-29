@@ -228,7 +228,7 @@ func TestExpectedSurface_KindScriptedTargetsAndSchemasLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	targets, err := tx.Targets().List(ctx)
 	if err != nil {

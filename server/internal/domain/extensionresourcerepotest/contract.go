@@ -120,7 +120,7 @@ func runTypeTests(t *testing.T, factory Factory) {
 
 	t.Run("CreateAndGet", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		def := sampleType("kind.open-cluster-management.io/Cluster")
@@ -152,7 +152,7 @@ func runTypeTests(t *testing.T, factory Factory) {
 
 	t.Run("CreateDuplicate", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		def := sampleType("kind.open-cluster-management.io/Cluster")
@@ -167,7 +167,7 @@ func runTypeTests(t *testing.T, factory Factory) {
 
 	t.Run("GetNotFound", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		_, err := tx.ExtensionResources().GetType(ctx, "nonexistent")
 		if !errors.Is(err, domain.ErrNotFound) {
@@ -177,7 +177,7 @@ func runTypeTests(t *testing.T, factory Factory) {
 
 	t.Run("ListTypes", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		for _, rt := range []domain.ResourceType{"test.open-cluster-management.io/Alpha", "test.open-cluster-management.io/Beta"} {
@@ -196,7 +196,7 @@ func runTypeTests(t *testing.T, factory Factory) {
 
 	t.Run("DeleteType", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		rt := domain.ResourceType("test.open-cluster-management.io/Deletable")
@@ -214,7 +214,7 @@ func runTypeTests(t *testing.T, factory Factory) {
 
 	t.Run("DeleteTypeNotFound", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		err := tx.ExtensionResources().DeleteType(ctx, "ghost")
 		if !errors.Is(err, domain.ErrNotFound) {
@@ -224,7 +224,7 @@ func runTypeTests(t *testing.T, factory Factory) {
 
 	t.Run("UpdateTypeBackfillsCapabilities", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 		rt := domain.ResourceType("test.open-cluster-management.io/Widget")
 		def := domain.NewExtensionResourceType(rt, "v1", "widgets", fixedTime)
@@ -256,7 +256,7 @@ func runTypeTests(t *testing.T, factory Factory) {
 
 	t.Run("CreateTypeWithoutManagement", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		def := domain.NewExtensionResourceType(
@@ -284,7 +284,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 	t.Run("CreateAndGet", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -314,7 +314,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 	t.Run("GetByUID", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -336,7 +336,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 	t.Run("GetByUID_NotFound", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		_, err := tx.ExtensionResources().GetByUID(ctx, domain.NewExtensionResourceUID())
 		if !errors.Is(err, domain.ErrNotFound) {
@@ -346,7 +346,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 	t.Run("UniqueServiceNameResourceName", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -369,7 +369,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 	// name even if they have different resource types.
 	t.Run("CrossTypeSameNameUnique", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -392,7 +392,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 	t.Run("ListByResourceType", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -416,7 +416,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 	t.Run("GetNotFound", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		_, err := tx.ExtensionResources().Get(ctx, "//test.open-cluster-management.io/clusters/ghost")
 		if !errors.Is(err, domain.ErrNotFound) {
@@ -426,7 +426,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 	t.Run("Delete", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -448,7 +448,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 	t.Run("DeleteNotFound", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		err := tx.ExtensionResources().Delete(ctx, "//test.open-cluster-management.io/clusters/ghost")
 		if !errors.Is(err, domain.ErrNotFound) {
@@ -458,7 +458,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 	t.Run("ManagedStateRoundTrip", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -486,7 +486,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 	// ReplaceInventory has written inventory state.
 	t.Run("InventoryRoundTrip", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		rt := domain.ResourceType("inv.open-cluster-management.io/Node")
@@ -552,7 +552,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 	t.Run("LabelsRoundTrip", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -588,7 +588,7 @@ func runIntentTests(t *testing.T, factory Factory) {
 
 	t.Run("DrainedOnCreateAndGet", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -612,7 +612,7 @@ func runIntentTests(t *testing.T, factory Factory) {
 
 	t.Run("GetNotFound", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		_, err := tx.ExtensionResources().GetIntent(ctx, domain.NewExtensionResourceUID(), 99)
 		if !errors.Is(err, domain.ErrNotFound) {
@@ -624,7 +624,7 @@ func runIntentTests(t *testing.T, factory Factory) {
 	// intents when the parent extension resource is deleted.
 	t.Run("IntentsCascadeOnDelete", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -656,7 +656,7 @@ func runViewTests(t *testing.T, factory Factory) {
 
 	t.Run("GetView", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -688,7 +688,7 @@ func runViewTests(t *testing.T, factory Factory) {
 
 	t.Run("GetView_NotFound", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		_, err := tx.ExtensionResources().GetView(ctx, "//test.open-cluster-management.io/clusters/ghost")
 		if !errors.Is(err, domain.ErrNotFound) {
@@ -698,7 +698,7 @@ func runViewTests(t *testing.T, factory Factory) {
 
 	t.Run("ListViewsByType", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ExtensionResources()
 
 		seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -754,7 +754,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 	t.Run("TypeCRUD", func(t *testing.T) {
 		t.Run("CreateTypeWithInventoryMetadata", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			def := sampleInventoryType("inv.open-cluster-management.io/Node")
@@ -776,7 +776,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("CreateTypeManagedPlusInventory", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			def := domain.NewExtensionResourceType(
@@ -811,7 +811,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 	t.Run("Instances", func(t *testing.T) {
 		t.Run("CreateInventoryOnlyResource", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -835,7 +835,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("CreateManagedPlusInventoryResource", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			rt := domain.ResourceType("combo.open-cluster-management.io/Gadget")
@@ -885,7 +885,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// and this package's "History" subtest).
 		t.Run("CreatesLatestState", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -943,7 +943,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("UpdatesExisting", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -988,7 +988,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("Batch", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1045,7 +1045,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("RemovesConditionsAbsentFromReplacement", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1091,7 +1091,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("RemovesLabelsAbsentFromReplacement", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1138,7 +1138,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("NilObservationLeavesLatestUnchanged", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1179,7 +1179,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("NullLiteralObservationLeavesLatestUnchanged", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1223,7 +1223,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("RejectsUnregisteredResourceType", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			// No CreateType call for this type: ReplaceInventory
@@ -1246,7 +1246,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("UsesReceivedAtNotWallClock", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1283,7 +1283,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 	t.Run("Delta", func(t *testing.T) {
 		t.Run("ReplacesAndDeletesLabels", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1348,7 +1348,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("UpsertsAndDeletesLabelsLeavingOmittedUntouched", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1396,7 +1396,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("EmptyReplaceLabelsClearsAll", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1436,7 +1436,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("ReplacesConditions", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1485,7 +1485,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("EmptyReplaceConditionsClearsAll", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1525,7 +1525,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("ObservationUnchanged", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1567,7 +1567,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("ObservationReplace", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1609,7 +1609,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("NullLiteralObservationLeavesLatestUnchanged", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1653,7 +1653,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("UpsertsAndDeletesConditionsLeavingOmittedUntouched", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1717,7 +1717,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("HeartbeatWithNoFieldChanges", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1762,7 +1762,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("RejectsUnregisteredResourceType", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			// See the Replace-side RejectsUnregisteredResourceType for
@@ -1791,7 +1791,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// the repository defending its own contract.
 		t.Run("RejectsReplaceLabelsWithIncremental", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1843,7 +1843,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("RejectsLabelInBothUpsertAndDelete", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1884,7 +1884,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("RejectsReplaceConditionsWithIncremental", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1926,7 +1926,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("RejectsConditionInBothUpsertAndDelete", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -1976,7 +1976,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// of what else -- if anything -- the delta combines it with.
 		t.Run("RejectsDeleteAliasesAsUnimplemented", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2021,7 +2021,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("RejectsReplaceAliasesAsUnimplemented", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2045,7 +2045,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("UsesReceivedAtNotWallClock", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2082,7 +2082,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 	t.Run("Views", func(t *testing.T) {
 		t.Run("GetViewInventoryOnly", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2123,7 +2123,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("ListViewsByTypeIncludesInventoryOnly", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2155,7 +2155,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("GetViewManagedPlusInventory", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			rt := domain.ResourceType("combo.open-cluster-management.io/Thing")
@@ -2212,7 +2212,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("GetViewManagedStillRequiresIntentAndFulfillment", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			seedType(t, tx, "test.open-cluster-management.io/Cluster")
@@ -2258,7 +2258,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 	t.Run("History", func(t *testing.T) {
 		t.Run("ReplaceInventoryNeverWritesHistory", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2316,7 +2316,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("ApplyInventoryDeltasNeverWritesHistory", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2376,7 +2376,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// would slip past single-report tests entirely.
 		t.Run("MultipleUIDsInOneDeltaBatchGetDistinctLatestState", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2450,7 +2450,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// call happened last, with no path-dependent drift.
 		t.Run("AlternatingReplaceAndDeltaCallsConvergeOnLatestState", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2510,7 +2510,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 	t.Run("NaturalKeyResolution", func(t *testing.T) {
 		t.Run("CreatesRowLazilyWhenNoneExists", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2547,7 +2547,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("PreservesExistingRowIgnoringCandidateUID", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2589,7 +2589,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("BatchMixesNewAndExistingRows", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2658,7 +2658,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 	t.Run("Aliases", func(t *testing.T) {
 		t.Run("ReplaceInventoryStoresCanonicalPayload", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2692,7 +2692,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("NoAliasesStoresEmptyPayload", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2731,7 +2731,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// payload instead of hitting the unchanged-alias fast path.
 		t.Run("DeltaCreatedResourceSupportsNoAliasReplaceSkip", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2798,7 +2798,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// entirely) still moves on every report regardless.
 		t.Run("UnchangedReportedAliasesSkipPendingAliasPayloadWrite", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2861,7 +2861,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("ChangedReportedAliasesUpdatePayloadAndUpdatedAt", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2918,7 +2918,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// process to surface.
 		t.Run("RepeatedConflictingAliasReportsAreAcceptedNotRejected", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -2980,7 +2980,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("RemovingAliasesByFullReplacementStoresEmptyPayload", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -3034,7 +3034,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// value of keys that already exist.
 		t.Run("ApplyInventoryDeltasUpsertAliasesAppliesAsPendingUpdate", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -3102,7 +3102,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// extension_resource_inventory.
 		t.Run("UnchangedAliasDeltaSkipsPayloadWrite", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -3163,7 +3163,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// is the overwhelmingly common case this guards.
 		t.Run("ApplyInventoryDeltasOmittingAliasesDoesNoAliasWork", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -3227,7 +3227,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 	t.Run("ReplaceInventoryIsDelete", func(t *testing.T) {
 		t.Run("IdempotentMissingDelete", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -3271,7 +3271,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// join (Postgres) batch match with more than one row.
 		t.Run("BatchDeletesOnlyNamedResources", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -3310,7 +3310,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("MixedUpsertAndDelete", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -3365,7 +3365,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("MixedValidationFailureIsAtomic", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -3401,7 +3401,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("RejectDeleteWithPayloadFields", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -3454,7 +3454,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 
 		t.Run("RejectDuplicateAndContradictoryKeys", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {
@@ -3494,7 +3494,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 		// hard-deletes the existing row.
 		t.Run("MatchesNaturalKeyLikeUpsert", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ExtensionResources()
 
 			if err := repo.CreateType(ctx, sampleInventoryType("inv.open-cluster-management.io/Node")); err != nil {

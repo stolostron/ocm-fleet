@@ -156,7 +156,7 @@ func Start(ctx context.Context, cfg Config, logger *slog.Logger, opts ...Option)
 	}
 
 	// --- persistence ---
-	p, err := openPersistence(cfg.Database)
+	p, err := openPersistence(cfg.Database, logger)
 	if err != nil {
 		return fail(err)
 	}
