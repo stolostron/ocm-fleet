@@ -94,6 +94,19 @@ test("Vitest files retain ordinary TypeScript lint rules", async () => {
   );
 });
 
+test("generated Playwright bundles are excluded from formatting and lint fixes", async () => {
+  for (const path of [
+    "client/web/playwright/.cache/assets/example.js",
+    "extensions/core/client/playwright/.cache/assets/example.js",
+  ]) {
+    assert.equal(
+      await eslint.isPathIgnored(join(repository, path)),
+      true,
+      path,
+    );
+  }
+});
+
 async function lint(path, source) {
   const [result] = await eslint.lintText(source, {
     filePath: join(repository, path),

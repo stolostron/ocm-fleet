@@ -152,10 +152,11 @@ standalone `poc/` modules are outside this workflow.
 
 Go quality tasks build or restore the cached tool and validate the shared config
 automatically. The checked-in [`.golangci.yaml`](.golangci.yaml) starts from OCM's
-config, with its source revision recorded in the file. It checks linters and Go/import formatting. Production and tests are checked; generated code is excluded.
-Upstream exclusion presets are disabled. The targeted test exception allows
-best-effort deferred transaction rollback. Standalone `poc/` modules are not
-included.
+config, with its source revision recorded in the file. It checks linters and
+Go/import formatting in production and tests; generated code is excluded.
+Upstream exclusion presets are disabled. Temporary backlog exclusions are scoped
+and explained in the config; remove them as cleanup lands. They also hide new
+findings that match those scopes. Standalone `poc/` modules are not included.
 
 Nx caches the tool build and successful lint results using source, configuration,
 dependency pins, and Go environment. Go's build cache and golangci-lint's analysis
@@ -164,7 +165,7 @@ shared lock. Source-rewriting tasks always run and refresh Nx's file-hash metada
 verification starts a fresh Nx invocation so checks hash the resulting files.
 CI uses checks without source rewrites and tests the tooling and configuration;
 application cleanup and CI lint enforcement remain deferred. Lint reports all
-findings and fails when issues remain.
+unsuppressed findings and fails when issues remain.
 
 To update the linter, select an explicit stable v2 release:
 

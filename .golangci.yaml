@@ -1,6 +1,6 @@
 # Copyright Contributors to the Open Cluster Management project
 # Source: https://github.com/open-cluster-management-io/ocm/blob/7ec1be985687041c4afbf093b6c8d3a903af5667/.golangci.yaml
-# Adapted for OCM Fleet: local imports and targeted test cleanup.
+# Adapted for OCM Fleet: local imports and scoped temporary backlog exclusions.
 
 version: "2"
 
@@ -40,6 +40,50 @@ linters:
     warn-unused: true
     # Review each diagnostic exception explicitly.
     presets: []
+    # Temporary backlog cleanup: https://redhat.atlassian.net/browse/FM-144.
+    # Remove each rule as its cleanup lands. New matching findings are hidden too.
+    rules:
+      # Check errors in existing tests and reusable test support.
+      - path: '^(server|deploy/aio|sdk/nx-cache-proxy)/.*_test\.go$|^server/internal/(domain/[^/]+test/|infrastructure/(oidc/oidctest/|postgres/testdb\.go$))'
+        linters: [errcheck]
+      # Decide how existing callers should handle close failures.
+      - path: "^(server|deploy/aio|sdk/nx-cache-proxy)/"
+        linters: [errcheck]
+        text: '\.Close` is not checked$'
+      # Handle temporary-file cleanup errors in the Kind addon.
+      - path: '^server/internal/addon/kind/(issuerhost|oidc)\.go$'
+        linters: [errcheck]
+        text: '`os\.Remove(All)?`'
+      # Handle response and diagnostic write failures at these boundaries.
+      - path: "^(server/internal/transport/(http|dynamicapi)/|deploy/aio/internal/(aioinit|aioproxy)/)"
+        linters: [errcheck]
+        text: '(fmt\.Fprintf|ResponseWriter\)\.Write|json\.Encoder\)\.Encode)'
+      # Make the fixed-width ETag encoding's error handling explicit.
+      - path: '^server/internal/domain/etag\.go$'
+        linters: [errcheck]
+        text: '`encoding/binary\.Write`'
+      # Decide how to report a final inventory flush failure during shutdown.
+      - path: '^server/internal/addon/kubernetes/inventory_writer\.go$'
+        linters: [errcheck]
+        text: '\.flush`'
+      # Propagate malformed inventory JSON from both persistence implementations.
+      - path: '^server/internal/infrastructure/(postgres|sqlite)/extension_resource_repo\.go$'
+        linters: [errcheck]
+        text: '`encoding/json\.Unmarshal`'
+      # Migrate deprecated Kubernetes fake constructors and ECDSA coordinates.
+      - path: '^server/(internal/addon/(kind|kubernetes)/.*_test\.go|pkg/crypto/ec\.go)$'
+        linters: [staticcheck]
+        text: "^SA1019:"
+      # Apply these mechanical simplifications separately from the tooling change.
+      - path: "^server/"
+        linters: [staticcheck]
+        text: '^(QF1001|QF1003|QF1008|QF1011|S1034)(:|\()'
+      # Remove or exercise unused helpers in these existing test files.
+      - path: '^server/internal/(addon/kubernetes/inventory_test_helpers_test|domain/orchestration_test|transport/grpc/authn_interceptor_test)\.go$'
+        linters: [unused]
+      # Remove or reconnect unused production helpers in these existing files.
+      - path: '^server/internal/(domain/(delete_managed_resource|provision_idp)|infrastructure/(postgres|sqlite)/query_filter|transport/grpc/signer_enrollment)\.go$'
+        linters: [unused]
   settings:
     errcheck:
       # Keep the defaults for assertions and explicit blank-identifier discards.

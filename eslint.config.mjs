@@ -19,6 +19,8 @@ export default [
       "**/node_modules/**",
       "**/.mf/**",
       "**/generated/**",
+      // Component tests bundle dependencies here; these are generated assets.
+      "**/playwright/.cache/**",
       "**/test-results/**",
       "**/playwright-report/**",
     ],

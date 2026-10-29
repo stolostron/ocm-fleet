@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -175,6 +175,76 @@ test("reports unchecked operation errors in tests", async (t) => {
   });
 });
 
+test("temporary cleanup exclusions require both an existing project and a matching operation", async (t) => {
+  const existing = await fixture(t, { project: "server" });
+  const close =
+    'package lintfixture\n\nimport "io"\n\nfunc Close(resource io.Closer) {\n\tresource.Close()\n}\n';
+  await writeFile(join(existing.directory, "main.go"), close);
+  await assert.doesNotReject(existing.lint());
+
+  await writeFile(
+    join(existing.directory, "main.go"),
+    close.replace('import "io"', 'import (\n\t"io"\n\t"os"\n)') +
+      '\nfunc ChangeDirectory() {\n\tos.Chdir(".")\n}\n',
+  );
+  await assert.rejects(existing.lint(), { code: 1 });
+  const issues = await existing.issues();
+  assert.equal(issues.length, 1);
+  assert.match(issues[0].Text, /os\.Chdir/);
+
+  const added = await fixture(t, { project: "another-go-module" });
+  await writeFile(join(added.directory, "main.go"), close);
+  await assert.rejects(added.lint(), { code: 1 });
+  assert.match((await added.issues())[0].Text, /Close.*not checked/);
+});
+
+test("temporary test exclusions leave bug checks active", async (t) => {
+  const { directory, lint, issues } = await fixture(t, { project: "server" });
+  const path = join(directory, "main_test.go");
+  const source =
+    'package lintfixture\n\nimport (\n\t"os"\n\t"testing"\n)\n\nfunc TestCheck(t *testing.T) {\n\tos.Chdir(".")\n}\n';
+  await writeFile(path, source);
+  await assert.doesNotReject(lint());
+
+  await writeFile(
+    path,
+    source
+      .replace('"os"', '"os"\n\t"regexp"')
+      .replace('os.Chdir(".")', 'os.Chdir(".")\n\tregexp.MustCompile("[")'),
+  );
+  await assert.rejects(lint(), { code: 1 });
+  const findings = await issues();
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].FromLinter, "staticcheck");
+  assert.match(findings[0].Text, /SA1000/);
+});
+
+test("inventory decoding exclusions leave other errors in the same file active", async (t) => {
+  const { directory, lint, issues } = await fixture(t, {
+    project: "server/internal/infrastructure/sqlite",
+  });
+  const path = join(directory, "extension_resource_repo.go");
+  const source =
+    'package lintfixture\n\nimport "encoding/json"\n\nfunc Decode(data []byte) map[string]string {\n\tlabels := map[string]string{}\n\tjson.Unmarshal(data, &labels)\n\treturn labels\n}\n';
+  await writeFile(path, source);
+  await assert.doesNotReject(lint());
+
+  await writeFile(
+    path,
+    source
+      .replace(
+        'import "encoding/json"',
+        'import (\n\t"encoding/json"\n\t"os"\n)',
+      )
+      .replace("return labels", 'os.Chdir(".")\n\treturn labels'),
+  );
+  await assert.rejects(lint(), { code: 1 });
+  const findings = await issues();
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].FromLinter, "errcheck");
+  assert.match(findings[0].Text, /os\.Chdir/);
+});
+
 test("excludes generated code only with the standard header", async (t) => {
   const { directory, lint } = await fixture(t);
   const path = join(directory, "generated.go");
@@ -215,9 +285,14 @@ test("reports formatting issues without modifying sources", async (t) => {
 
 // Real modules exercise config paths, formatter checks, exclusions, and exit
 // statuses without third-party dependencies or running the fixture's Go code.
-async function fixture(t) {
-  const directory = await mkdtemp(join(tmpdir(), "ocm-fleet-lint-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+async function fixture(t, { project = "" } = {}) {
+  const root = await mkdtemp(join(tmpdir(), "ocm-fleet-lint-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = join(root, project);
+  await mkdir(directory, { recursive: true });
+  const configuration = join(root, ".golangci.yaml");
+  const report = join(root, "issues.json");
+  await cp(config, configuration);
   await writeFile(
     join(directory, "go.mod"),
     "module github.com/stolostron/ocm-fleet/lintfixture\n\ngo 1.26.0\n",
@@ -228,11 +303,23 @@ async function fixture(t) {
   );
   return {
     directory,
+    issues: async () => JSON.parse(await readFile(report, "utf8")).Issues ?? [],
     lint: (env = {}) =>
-      run(binary, ["run", "--config", config, "./..."], {
-        cwd: directory,
-        env: { ...process.env, ...env, GOWORK: "off" },
-      }),
+      run(
+        binary,
+        [
+          "run",
+          "--config",
+          configuration,
+          "--output.text.path=stdout",
+          `--output.json.path=${report}`,
+          "./...",
+        ],
+        {
+          cwd: directory,
+          env: { ...process.env, ...env, GOWORK: "off" },
+        },
+      ),
   };
 }
 
