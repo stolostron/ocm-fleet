@@ -475,6 +475,7 @@ func TestClean(t *testing.T) {
         NX_DAEMON: "false",
         NX_ISOLATE_PLUGINS: "false",
         NX_NO_CLOUD: "true",
+        NX_DEFAULT_OUTPUT_STYLE: "static",
         // An uncached outer test run must still exercise this fixture's cache.
         NX_SKIP_NX_CACHE: "false",
         NX_DISABLE_NX_CACHE: "false",

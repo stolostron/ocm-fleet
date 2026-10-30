@@ -39,6 +39,64 @@ test("workspace Nx configuration matches the installed schema", async () => {
   );
 });
 
+test("summary output suppresses task output and preserves nested failure logs", async (t) => {
+  const { root, runNx } = await fixture(t);
+  const project = JSON.parse(
+    await readFile(join(root, "client/cli/project.json"), "utf8"),
+  );
+  project.targets["summary-inner"] = {
+    executor: "nx:run-commands",
+    options: { command: "node fail.mjs" },
+  };
+  project.targets["summary-outer"] = {
+    executor: "nx:run-commands",
+    options: { command: "npx nx run cli:summary-inner" },
+  };
+  project.targets["summary-success"] = {
+    executor: "nx:run-commands",
+    options: { command: "node success.mjs" },
+  };
+  await writeJSON(root, "client/cli/project.json", project);
+  await writeFile(
+    join(root, "success.mjs"),
+    'console.log("success output");\n',
+  );
+  await writeFile(
+    join(root, "fail.mjs"),
+    'console.error("specific nested failure"); process.exit(1);\n',
+  );
+  const env = {
+    NX_DEFAULT_OUTPUT_STYLE: "summary",
+    FORCE_COLOR: "0",
+  };
+  const error = await runNx(
+    [
+      "run-many",
+      "--projects=cli",
+      "--targets=summary-success,summary-outer",
+      "--nxBail=false",
+    ],
+    env,
+  ).then(
+    () => assert.fail("nested task should fail"),
+    (failure) => failure,
+  );
+  assert.equal(error.code, 1);
+  const output = error.stdout + error.stderr;
+  assert.match(output, /1 succeeded/);
+  assert.doesNotMatch(output, /success output/);
+  assert.doesNotMatch(output, /specific nested failure/);
+  const outerLog = output.match(/full log: ([^\r\n]+)/);
+  assert.ok(outerLog, output);
+  const nestedOutput = await readFile(outerLog[1].trim(), "utf8");
+  const innerLog = nestedOutput.match(/full log: ([^\r\n]+)/);
+  assert.ok(innerLog, nestedOutput);
+  assert.match(
+    await readFile(innerLog[1].trim(), "utf8"),
+    /specific nested failure/,
+  );
+});
+
 test("tooling input filesets include required files and exclude unrelated files", async () => {
   const config = await json("nx.json");
   const workspace = await json("project.json");
@@ -328,8 +386,8 @@ test("Nx checks include component tests and omit inferred end-to-end suites", as
 });
 
 // Exercise production Nx definitions with real tools and disposable source files.
-// The normal and component checks observe the formatted files on disk; no test
-// depends on Nx's console output or replaces a formatter/linter implementation.
+// The normal and component checks observe the formatted files on disk without
+// replacing a formatter/linter implementation.
 async function fixture(t, { workspaceChecks = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), "ocm-fleet-workspace-quality-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -513,7 +571,7 @@ assert.match(await readFile("proto/example/v1/greeting.proto", "utf8"), /  strin
 await appendFile(process.argv[2], "passed");
 `,
   );
-  const runNx = (args) =>
+  const runNx = (args, env = {}) =>
     run(process.execPath, [nx, ...args], {
       cwd: root,
       env: {
@@ -521,14 +579,17 @@ await appendFile(process.argv[2], "passed");
         NX_DAEMON: "false",
         NX_ISOLATE_PLUGINS: "false",
         NX_NO_CLOUD: "true",
+        NX_DEFAULT_OUTPUT_STYLE: "static",
         // An uncached outer test run must still exercise this fixture's cache.
         NX_SKIP_NX_CACHE: "false",
         NX_DISABLE_NX_CACHE: "false",
+        ...env,
       },
       maxBuffer: 8 * 1024 * 1024,
     });
   return {
     root,
+    runNx,
     task: (target, project = "ocm-fleet") =>
       runNx(["run", `${project}:${target}`, "--outputStyle=static"]),
     tasks: (targets, projects) =>
