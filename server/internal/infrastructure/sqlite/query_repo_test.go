@@ -20,7 +20,7 @@ func TestQueryRepo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		t.Cleanup(func() { _ = tx.Rollback() })
+		t.Cleanup(tx.RollbackOnExit)
 		return tx
 	})
 }
@@ -37,7 +37,7 @@ func TestQueryRepo_StringLabelFilterReusesNumberedBinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	at := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	rt := domain.ResourceType("kind.open-cluster-management.io/Cluster")

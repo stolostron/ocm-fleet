@@ -6,8 +6,14 @@
   "root": "e2e/web",
   "sourceRoot": "e2e/web/tests",
   "projectType": "library",
-  "tags": ["scope:web", "type:e2e"],
+  "tags": ["lang:typescript", "scope:web", "type:e2e", "type:js-project"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "test:e2e": {
       "executor": "nx:run-commands",
       "parallelism": false,
@@ -16,6 +22,23 @@
         "cwd": "e2e/web"
       },
       "cache": false
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint .",
+        "cwd": "e2e/web"
+      },
+      "inputs": ["{projectRoot}/**/*.{js,mjs,ts,tsx}", "eslintConfig"]
+    },
+    "lint:format": {},
+    "typecheck": {
+      "inputs": [
+        "default",
+        "^default",
+        "typescriptConfig",
+        "{workspaceRoot}/e2e/shared/**/*.ts"
+      ]
     }
   }
 }

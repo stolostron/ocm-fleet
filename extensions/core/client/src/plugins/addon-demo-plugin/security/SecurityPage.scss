@@ -48,7 +48,6 @@
   flex-direction: column;
 }
 
-
 .ocm-fleet-addon-security__gs-column-body {
   padding: var(--pf-t--global--spacer--md);
   flex: 1;
@@ -150,7 +149,7 @@
   }
 
   &--green {
-    background-color: #D6F0E0 !important;
+    background-color: #d6f0e0 !important;
 
     .pf-v6-svg {
       color: var(--pf-t--global-text-color--status--success--default);
@@ -163,7 +162,7 @@
   }
 
   &--purple {
-    background-color: #E0D7F6 !important;
+    background-color: #e0d7f6 !important;
 
     .pf-v6-svg {
       color: #6753ac;
@@ -176,7 +175,7 @@
   }
 
   &--warning {
-    background-color: #FFE8CC !important;
+    background-color: #ffe8cc !important;
 
     .pf-v6-svg {
       color: var(--pf-t--global--text--color--status--warning--clicked);

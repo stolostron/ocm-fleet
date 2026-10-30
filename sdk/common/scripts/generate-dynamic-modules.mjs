@@ -77,8 +77,7 @@ while ((starMatch = starExportRe.exec(srcCopy)) !== null) {
   const fileSrc = fs.readFileSync(filePath, "utf-8");
 
   // Match named exports: export const/let/var/function/class Name
-  const namedExportRe =
-    /export\s+(?:const|let|var|function|class)\s+(\w+)/g;
+  const namedExportRe = /export\s+(?:const|let|var|function|class)\s+(\w+)/g;
   let namedMatch;
   while ((namedMatch = namedExportRe.exec(fileSrc)) !== null) {
     moduleMap[namedMatch[1]] = {
@@ -89,8 +88,7 @@ while ((starMatch = starExportRe.exec(srcCopy)) !== null) {
   }
 
   // Match type/interface/enum exports
-  const typeExportRe =
-    /export\s+(?:type|interface|enum)\s+(\w+)/g;
+  const typeExportRe = /export\s+(?:type|interface|enum)\s+(\w+)/g;
   let typeMatch;
   while ((typeMatch = typeExportRe.exec(fileSrc)) !== null) {
     moduleMap[typeMatch[1]] = {

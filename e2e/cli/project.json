@@ -6,8 +6,20 @@
   "root": "e2e/cli",
   "sourceRoot": "e2e/cli/tests",
   "projectType": "library",
-  "tags": ["scope:cli", "scope:e2e", "type:e2e"],
+  "tags": [
+    "lang:typescript",
+    "scope:cli",
+    "scope:e2e",
+    "type:e2e",
+    "type:js-project"
+  ],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "test": {
       "executor": "nx:run-commands",
       "options": {
@@ -31,7 +43,7 @@
         "{projectRoot}/plugin/**/*",
         "{workspaceRoot}/e2e/shared/**/*.ts",
         "{workspaceRoot}/e2e/sandbox/**/*.mjs",
-        "{workspaceRoot}/eslint.config.mjs"
+        "eslintConfig"
       ]
     },
     "test:e2e": {
@@ -62,6 +74,15 @@
         "command": "node plugin/run.mjs",
         "cwd": "e2e/cli"
       }
+    },
+    "lint:format": {},
+    "typecheck": {
+      "inputs": [
+        "default",
+        "^default",
+        "typescriptConfig",
+        "{workspaceRoot}/e2e/shared/**/*.ts"
+      ]
     }
   }
 }

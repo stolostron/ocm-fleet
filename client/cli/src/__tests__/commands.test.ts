@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect */
 import { load as loadYaml } from "js-yaml";
 import { describe, expect, it } from "vitest";
 

@@ -227,7 +227,9 @@ export function useAdvancedSearch() {
     valid: true,
   });
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const history = useSearchHistory();
 
   const context = useMemo(

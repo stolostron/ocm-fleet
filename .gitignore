@@ -40,7 +40,7 @@ deploy/openshift/secrets.env
 .vscode/.debug-tmpdir
 *.code-workspace
 
-# Build artifacts
+# Build artifacts and installed tools
 **/bin/
 
 *.db

@@ -12,11 +12,11 @@ and a cost analysis, rather than replacing it.
 A common assumption is that `search-v2-api` owns storage, since it's the
 GraphQL-facing service. It doesn't — it's read-only against the same database.
 
-| Repo | Role | Talks to Postgres? |
-|---|---|---|
-| `search-collector` | Runs per managed cluster (and the hub). Watches K8s resources via informers, transforms them, diffs against previous state, and **POSTs** JSON sync payloads over HTTPS. | No DB code at all. |
-| **`search-indexer`** | Hub-side HTTPS service. Receives sync payloads and **owns every INSERT / UPDATE / DELETE**. | **Yes — this is the write path.** |
-| `search-v2-api` | GraphQL read API for the UI/CLI. | Yes, but only `SELECT` + Postgres `LISTEN/NOTIFY` for live-watch subscriptions. |
+| Repo                 | Role                                                                                                                                                                     | Talks to Postgres?                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `search-collector`   | Runs per managed cluster (and the hub). Watches K8s resources via informers, transforms them, diffs against previous state, and **POSTs** JSON sync payloads over HTTPS. | No DB code at all.                                                              |
+| **`search-indexer`** | Hub-side HTTPS service. Receives sync payloads and **owns every INSERT / UPDATE / DELETE**.                                                                              | **Yes — this is the write path.**                                               |
+| `search-v2-api`      | GraphQL read API for the UI/CLI.                                                                                                                                         | Yes, but only `SELECT` + Postgres `LISTEN/NOTIFY` for live-watch subscriptions. |
 
 Confirmed directly in the indexer's own architecture doc:
 
@@ -57,7 +57,7 @@ Two request types, distinguished by the `X-Overwrite-State` header:
 
 1. **Delta sync** (`X-Overwrite-State: false`) — normal steady-state traffic.
    Small payload containing only what changed since the last successful send.
-2. **Full resync** (`X-Overwrite-State: true`) — the collector's *entire* current
+2. **Full resync** (`X-Overwrite-State: true`) — the collector's _entire_ current
    state. Can be very large (the indexer has a dedicated 20MB+ "large request"
    concurrency limiter for this case). Triggered when the collector has never
    sent before, or the previous send cycle failed.
@@ -100,7 +100,8 @@ func (s *ServerConfig) SyncResources(w http.ResponseWriter, r *http.Request) {
 	// ...
 }
 ```
-*(`pkg/server/syncHandler.go:21-100`)*
+
+_(`pkg/server/syncHandler.go:21-100`)_
 
 Every request — including no-op heartbeats — ends with a call to `ClusterTotals`,
 which the collector uses to validate its local count matches the server's. This
@@ -120,7 +121,7 @@ func (dao *DAO) SyncData(ctx context.Context, event model.SyncEvent,
 		data, _ := json.Marshal(resource.Properties)
 		queueErr = batch.Queue(batchItem{
 			action: "addResource",
-			query: `INSERT into search.resources as r values($1,$2,$3) ON CONFLICT (uid) 
+			query: `INSERT into search.resources as r values($1,$2,$3) ON CONFLICT (uid)
 			DO UPDATE SET data=$3 WHERE r.uid=$1 and r.data IS DISTINCT FROM $3`,
 			uid:  resource.UID,
 			args: []interface{}{resource.UID, clusterName, string(data)},
@@ -166,7 +167,8 @@ func (dao *DAO) SyncData(ctx context.Context, event model.SyncEvent,
 	// ...
 }
 ```
-*(`pkg/database/sync.go:16-119`, comments/structure preserved, some loops abbreviated)*
+
+_(`pkg/database/sync.go:16-119`, comments/structure preserved, some loops abbreviated)_
 
 Key SQL shapes used here:
 
@@ -203,7 +205,8 @@ func (dao *DAO) ResyncData(ctx context.Context, clusterName string,
 	// ...
 }
 ```
-*(`pkg/database/resync.go:22-48`)*
+
+_(`pkg/database/resync.go:22-48`)_
 
 `resetResources` streams the request body **token-by-token** instead of decoding
 it all at once, so a multi-hundred-MB full-state payload never gets fully
@@ -240,7 +243,8 @@ func (dao *DAO) upsertResources(ctx context.Context, resyncBody []byte, clusterN
 	return incomingUIDs, resource, nil
 }
 ```
-*(`pkg/database/resync.go:177-221`)*
+
+_(`pkg/database/resync.go:177-221`)_
 
 After upserting, stale rows not present in the incoming set are bulk-deleted:
 
@@ -248,7 +252,8 @@ After upserting, stale rows not present in the incoming set are bulk-deleted:
 DELETE from search.resources WHERE cluster=$1 AND uid NOT IN ($2)
 DELETE from search.edges WHERE cluster=$1 AND sourceid NOT IN ($2) OR destid NOT IN ($2)
 ```
-*(`pkg/database/resync.go:65-94`)*
+
+_(`pkg/database/resync.go:65-94`)_
 
 **Edge resync diffs instead of delete-all/insert-all.** It first loads all
 existing edges for the cluster into an in-memory map, then only inserts what's
@@ -290,7 +295,8 @@ func (dao *DAO) resetEdges(ctx context.Context, clusterName string,
 	return batch.connError
 }
 ```
-*(`pkg/database/resync.go:110-175`, condensed)*
+
+_(`pkg/database/resync.go:110-175`, condensed)_
 
 This means resync edge cost scales with **existing edge count for the cluster**,
 not just the incoming payload size — there's an upfront read before any write.
@@ -361,7 +367,8 @@ func (b *batchWithRetry) flush() {
 	}
 }
 ```
-*(`pkg/database/batch.go:16-138`, condensed)*
+
+_(`pkg/database/batch.go:16-138`, condensed)_
 
 Important properties:
 
@@ -369,7 +376,7 @@ Important properties:
 - Each flush spawns a **goroutine** that sends its batch independently and
   concurrently with other in-flight batches from the same request.
 - **A `pgx.Batch` is executed as a single implicit transaction.** If any
-  statement in it fails, the *entire batch* fails.
+  statement in it fails, the _entire batch_ fails.
 - On failure, the batch is recursively bisected and resent until the offending
   statement is isolated — this can multiply round trips in the failure case.
 
@@ -385,7 +392,8 @@ case "INSERT into search.resources values($1,$2,$3) ON CONFLICT (uid) DO UPDATE 
 		OnConflict(goqu.DoUpdate("uid", goqu.C("data").Set(params[2])).
 			Where(resources.Col("data").Neq(params[2]))).ToSQL()
 ```
-*(`pkg/database/goquHelper.go:34-41`)*
+
+_(`pkg/database/goquHelper.go:34-41`)_
 
 ### 3.6 Schema & indexes — `pkg/database/connection.go`
 
@@ -413,7 +421,8 @@ func (dao *DAO) InitializeTables(ctx context.Context) {
 	dao.pool.Exec(ctx, "CREATE INDEX IF NOT EXISTS edges_cluster_idx ON search.edges USING btree (cluster)")
 }
 ```
-*(`pkg/database/connection.go:115-170`, condensed — `checkError` calls omitted)*
+
+_(`pkg/database/connection.go:115-170`, condensed — `checkError` calls omitted)_
 
 **`search.resources` carries 7 indexes total**: the PK btree on `uid`, a btree
 on `cluster`, and 5 GIN indexes over expressions on the `data` JSONB column
@@ -431,7 +440,8 @@ config.MaxConnIdleTime = ...                 // default 5 min
 config.MaxConnLifetime = ...                 // default 5 min
 config.MinConns = cfg.DBMinConns             // default 2
 ```
-*(`pkg/database/connection.go:83-90`)*
+
+_(`pkg/database/connection.go:83-90`)_
 
 ### 3.7 Config knobs — `pkg/config/config.go`
 
@@ -449,7 +459,8 @@ LargeRequestLimit: getEnvAsInt("LARGE_REQUEST_LIMIT", 5),      // concurrent cap
 LargeRequestSize:  getEnvAsInt("LARGE_REQUEST_SIZE", 1024*1024*20), // 20 MB threshold
 SlowLog:           getEnvAsInt("SLOW_LOG", 1000), // log ops slower than 1s
 ```
-*(`pkg/config/config.go:55-81`, selected fields)*
+
+_(`pkg/config/config.go:55-81`, selected fields)_
 
 ### 3.8 Rate limiting ahead of the DB — `pkg/server/requestLimiter.go`, `largeRequestLimiter.go`
 
@@ -469,7 +480,8 @@ if requestCount >= config.Cfg.RequestLimit && !hubClusterReq {
 	return
 }
 ```
-*(`pkg/server/requestLimiter.go:32-47`, condensed)*
+
+_(`pkg/server/requestLimiter.go:32-47`, condensed)_
 
 ```go
 // largeRequestLimiterMiddleware
@@ -481,7 +493,8 @@ if r.ContentLength > int64(config.Cfg.LargeRequestSize) {
 	// track/untrack largeRequestCountTracker for the life of the request
 }
 ```
-*(`pkg/server/largeRequestLimiter.go:18-46`, condensed)*
+
+_(`pkg/server/largeRequestLimiter.go:18-46`, condensed)_
 
 The collector treats HTTP 429 specially as `"indexer busy"` and retries with
 exponential backoff + jitter (`search-collector/pkg/send/sender.go:155-180,
@@ -517,7 +530,8 @@ func (dao *DAO) ClusterTotals(ctx context.Context, clusterName string) (resource
 	return resources, edges, nil
 }
 ```
-*(`pkg/database/dataValidation.go:15-62`, condensed)*
+
+_(`pkg/database/dataValidation.go:15-62`, condensed)_
 
 This runs after **every** sync request (delta, resync, or heartbeat), so it's a
 small fixed cost layered on top of every write.
@@ -529,19 +543,19 @@ small fixed cost layered on top of every write.
    expressions). Because every write touches `data`, and `data` is what most of
    those GIN indexes are built on, Postgres **cannot use HOT (Heap-Only-Tuple)
    updates** — any accepted change creates a new tuple version and a new entry
-   in *all* 7 indexes. GIN index maintenance is inherently more CPU-costly per
+   in _all_ 7 indexes. GIN index maintenance is inherently more CPU-costly per
    entry than btree (mitigated somewhat by GIN's default "fastupdate" pending
    list, which defers/batches insertion into the main posting tree at the cost
    of a later autovacuum bill).
 
 2. **A whole 2500-item batch is one implicit transaction.** If one statement in
-   a batch is malformed, the *entire batch* aborts, triggering the binary-search
+   a batch is malformed, the _entire batch_ aborts, triggering the binary-search
    retry in `sendBatch`, which resubmits progressively smaller sub-batches
    (each its own transaction) until the bad statement is isolated. This can
    multiply round trips well above the happy-path cost when errors are present.
 
 3. **Full resync pays extra, unavoidable up-front reads.** `resetEdges` loads
-   *every existing edge for the cluster* into memory before it can diff against
+   _every existing edge for the cluster_ into memory before it can diff against
    the incoming set — cost here scales with the current DB state, not just the
    size of the incoming payload.
 
@@ -558,19 +572,19 @@ small fixed cost layered on top of every write.
 
 ## 5. Optimizations applied
 
-| Optimization | Where | Effect |
-|---|---|---|
-| Protocol-level pipelining via `pgx.Batch`/`SendBatch` | `batch.go:69-73` | Statements ship together over the wire without waiting for each individual response — the main defense against per-statement network latency. |
-| Change-guarded upserts (`IS DISTINCT FROM` / `!=`) | `sync.go:29-30`, `goquHelper.go:34-41`, `resync.go:200` | Skips the write (and therefore all 7-index maintenance) entirely when incoming data matches what's stored — critical for resync, where most resources are typically unchanged between cycles. |
-| Partial GIN index for `_hubClusterResource` | `connection.go:154-157` | Keeps that index small since only cluster pseudo-nodes qualify, rather than indexing every row. |
-| Configurable batch granularity (default 2500, `DB_BATCH_SIZE`) | `batch.go:55`, `config.go:23,55` | Balances round-trip savings against blast radius of a single bad statement aborting the whole batch. |
-| Diff-based edge resync (read existing, insert delta, delete orphans) | `resync.go:110-175` | Avoids naive delete-all/insert-all, minimizing index churn during a full resync. |
-| Streaming JSON decode for resync bodies | `resync.go:177-221`, `resync.go:311-357` | Bounds *memory* for multi-hundred-MB full-state payloads — doesn't reduce DB cost, but prevents the indexer itself from OOMing while building the batch. |
-| Per-cluster single-flight + global concurrency cap (default 25, hub-prioritized) | `requestLimiter.go:29-47` | Stops many simultaneous expensive syncs (esp. resyncs) from overwhelming Postgres at once. |
-| Separate concurrency cap for large (>20MB) requests (default 5) | `largeRequestLimiter.go` | Extra protection specifically against memory/DB pressure from full-state resyncs. |
-| Small, tuned connection pool with health checks + lifetime jitter | `connection.go:46-90`, `config.go:57-61` | Shares Postgres's limited connection budget across indexer + api replicas; jitter avoids simultaneous mass reconnects. |
-| `goqu` with `Prepared(true)` + pgx's default per-connection statement cache (not disabled here, unlike `search-v2-api`) | `goquHelper.go` | Amortizes parse/plan cost for repeated identical query shapes within a connection's lifetime. |
-| Delta vs. full-resync split | `syncHandler.go:56-69` | Steady-state traffic only ships small deltas; the expensive full-overwrite path is reserved for cold-start/failure recovery. The log message *"This is normal, but it could be a problem if it happens often"* (`resync.go:26`) signals the team is aware resync is the costly path. |
+| Optimization                                                                                                            | Where                                                   | Effect                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Protocol-level pipelining via `pgx.Batch`/`SendBatch`                                                                   | `batch.go:69-73`                                        | Statements ship together over the wire without waiting for each individual response — the main defense against per-statement network latency.                                                                                                                                        |
+| Change-guarded upserts (`IS DISTINCT FROM` / `!=`)                                                                      | `sync.go:29-30`, `goquHelper.go:34-41`, `resync.go:200` | Skips the write (and therefore all 7-index maintenance) entirely when incoming data matches what's stored — critical for resync, where most resources are typically unchanged between cycles.                                                                                        |
+| Partial GIN index for `_hubClusterResource`                                                                             | `connection.go:154-157`                                 | Keeps that index small since only cluster pseudo-nodes qualify, rather than indexing every row.                                                                                                                                                                                      |
+| Configurable batch granularity (default 2500, `DB_BATCH_SIZE`)                                                          | `batch.go:55`, `config.go:23,55`                        | Balances round-trip savings against blast radius of a single bad statement aborting the whole batch.                                                                                                                                                                                 |
+| Diff-based edge resync (read existing, insert delta, delete orphans)                                                    | `resync.go:110-175`                                     | Avoids naive delete-all/insert-all, minimizing index churn during a full resync.                                                                                                                                                                                                     |
+| Streaming JSON decode for resync bodies                                                                                 | `resync.go:177-221`, `resync.go:311-357`                | Bounds _memory_ for multi-hundred-MB full-state payloads — doesn't reduce DB cost, but prevents the indexer itself from OOMing while building the batch.                                                                                                                             |
+| Per-cluster single-flight + global concurrency cap (default 25, hub-prioritized)                                        | `requestLimiter.go:29-47`                               | Stops many simultaneous expensive syncs (esp. resyncs) from overwhelming Postgres at once.                                                                                                                                                                                           |
+| Separate concurrency cap for large (>20MB) requests (default 5)                                                         | `largeRequestLimiter.go`                                | Extra protection specifically against memory/DB pressure from full-state resyncs.                                                                                                                                                                                                    |
+| Small, tuned connection pool with health checks + lifetime jitter                                                       | `connection.go:46-90`, `config.go:57-61`                | Shares Postgres's limited connection budget across indexer + api replicas; jitter avoids simultaneous mass reconnects.                                                                                                                                                               |
+| `goqu` with `Prepared(true)` + pgx's default per-connection statement cache (not disabled here, unlike `search-v2-api`) | `goquHelper.go`                                         | Amortizes parse/plan cost for repeated identical query shapes within a connection's lifetime.                                                                                                                                                                                        |
+| Delta vs. full-resync split                                                                                             | `syncHandler.go:56-69`                                  | Steady-state traffic only ships small deltas; the expensive full-overwrite path is reserved for cold-start/failure recovery. The log message _"This is normal, but it could be a problem if it happens often"_ (`resync.go:26`) signals the team is aware resync is the costly path. |
 
 ## 6. Notable gaps / things you might expect but aren't there
 
@@ -592,19 +606,19 @@ small fixed cost layered on top of every write.
 
 ## 7. File map (for further reading)
 
-| File | Contains |
-|---|---|
-| `pkg/server/syncHandler.go` | HTTP entry point, dispatch to sync vs. resync |
-| `pkg/database/sync.go` | Delta sync SQL construction |
-| `pkg/database/resync.go` | Full resync orchestration, streaming decode, edge diffing |
-| `pkg/database/batch.go` | `pgx.Batch` wrapper: auto-flush, retry/bisect on error |
-| `pkg/database/goquHelper.go` | Parameterized SQL builder for resync-path queries |
-| `pkg/database/connection.go` | Schema/index DDL, `pgxpool` setup |
-| `pkg/database/dataValidation.go` | `ClusterTotals` post-request count validation |
-| `pkg/database/upsertCluster.go` | Cluster pseudo-node upsert; transactional cluster delete |
-| `pkg/config/config.go` | All environment-driven tuning knobs |
-| `pkg/server/requestLimiter.go` | Per-cluster + global concurrent request cap |
-| `pkg/server/largeRequestLimiter.go` | Concurrency cap for >20MB request bodies |
-| `pkg/metrics/slowLog.go` | `SlowLog`/`LogStepDuration` timing instrumentation |
-| `search-collector/pkg/send/sender.go` | Collector-side payload construction + HTTP send/retry |
-| `docs/ARCHITECTURE.md` | High-level architecture (this doc's companion) |
+| File                                  | Contains                                                  |
+| ------------------------------------- | --------------------------------------------------------- |
+| `pkg/server/syncHandler.go`           | HTTP entry point, dispatch to sync vs. resync             |
+| `pkg/database/sync.go`                | Delta sync SQL construction                               |
+| `pkg/database/resync.go`              | Full resync orchestration, streaming decode, edge diffing |
+| `pkg/database/batch.go`               | `pgx.Batch` wrapper: auto-flush, retry/bisect on error    |
+| `pkg/database/goquHelper.go`          | Parameterized SQL builder for resync-path queries         |
+| `pkg/database/connection.go`          | Schema/index DDL, `pgxpool` setup                         |
+| `pkg/database/dataValidation.go`      | `ClusterTotals` post-request count validation             |
+| `pkg/database/upsertCluster.go`       | Cluster pseudo-node upsert; transactional cluster delete  |
+| `pkg/config/config.go`                | All environment-driven tuning knobs                       |
+| `pkg/server/requestLimiter.go`        | Per-cluster + global concurrent request cap               |
+| `pkg/server/largeRequestLimiter.go`   | Concurrency cap for >20MB request bodies                  |
+| `pkg/metrics/slowLog.go`              | `SlowLog`/`LogStepDuration` timing instrumentation        |
+| `search-collector/pkg/send/sender.go` | Collector-side payload construction + HTTP send/retry     |
+| `docs/ARCHITECTURE.md`                | High-level architecture (this doc's companion)            |

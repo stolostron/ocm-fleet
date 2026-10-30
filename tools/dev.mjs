@@ -43,15 +43,15 @@ if (!watchOnly) {
 console.log("\nStarting watch mode...\n");
 
 function spawnRspack(cwd) {
-  return spawn(
-    "npx",
-    ["rspack", "build", "--watch"],
-    {
-      cwd,
-      stdio: "inherit",
-      env: { ...process.env, NODE_ENV: "development", NODE_OPTIONS: "--max-old-space-size=8192" },
+  return spawn("npx", ["rspack", "build", "--watch"], {
+    cwd,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+      NODE_OPTIONS: "--max-old-space-size=8192",
     },
-  );
+  });
 }
 
 const corePluginsCwd = resolve(root, "extensions/core/client");
@@ -66,17 +66,23 @@ const corePluginsConfig = resolve(corePluginsCwd, "rspack.config.ts");
 const kindPluginsConfig = resolve(kindPluginsCwd, "rspack.config.ts");
 const guiConfig = resolve(guiCwd, "rspack.config.ts");
 const configWatcher = new Watchpack({ aggregateTimeout: 300 });
-configWatcher.watch({ files: [corePluginsConfig, kindPluginsConfig, guiConfig] });
+configWatcher.watch({
+  files: [corePluginsConfig, kindPluginsConfig, guiConfig],
+});
 configWatcher.on("change", (changedFile) => {
   if (changedFile === corePluginsConfig) {
-    console.log("\ncore plugins rspack.config.ts changed — restarting build...\n");
+    console.log(
+      "\ncore plugins rspack.config.ts changed — restarting build...\n",
+    );
     const prev = corePluginsWatch;
     prev.kill();
     prev.on("close", () => {
       corePluginsWatch = spawnRspack(corePluginsCwd);
     });
   } else if (changedFile === kindPluginsConfig) {
-    console.log("\nkind plugins rspack.config.ts changed — restarting build...\n");
+    console.log(
+      "\nkind plugins rspack.config.ts changed — restarting build...\n",
+    );
     const prev = kindPluginsWatch;
     prev.kill();
     prev.on("close", () => {

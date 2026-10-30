@@ -7,9 +7,21 @@
   "root": "client/web",
   "sourceRoot": "client/web/src",
   "projectType": "application",
-  "tags": ["scope:ui", "type:app"],
+  "tags": [
+    "lang:typescript",
+    "scope:ui",
+    "type:app",
+    "type:js-project",
+    "test:vitest"
+  ],
   "implicitDependencies": ["plugins", "@ocm-fleet/kind-plugin"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "build": {
       "executor": "nx:run-commands",
       "options": {
@@ -56,7 +68,8 @@
       "options": {
         "command": "playwright test",
         "cwd": "client/web"
-      }
+      },
+      "dependsOn": ["ocm-fleet:web:generate-icons"]
     },
     "lint:css": {
       "executor": "nx:run-commands",
@@ -64,6 +77,12 @@
         "command": "stylelint 'src/**/*.{css,scss}' --config ../../stylelint.config.mjs --ignore-pattern '**/node_modules/**' --ignore-pattern '**/dist/**'",
         "cwd": "client/web"
       }
+    },
+    "fix:css": {},
+    "test": {},
+    "lint:format": {},
+    "typecheck": {
+      "dependsOn": ["common:build"]
     }
   }
 }

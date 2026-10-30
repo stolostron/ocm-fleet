@@ -8,7 +8,7 @@
 - need relationships (see ID note)
 - history / alias processing
 - what guarantees do we have? what do we require? how should consistency be achieved?
-    - 
+  -
 
 ## Fleetlet / agent bootstrap
 

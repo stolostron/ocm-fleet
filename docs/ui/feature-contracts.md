@@ -8,14 +8,14 @@ Plugins declare extensions through builders from `@ocm-fleet/build-utils` in the
 
 Every extension has a type and properties. The shared properties are:
 
-| Property | Contract |
-|----------|----------|
-| `id` | Required local identifier matching `/^[a-z][a-z0-9-]*$/` |
-| `label` | Required nonempty display string |
-| `description` | Optional summary |
-| `keywords` | Optional search terms |
-| `searchResult` | Optional custom feature-search component CodeRef |
-| `searchIcon` | Optional feature-search icon CodeRef |
+| Property       | Contract                                                 |
+| -------------- | -------------------------------------------------------- |
+| `id`           | Required local identifier matching `/^[a-z][a-z0-9-]*$/` |
+| `label`        | Required nonempty display string                         |
+| `description`  | Optional summary                                         |
+| `keywords`     | Optional search terms                                    |
+| `searchResult` | Optional custom feature-search component CodeRef         |
+| `searchIcon`   | Optional feature-search icon CodeRef                     |
 
 A CodeRef has the form `{ $codeRef: "ModuleName.exportName" }`. The module name identifies an entry in the declaring plugin's `exposedModules`. A type declaration is not proof that the runtime export has the expected shape; see [Extension Validation](extension-validation.md).
 
@@ -46,10 +46,10 @@ Sources: [extension types](../../sdk/build-utils/src/extensions/types.ts), [buil
 
 The resource manager server projects route metadata into flat `pluginPages` entries containing `id`, `title`, `path`, `scope`, `module`, and `pluginKey`. The `module` field remains the exposed JavaScript module key, not the route ID.
 
-| Route metadata | Router-relative path |
-|-----------------|----------------------|
-| Usable `id` and `group` | `/{group}/{id}` |
-| Usable `id`, no group | `/{pluginKey}/{id}` |
+| Route metadata           | Router-relative path    |
+| ------------------------ | ----------------------- |
+| Usable `id` and `group`  | `/{group}/{id}`         |
+| Usable `id`, no group    | `/{pluginKey}/{id}`     |
 | Missing or unusable `id` | Slug derived from label |
 
 For a usable ID, the page ID is `{pluginKey}.{id}`. The server extracts the exposed module name from the component CodeRef. Duplicate paths are skipped. These are projections of metadata, not runtime checks of plugin exports or route contents.
@@ -67,7 +67,7 @@ Sources: [server UI configuration](../../server/internal/transport/http/uiconfig
 ```tsx
 <PluginLink scope="core-plugin" module="ClustersModule" to="my-cluster">
   View cluster
-</PluginLink>
+</PluginLink>;
 
 // Opens the Kind creation wizard on the Clusters page.
 navigate({ search: "?create=kind" });

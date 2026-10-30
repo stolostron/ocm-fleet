@@ -257,7 +257,7 @@ func awaitState(ctx context.Context, t *testing.T, store domain.Store, name doma
 			t.Fatalf("Begin: %v", err)
 		}
 		view, err := tx.Deployments().GetView(ctx, name)
-		tx.Rollback()
+		tx.RollbackOnExit()
 		if err == nil && view.Fulfillment.State() == want {
 			return view
 		}
@@ -277,7 +277,7 @@ func awaitFulfillment(ctx context.Context, t *testing.T, store domain.Store, fID
 			t.Fatalf("Begin: %v", err)
 		}
 		f, err := tx.Fulfillments().Get(ctx, fID)
-		tx.Rollback()
+		tx.RollbackOnExit()
 		if err == nil && f.State() == want {
 			return
 		}

@@ -58,7 +58,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("CreateAndGetByName", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -88,7 +88,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("DuplicateRelativeName", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -105,7 +105,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("ListByCollection", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -136,7 +136,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("UpdateLabels", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -172,7 +172,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("CreateWithRepresentations", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -198,7 +198,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("RepresentationDisappearsOnExtensionResourceDelete", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -236,7 +236,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("RepresentationExtensionResourceUID_RoundTripsViaGetByName", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -264,7 +264,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("VirtualPlatformResource", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -321,7 +321,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("CreateWithAliases", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -347,7 +347,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("AliasIdempotentForSameResource", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -375,7 +375,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("AliasConflictsForDifferentResource", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -418,7 +418,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("ReconcileAliasesDeletesClaimOnceUnCorroboratedAndOrphaned", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -458,7 +458,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("CreateWithRelationships", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -496,7 +496,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("GetByNameHydratesIndependentChildCollections", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -547,7 +547,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("ListByCollection_NestedExcludesDescendants", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -582,7 +582,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("ListByCollection_NestedParentDoesNotIncludeChildren", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -612,7 +612,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("CreateAndGetByName_NestedCollection", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -636,7 +636,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("ListByCollection_ReturnsAllResources", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -661,7 +661,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("GetByNameNotFound", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
@@ -680,7 +680,7 @@ func runResolveAliasesBatchTests(t *testing.T, factory Factory, now time.Time) {
 	t.Run("ResolveAliasesBatch", func(t *testing.T) {
 		t.Run("ResolvesMultipleAcrossResourcesAndOmitsUnresolved", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ResourceIdentities()
 			ctx := context.Background()
 
@@ -734,7 +734,7 @@ func runResolveAliasesBatchTests(t *testing.T, factory Factory, now time.Time) {
 
 		t.Run("EmptyInputReturnsEmptyMapNoError", func(t *testing.T) {
 			tx := factory(t)
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			repo := tx.ResourceIdentities()
 			ctx := context.Background()
 

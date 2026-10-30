@@ -21,46 +21,401 @@
       "options": {
         "targetName": "test:ct",
         "ciTargetName": "test:ct:ci"
-      }
+      },
+      "exclude": ["e2e/**/*"]
     }
   ],
   "namedInputs": {
+    "goSource": ["{projectRoot}/**/*"],
+    "goLintToolchain": [
+      "{workspaceRoot}/tools/golangci-lint.mjs",
+      {
+        "runtime": "node tools/golangci-lint.mjs env"
+      }
+    ],
+    "goLintToolModule": [
+      "goLintToolchain",
+      "{workspaceRoot}/tools/golangci-lint/**/*",
+      "!{workspaceRoot}/tools/golangci-lint/**/*.md"
+    ],
+    "goLintTool": [
+      "goLintToolModule",
+      "!{workspaceRoot}/tools/golangci-lint/**/project.json"
+    ],
+    "goLintToolBuild": [
+      "goLintTool",
+      "!{workspaceRoot}/tools/golangci-lint/**/*_test.go",
+      "!{workspaceRoot}/tools/golangci-lint/**/testdata/**/*"
+    ],
+    "goLintConfig": [
+      "{workspaceRoot}/.golangci.yaml",
+      "goLintTool",
+      "goRuntime"
+    ],
     "uiSource": [
       "{projectRoot}/src/**/*.{ts,tsx,js,jsx}",
       "{projectRoot}/tsconfig*.json"
     ],
-    "uiStyles": [
-      "{projectRoot}/src/**/*.{css,scss}"
-    ],
+    "uiStyles": ["{projectRoot}/src/**/*.{css,scss}"],
     "eslintConfig": [
-      "{workspaceRoot}/eslint.config.mjs"
+      "{workspaceRoot}/eslint.config.mjs",
+      "{workspaceRoot}/package-lock.json",
+      "{workspaceRoot}/.prettierignore"
+    ],
+    "jsRuntime": [
+      "{workspaceRoot}/package-lock.json",
+      {
+        "runtime": "node -p \"JSON.stringify([process.version, process.platform, process.arch])\""
+      }
+    ],
+    "typescriptConfig": ["{workspaceRoot}/tsconfig.json", "jsRuntime"],
+    "qualityTaskConfig": [
+      "{workspaceRoot}/nx.json",
+      "{workspaceRoot}/project.json",
+      "{workspaceRoot}/.golangci.yaml",
+      "goLintToolModule",
+      "goRuntime",
+      "jsRuntime"
+    ],
+    "goRuntime": [
+      {
+        "runtime": "go env GOVERSION GOOS GOARCH CGO_ENABLED GOFLAGS GOEXPERIMENT GOTOOLCHAIN CC CXX CGO_CFLAGS CGO_CPPFLAGS CGO_CXXFLAGS CGO_LDFLAGS"
+      }
+    ],
+    "formatConfig": [
+      "{workspaceRoot}/.gitignore",
+      "{workspaceRoot}/.prettierignore",
+      "{workspaceRoot}/.prettierrc*",
+      "{workspaceRoot}/prettier.config.*",
+      "{workspaceRoot}/.editorconfig",
+      "{workspaceRoot}/package.json",
+      "jsRuntime"
     ]
   },
   "targetDefaults": {
     "build": {
       "cache": true
     },
-    "test": {
-      "cache": true
-    },
-    "lint": {
-      "cache": true,
-      "inputs": [
-        "uiSource",
-        "eslintConfig"
-      ]
-    },
+    "test": [
+      {
+        "cache": true
+      },
+      {
+        "filter": {
+          "projects": ["tag:test:vitest"]
+        },
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "vitest run --config vitest.config.ts {projectRoot}/src"
+        },
+        "cache": true,
+        "inputs": [
+          "default",
+          "^default",
+          "{workspaceRoot}/vitest.config.ts",
+          "jsRuntime"
+        ],
+        "outputs": []
+      }
+    ],
+    "fmt": [
+      {
+        "filter": {
+          "projects": ["tag:type:go-module"]
+        },
+        "metadata": {
+          "description": "Apply shared Go formatting and import organization."
+        },
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          {
+            "projects": ["ocm-fleet"],
+            "target": "lint:go:config"
+          }
+        ],
+        "options": {
+          "commands": [
+            "\"$NX_WORKSPACE_ROOT/bin/tools/format-go\" --config \"$NX_WORKSPACE_ROOT/.golangci.yaml\" .",
+            "npx nx run {projectName}:refresh:inputs"
+          ],
+          "parallel": false,
+          "forwardAllArgs": false,
+          "cwd": "{projectRoot}",
+          "env": {
+            "GOWORK": "off",
+            "NX_DAEMON": "false"
+          }
+        },
+        "cache": false
+      },
+      {
+        "executor": "nx:run-commands",
+        "options": {
+          "forwardAllArgs": false,
+          "env": {
+            "NX_DAEMON": "false"
+          },
+          "commands": [
+            "prettier --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/{projectName}/prettier\" --write --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" .",
+            "eslint --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/{projectName}/eslint-layout\" . --fix --fix-type layout --exit-on-fatal-error || test \"$?\" -eq 1",
+            "npx nx run {projectName}:refresh:inputs"
+          ],
+          "parallel": false,
+          "cwd": "{projectRoot}"
+        },
+        "cache": false,
+        "filter": {
+          "projects": ["tag:type:js-project"]
+        },
+        "metadata": {
+          "description": "Apply Prettier formatting and ESLint layout fixes, including import order. Allow remaining lint findings (exit 1); fatal parse/configuration errors still fail."
+        }
+      }
+    ],
+    "verify": [
+      {
+        "filter": {
+          "projects": [
+            "tag:type:go-module",
+            "tag:type:js-project",
+            "tag:lang:proto"
+          ]
+        },
+        "metadata": {
+          "description": "Format first, then start fresh Nx checks against the edited source."
+        },
+        "executor": "nx:run-commands",
+        "dependsOn": ["fmt"],
+        "options": {
+          "command": "npx nx run {projectName}:check",
+          "forwardAllArgs": false,
+          "env": {
+            "NX_DAEMON": "false"
+          }
+        },
+        "cache": false
+      }
+    ],
+    "fix": [
+      {
+        "filter": {
+          "projects": [
+            "tag:type:go-module",
+            "tag:type:js-project",
+            "tag:lang:proto"
+          ]
+        },
+        "metadata": {
+          "description": "Format, apply supported linter fixes, then check the resulting source."
+        },
+        "executor": "nx:run-commands",
+        "dependsOn": ["fmt"],
+        "options": {
+          "commands": [
+            "npx nx run {projectName}:fix:lint",
+            "npx nx run {projectName}:check"
+          ],
+          "parallel": false,
+          "forwardAllArgs": false,
+          "env": {
+            "NX_DAEMON": "false"
+          }
+        },
+        "cache": false
+      }
+    ],
+    "fix:lint": [
+      {
+        "filter": {
+          "projects": ["tag:type:go-module"]
+        },
+        "metadata": {
+          "description": "Apply linter fixes, allowing remaining findings so the subsequent check still runs lint and tests. Tool failures remain fatal."
+        },
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          {
+            "projects": ["ocm-fleet"],
+            "target": "lint:go:config"
+          }
+        ],
+        "options": {
+          "commands": [
+            "\"$NX_WORKSPACE_ROOT/bin/tools/golangci-lint\" run --fix --issues-exit-code=0 --config \"$NX_WORKSPACE_ROOT/.golangci.yaml\" ./...",
+            "npx nx run {projectName}:refresh:inputs"
+          ],
+          "parallel": false,
+          "forwardAllArgs": false,
+          "cwd": "{projectRoot}",
+          "env": {
+            "GOWORK": "off",
+            "NX_DAEMON": "false"
+          }
+        },
+        "cache": false
+      },
+      {
+        "executor": "nx:run-commands",
+        "options": {
+          "forwardAllArgs": false,
+          "env": {
+            "NX_DAEMON": "false"
+          },
+          "commands": [
+            "eslint . --fix --exit-on-fatal-error || test \"$?\" -eq 1",
+            "npx nx run {projectName}:refresh:inputs"
+          ],
+          "parallel": false,
+          "cwd": "{projectRoot}"
+        },
+        "cache": false,
+        "filter": {
+          "projects": ["tag:type:js-project"]
+        },
+        "dependsOn": ["fix:css"],
+        "metadata": {
+          "description": "Apply ESLint and available stylelint fixes; check remaining findings afterward."
+        }
+      }
+    ],
+    "check": [
+      {
+        "filter": {
+          "projects": [
+            "tag:type:go-module",
+            "tag:type:js-project",
+            "tag:lang:proto"
+          ]
+        },
+        "metadata": {
+          "description": "Run the project's lint, style, normal test, component test, and type checks without rewriting source."
+        },
+        "executor": "nx:noop",
+        "dependsOn": [
+          "lint",
+          "lint:format",
+          "lint:css",
+          "test",
+          "test:ct",
+          "typecheck"
+        ],
+        "cache": false
+      }
+    ],
+    "lint": [
+      {
+        "cache": true,
+        "inputs": ["uiSource", "eslintConfig"]
+      },
+      {
+        "filter": {
+          "projects": ["tag:type:go-module"]
+        },
+        "metadata": {
+          "description": "Check Go source with the shared linter and configuration."
+        },
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          {
+            "projects": ["ocm-fleet"],
+            "target": "lint:go:config"
+          }
+        ],
+        "options": {
+          "command": "\"$NX_WORKSPACE_ROOT/bin/tools/golangci-lint\" run --config \"$NX_WORKSPACE_ROOT/.golangci.yaml\" ./...",
+          "forwardAllArgs": false,
+          "cwd": "{projectRoot}",
+          "env": {
+            "GOWORK": "off"
+          }
+        },
+        "cache": true,
+        "inputs": ["goSource", "goLintConfig"],
+        "outputs": []
+      }
+    ],
+    "lint:format": [
+      {
+        "filter": {
+          "projects": ["tag:type:js-project"]
+        },
+        "metadata": {
+          "description": "Check project formatting without rewriting source."
+        },
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "prettier --check --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" .",
+          "cwd": "{projectRoot}",
+          "forwardAllArgs": false
+        },
+        "cache": true,
+        "inputs": ["default", "formatConfig"],
+        "outputs": []
+      }
+    ],
     "lint:css": {
       "cache": true,
       "inputs": [
-        "uiStyles"
+        "uiStyles",
+        "{workspaceRoot}/stylelint.config.mjs",
+        "{workspaceRoot}/package-lock.json"
       ]
     },
     "test:ct": {
       "cache": true,
-      "dependsOn": [
-        "^build"
+      "inputs": [
+        "default",
+        "^default",
+        "jsRuntime",
+        {
+          "env": "CI"
+        }
       ]
+    },
+    "typecheck": [
+      {
+        "filter": {
+          "projects": ["tag:lang:typescript"]
+        },
+        "metadata": {
+          "description": "Check TypeScript types without emitting build output."
+        },
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "tsc --noEmit -p tsconfig.json",
+          "cwd": "{projectRoot}",
+          "forwardAllArgs": false
+        },
+        "cache": true,
+        "inputs": ["default", "^default", "typescriptConfig"],
+        "outputs": []
+      }
+    ],
+    "refresh:inputs": {
+      "metadata": {
+        "description": "Discard Nx 23.1.2's second-resolution file hashes after source rewrites; retain task cache records."
+      },
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -f \"${NX_WORKSPACE_DATA_DIRECTORY:-${NX_PROJECT_GRAPH_CACHE_DIRECTORY:-$NX_WORKSPACE_ROOT/.nx/workspace-data}}/nx_files.nxt\"",
+        "forwardAllArgs": false
+      },
+      "cache": false
+    },
+    "fix:css": {
+      "executor": "nx:run-commands",
+      "options": {
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        },
+        "command": "stylelint \"src/**/*.{css,scss}\" --config \"$NX_WORKSPACE_ROOT/stylelint.config.mjs\" --fix || test \"$?\" -eq 2",
+        "cwd": "{projectRoot}"
+      },
+      "cache": false,
+      "metadata": {
+        "description": "Apply stylelint fixes; allow remaining findings (exit 2) for the subsequent check. Configuration/tool errors still fail."
+      }
     }
   }
 }

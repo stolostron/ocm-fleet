@@ -143,12 +143,12 @@ For attestations (as opposed to bare signatures), cosign uses the DSSE content v
 
 OCM Fleet would define custom in-toto predicate types for its content:
 
-| Content | Predicate type (illustrative) |
-|---|---|
-| Deployment intent | `https://resource-manager.open-cluster-management.io/attestation/deployment/v1` |
-| Managed resource | `https://resource-manager.open-cluster-management.io/attestation/managed-resource/v1` |
-| Placement evidence | `https://resource-manager.open-cluster-management.io/attestation/placement/v1` |
-| Update (spec_update) | `https://resource-manager.open-cluster-management.io/attestation/update/v1` |
+| Content              | Predicate type (illustrative)                                                             |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| Deployment intent    | `https://resource-manager.open-cluster-management.io/attestation/deployment/v1`           |
+| Managed resource     | `https://resource-manager.open-cluster-management.io/attestation/managed-resource/v1`     |
+| Placement evidence   | `https://resource-manager.open-cluster-management.io/attestation/placement/v1`            |
+| Update (spec_update) | `https://resource-manager.open-cluster-management.io/attestation/update/v1`               |
 | Fulfillment relation | `https://resource-manager.open-cluster-management.io/attestation/fulfillment-relation/v1` |
 
 The `in-toto statement` structure:
@@ -167,18 +167,18 @@ The `in-toto statement` structure:
     "deployment_id": "my-app",
     "manifest_strategy": { "type": "addon", "addon_id": "capi-provisioner" },
     "placement_strategy": { "type": "predicate", "expression": "..." },
-    "output_constraints": [ { "name": "...", "expression": "..." } ],
+    "output_constraints": [{ "name": "...", "expression": "..." }],
     "valid_until": 1717200000,
     "expected_generation": 3
   }
 }
 ```
 
-The in-toto `subject` field identifies *what* is being attested about, by content digest. The `predicate` carries the typed content that the signer authorizes. The output constraints and validity bound that are currently part of the POC's `signed_input_envelope` (see `policy.py:signed_input_envelope`) move into the predicate body. They are still part of what the signer signs.
+The in-toto `subject` field identifies _what_ is being attested about, by content digest. The `predicate` carries the typed content that the signer authorizes. The output constraints and validity bound that are currently part of the POC's `signed_input_envelope` (see `policy.py:signed_input_envelope`) move into the predicate body. They are still part of what the signer signs.
 
 **Content integrity binding.** The `subject[0].digest.sha256` in the in-toto statement MUST match the OCI layer digest of the corresponding artifact (e.g., the deployment content blob in `layers[0].digest` of the OCI manifest). This is how the delivery agent binds the signed attestation to the actual content it fetched from the registry: it fetches the OCI artifact, computes or reads the layer digest, and verifies that the in-toto subject digest in the signed DSSE envelope matches. If they diverge, the attestation does not cover the fetched content and verification fails. This replaces the current POC's direct `hash(intent)` comparison, with the OCI content-addressing layer providing the same integrity guarantee.
 
-**Two digest identities per object.** An OCI artifact has two meaningful digests: the *manifest digest* (the SHA-256 of the OCI image manifest JSON) and the *layer/payload digest* (the SHA-256 of the content blob in `layers[0]`). These serve different purposes:
+**Two digest identities per object.** An OCI artifact has two meaningful digests: the _manifest digest_ (the SHA-256 of the OCI image manifest JSON) and the _layer/payload digest_ (the SHA-256 of the content blob in `layers[0]`). These serve different purposes:
 
 - The **manifest digest** is the identity used by the OCI referrers API. A sigstore bundle's `subject.digest` points to the manifest digest of the artifact it attests. The referrers walk discovers artifacts by manifest digest.
 - The **layer digest** is the identity used for content integrity. The in-toto statement's `subject[0].digest` is the layer digest -- the hash of the actual content bytes. This is what the signer authorizes.
@@ -296,11 +296,11 @@ The delivery agent discovers all sigstore bundles referencing a deployment via t
 
 The OCI registry serves as a natural option for the "hardened" buffer transport described in `authentication.md`:
 
-| Transport | Mechanism | Latency | Coupling |
-|---|---|---|---|
-| Standard | gRPC over fleetlet connection, sigstore bundle inline | Low | Direct |
-| OCI registry | Delivery agent pulls from registry | Medium | Decoupled |
-| Buffer (S3/Kafka/NATS) | Existing design | Medium | Decoupled |
+| Transport              | Mechanism                                             | Latency | Coupling  |
+| ---------------------- | ----------------------------------------------------- | ------- | --------- |
+| Standard               | gRPC over fleetlet connection, sigstore bundle inline | Low     | Direct    |
+| OCI registry           | Delivery agent pulls from registry                    | Medium  | Decoupled |
+| Buffer (S3/Kafka/NATS) | Existing design                                       | Medium  | Decoupled |
 
 The OCI registry option has advantages over ad hoc buffers: content-addressable addressing (no inventing key schemes), built-in authentication and authorization, the referrers API for attestation graph discovery, replication for distribution across network boundaries, garbage collection and retention policies, and mature client libraries ([ORAS](https://oras.land/), [go-containerregistry](https://github.com/google/go-containerregistry)).
 
@@ -333,12 +333,12 @@ TUF provides all of these properties through its four-role metadata structure.
 
 ### Role mapping
 
-| TUF role | OCM Fleet purpose | Key storage | Rotation |
-|---|---|---|---|
-| Root | Tenant administrator escape hatch | Offline (hardware token, air-gapped) | N-of-M threshold, chain of trust via versioned root.json |
-| Targets | Trust anchor registry | Delegated to sub-roles | Standard TUF targets delegation |
-| Snapshot | Consistent view of all trust anchors | Online (automated) | Frequent, prevents mix-and-match |
-| Timestamp | Freshness guarantee | Online (automated) | Frequent (e.g. hourly), prevents freeze |
+| TUF role  | OCM Fleet purpose                    | Key storage                          | Rotation                                                 |
+| --------- | ------------------------------------ | ------------------------------------ | -------------------------------------------------------- |
+| Root      | Tenant administrator escape hatch    | Offline (hardware token, air-gapped) | N-of-M threshold, chain of trust via versioned root.json |
+| Targets   | Trust anchor registry                | Delegated to sub-roles               | Standard TUF targets delegation                          |
+| Snapshot  | Consistent view of all trust anchors | Online (automated)                   | Frequent, prevents mix-and-match                         |
+| Timestamp | Freshness guarantee                  | Online (automated)                   | Frequent (e.g. hourly), prevents freeze                  |
 
 ### Targets structure
 
@@ -387,7 +387,7 @@ tenant-admin (top-level targets role)
 
 The signing infrastructure trust roots (`fulcio-root.pem`, `rekor-public-key.pem`, `ctlog-public-key.pem`) remain under tenant-controlled keys. This is deliberate: `authentication.md` establishes that "the platform is never a trust root," and delegating Fulcio/Rekor trust to platform operator keys would reintroduce exactly the provider-controlled trust the design aims to avoid. A compromised platform operator with delegated authority over signing infrastructure roots could redirect the delivery agent to trust a malicious CA -- the same class of attack the trust model is designed to prevent.
 
-If the platform provider operates the Fulcio/Rekor infrastructure on behalf of the tenant, the tenant admin still controls *which* infrastructure the delivery agent trusts. The provider can recommend or provision the infrastructure, but the tenant admin signs the TUF targets metadata that names the trusted Fulcio root and Rekor key. This is analogous to how tenants today configure their own IdP trust -- the IdP may be operated by a third party, but the tenant controls the trust relationship.
+If the platform provider operates the Fulcio/Rekor infrastructure on behalf of the tenant, the tenant admin still controls _which_ infrastructure the delivery agent trusts. The provider can recommend or provision the infrastructure, but the tenant admin signs the TUF targets metadata that names the trusted Fulcio root and Rekor key. This is analogous to how tenants today configure their own IdP trust -- the IdP may be operated by a third party, but the tenant controls the trust relationship.
 
 The TUF `paths` patterns enforce that each delegated role can only modify its scoped targets. A compromised addon admin cannot modify user trust configuration or signing infrastructure roots. TUF's `terminating` flag on delegations can enforce strict boundaries.
 
@@ -459,17 +459,17 @@ This means `sigstore-go` verification should extract the full certificate extens
 
 ### Concrete type mapping
 
-| Current POC type | Replacement |
-|---|---|
-| `KeyPair` (Ed25519, `crypto.py`) | Ephemeral key generated at signing time, discarded after use |
-| `KeyBinding` (`model.py`) | Fulcio X.509 certificate (embedded in sigstore bundle) |
-| `Signature` (`model.py`) | DSSE signature within sigstore bundle |
-| `OutputSignature` (`model.py`) | Sigstore bundle attached to the output artifact via OCI referrers |
+| Current POC type                      | Replacement                                                             |
+| ------------------------------------- | ----------------------------------------------------------------------- |
+| `KeyPair` (Ed25519, `crypto.py`)      | Ephemeral key generated at signing time, discarded after use            |
+| `KeyBinding` (`model.py`)             | Fulcio X.509 certificate (embedded in sigstore bundle)                  |
+| `Signature` (`model.py`)              | DSSE signature within sigstore bundle                                   |
+| `OutputSignature` (`model.py`)        | Sigstore bundle attached to the output artifact via OCI referrers       |
 | `TrustAnchor.known_keys` (`model.py`) | TUF-distributed trust anchor config (OIDC issuer + subject constraints) |
-| `TrustStore` (`verify.py`) | TUF targets metadata + downloaded trust configuration files |
-| `VerificationBundle` (`verify.py`) | OCI referrers graph (artifacts + attached sigstore bundles) |
-| `make_key_binding` (`build.py`) | Not needed -- Fulcio handles identity-to-key binding |
-| `content_hash` (`crypto.py`) | OCI content digest (SHA-256) |
+| `TrustStore` (`verify.py`)            | TUF targets metadata + downloaded trust configuration files             |
+| `VerificationBundle` (`verify.py`)    | OCI referrers graph (artifacts + attached sigstore bundles)             |
+| `make_key_binding` (`build.py`)       | Not needed -- Fulcio handles identity-to-key binding                    |
+| `content_hash` (`crypto.py`)          | OCI content digest (SHA-256)                                            |
 
 Types that remain unchanged within the legacy POC model: `DeploymentContent`, `ManagedResourceContent`, `OutputConstraint`, `TrustAnchorConstraint`, `TrustAnchorSubject`, `StrategySpec`, `DerivedInput`, `PlacementEvidence`, `PutManifests`, `RemoveByDeploymentId`, `ManifestEnvelope`, `VerifiedInput`, `VerifiedOutput`, `VerificationResult`, `VerificationContext`, `FulfillmentState`. The shared delivery contract has since generalized `RemoveByDeploymentId` to `RemoveByFulfillmentId`; this alternative did not yet model the separation between a user-facing `Deployment` and its owned Fulfillment.
 
@@ -481,7 +481,7 @@ The current design's governing principle is: "the platform is never a trust root
 
 **Per-tenant Fulcio.** Each tenant runs (or has run for them) a Fulcio instance configured to trust only that tenant's OIDC issuer. The delivery agent's Fulcio root (distributed via TUF) is tenant-specific. Blast radius of a Fulcio compromise is tenant-scoped, matching the current design's principle that "compromise is tenant- or user-scoped."
 
-**Shared Fulcio with tenant-scoped verification.** A single Fulcio instance accepts OIDC tokens from multiple configured issuers. The delivery agent trusts the shared Fulcio root but scopes verification by OIDC issuer claim in the certificate. **This option is incompatible with the current trust model.** A shared Fulcio CA is exactly the "platform-level root (CA, signing service)" that `authentication.md` rejects: a Fulcio compromise has cross-tenant blast radius, and Rekor provides after-the-fact *detectability* of forged certificates, not *prevention*. The "platform is never a trust root" principle requires that compromise be tenant-scoped. If this option is chosen, the architecture is explicitly relaxing that principle in exchange for operational simplicity -- that tradeoff must be a conscious tenant decision, not a default.
+**Shared Fulcio with tenant-scoped verification.** A single Fulcio instance accepts OIDC tokens from multiple configured issuers. The delivery agent trusts the shared Fulcio root but scopes verification by OIDC issuer claim in the certificate. **This option is incompatible with the current trust model.** A shared Fulcio CA is exactly the "platform-level root (CA, signing service)" that `authentication.md` rejects: a Fulcio compromise has cross-tenant blast radius, and Rekor provides after-the-fact _detectability_ of forged certificates, not _prevention_. The "platform is never a trust root" principle requires that compromise be tenant-scoped. If this option is chosen, the architecture is explicitly relaxing that principle in exchange for operational simplicity -- that tradeoff must be a conscious tenant decision, not a default.
 
 **Tenant-operated Fulcio.** The tenant operates Fulcio as part of their own infrastructure, like they operate their own IdP. The platform is not in the CA path at all. This is the strongest alignment with the current trust model but requires tenant sophistication. Might be viable for the same class of tenants who today operate their own SPIFFE/SPIRE infrastructure.
 
@@ -511,16 +511,16 @@ If TUF refresh fails (network partition), the delivery agent's existing TUF meta
 
 ## Open questions from `authentication.md` -- how this architecture addresses them
 
-| Open question | How addressed |
-|---|---|
-| "Can different key registries be pluggable?" | Fulcio is the universal key-to-identity binding mechanism. The "registry" is the Fulcio instance, configured with the tenant's OIDC issuer. No pluggable registries needed. |
-| "Real OIDC key binding" | Fulcio provides OIDC key binding natively. The certificate is issued based on a verified OIDC token and proof of possession of the ephemeral key. No separate binding bundle or key-referencing token claims needed. |
-| "Trust anchor distribution" | TUF targets metadata, signed by tenant admin offline keys, distributed to delivery agents via the TUF update protocol. |
-| "Trust bundle rotation: overlap windows" | TUF targets metadata versions explicitly control the overlap: list both old and new, then remove old. Rollback protection prevents regression. |
-| "Root user escape hatch" | TUF root role. Offline keys, threshold signatures, chain-of-trust rotation. |
-| "Multi-signature policy" | Multiple sigstore bundles attached to the same artifact via OCI referrers (one bundle per signer). The delivery agent discovers all bundles and applies OCM Fleet policy (any-of, quorum) on top. |
-| "Derivation chain depth" | Unchanged -- still an OCM Fleet concern. Each node in the chain is a sigstore-signed OCI artifact, but the depth question is the same. |
-| "Claims freshness" | Still relevant, and **not bounded by Fulcio certificate validity**. Sigstore bundles are designed to be verifiable indefinitely after the certificate expires -- the Rekor timestamp evidence proves the signature was created during the cert's validity window, but the signed artifact has no sigstore-imposed expiry. The 10-minute cert validity bounds *when* the OIDC claims were current (at signing time), not *how long* OCM Fleet accepts the signed deployment. Long-term authorization freshness remains an OCM Fleet policy concern: `valid_until` in the signed predicate, re-signing (cheap with keyless signing), or SCIM/CAEP checks provide the actual freshness bound. |
+| Open question                                | How addressed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| "Can different key registries be pluggable?" | Fulcio is the universal key-to-identity binding mechanism. The "registry" is the Fulcio instance, configured with the tenant's OIDC issuer. No pluggable registries needed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| "Real OIDC key binding"                      | Fulcio provides OIDC key binding natively. The certificate is issued based on a verified OIDC token and proof of possession of the ephemeral key. No separate binding bundle or key-referencing token claims needed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| "Trust anchor distribution"                  | TUF targets metadata, signed by tenant admin offline keys, distributed to delivery agents via the TUF update protocol.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| "Trust bundle rotation: overlap windows"     | TUF targets metadata versions explicitly control the overlap: list both old and new, then remove old. Rollback protection prevents regression.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| "Root user escape hatch"                     | TUF root role. Offline keys, threshold signatures, chain-of-trust rotation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| "Multi-signature policy"                     | Multiple sigstore bundles attached to the same artifact via OCI referrers (one bundle per signer). The delivery agent discovers all bundles and applies OCM Fleet policy (any-of, quorum) on top.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| "Derivation chain depth"                     | Unchanged -- still an OCM Fleet concern. Each node in the chain is a sigstore-signed OCI artifact, but the depth question is the same.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| "Claims freshness"                           | Still relevant, and **not bounded by Fulcio certificate validity**. Sigstore bundles are designed to be verifiable indefinitely after the certificate expires -- the Rekor timestamp evidence proves the signature was created during the cert's validity window, but the signed artifact has no sigstore-imposed expiry. The 10-minute cert validity bounds _when_ the OIDC claims were current (at signing time), not _how long_ OCM Fleet accepts the signed deployment. Long-term authorization freshness remains an OCM Fleet policy concern: `valid_until` in the signed predicate, re-signing (cheap with keyless signing), or SCIM/CAEP checks provide the actual freshness bound. |
 
 ## Open questions specific to this alternative
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
 	"github.com/stolostron/ocm-fleet/server/internal/infrastructure/postgres"
+	"github.com/stolostron/ocm-fleet/server/internal/infrastructure/sqltxtest"
 )
 
 // TestApplyInventoryDeltas_ConcurrentDeltasForDifferentKeysDoNotLoseUpdates
@@ -70,7 +71,7 @@ func TestApplyInventoryDeltas_ConcurrentDeltasForDifferentKeysDoNotLoseUpdates(t
 	if err != nil {
 		t.Fatalf("begin txA: %v", err)
 	}
-	defer txA.Rollback()
+	defer sqltxtest.Rollback(t, txA)
 	repoA := postgres.ExtensionResourceRepo{DB: txA}
 	tA := t0.Add(time.Minute)
 	if err := repoA.ApplyInventoryDeltas(ctx, []domain.InventoryDelta{{
@@ -85,7 +86,7 @@ func TestApplyInventoryDeltas_ConcurrentDeltasForDifferentKeysDoNotLoseUpdates(t
 	if err != nil {
 		t.Fatalf("begin txB: %v", err)
 	}
-	defer txB.Rollback()
+	defer sqltxtest.Rollback(t, txB)
 	var pidB int
 	if err := txB.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pidB); err != nil {
 		t.Fatalf("txB pg_backend_pid: %v", err)
@@ -185,7 +186,7 @@ func TestApplyInventoryDeltas_ConcurrentAliasUpsertsDoNotLoseUpdates(t *testing.
 	if err != nil {
 		t.Fatalf("begin txA: %v", err)
 	}
-	defer txA.Rollback()
+	defer sqltxtest.Rollback(t, txA)
 	repoA := postgres.ExtensionResourceRepo{DB: txA}
 	tA := t0.Add(time.Minute)
 	if err := repoA.ApplyInventoryDeltas(ctx, []domain.InventoryDelta{{
@@ -200,7 +201,7 @@ func TestApplyInventoryDeltas_ConcurrentAliasUpsertsDoNotLoseUpdates(t *testing.
 	if err != nil {
 		t.Fatalf("begin txB: %v", err)
 	}
-	defer txB.Rollback()
+	defer sqltxtest.Rollback(t, txB)
 	var pidB int
 	if err := txB.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pidB); err != nil {
 		t.Fatalf("txB pg_backend_pid: %v", err)

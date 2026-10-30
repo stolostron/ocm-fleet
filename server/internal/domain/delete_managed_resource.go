@@ -66,7 +66,7 @@ func (s *DeleteManagedResourceWorkflowSpec) MutateToDeleting() Activity[DeleteMa
 			probe.Error(err)
 			return managedResourceMutationResult{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		fullName := in.ResourceType.FullName(in.Name)
 		er, err := tx.ExtensionResources().Get(ctx, fullName)
@@ -126,7 +126,7 @@ func (s *DeleteManagedResourceWorkflowSpec) LoadFulfillment() Activity[Fulfillme
 		if err != nil {
 			return nil, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		f, err := tx.Fulfillments().Get(ctx, id)
 		if errors.Is(err, ErrNotFound) {

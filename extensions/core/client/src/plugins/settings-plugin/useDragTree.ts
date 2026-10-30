@@ -3,7 +3,7 @@ import { INDENTATION, NodeKind } from "@ocm-fleet/common";
 import { useMotionValue } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { Slot } from "./dragTreeHelpers";
+import type { DragState, Slot } from "./dragTreeHelpers";
 import {
   computeKbMove,
   computeNestGap,

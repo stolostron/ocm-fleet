@@ -6,8 +6,14 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "client/cli/src",
   "projectType": "application",
-  "tags": ["lang:typescript", "scope:cli"],
+  "tags": ["lang:typescript", "scope:cli", "type:js-project"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "build": {
       "executor": "nx:run-commands",
       "dependsOn": ["typecheck"],
@@ -37,19 +43,7 @@
         "cwd": "client/cli"
       }
     },
-    "typecheck": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "inputs": [
-        "{projectRoot}/src/**/*",
-        "{projectRoot}/tsconfig.json",
-        "{workspaceRoot}/tsconfig.json"
-      ],
-      "options": {
-        "command": "tsc --noEmit -p tsconfig.json",
-        "cwd": "client/cli"
-      }
-    },
+    "typecheck": {},
     "lint": {
       "executor": "nx:run-commands",
       "inputs": ["uiSource", "eslintConfig"],
@@ -57,6 +51,7 @@
         "command": "eslint \"client/cli/src/**/*.{ts,tsx}\"",
         "cwd": "."
       }
-    }
+    },
+    "lint:format": {}
   }
 }

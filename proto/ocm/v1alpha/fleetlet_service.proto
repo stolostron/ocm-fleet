@@ -2,12 +2,12 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "ocm/v1alpha/control_event.proto";
 import "ocm/v1alpha/control_instruction.proto";
 import "ocm/v1alpha/deliver_event.proto";
 import "ocm/v1alpha/deliver_instruction.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // FleetletService is the platform-side API that fleetlet instances connect to.
 // Authentication is per-fleetlet at the transport level; the platform

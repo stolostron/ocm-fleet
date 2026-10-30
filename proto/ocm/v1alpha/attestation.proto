@@ -2,10 +2,10 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
+import "google/protobuf/timestamp.proto";
 import "ocm/v1alpha/manifest.proto";
 import "ocm/v1alpha/manifest_strategy.proto";
 import "ocm/v1alpha/placement_strategy.proto";
-import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 

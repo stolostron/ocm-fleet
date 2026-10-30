@@ -60,11 +60,12 @@ jobs:
         if: matrix.language == 'go'
         run: |
           set -euo pipefail
+          # Test fixtures are exercised by their tests, not standalone builds.
           while IFS= read -r mod; do
             dir=$(dirname "$mod")
             echo "Building $dir..."
             (cd "$dir" && go build ./...)
-          done < <(find . -name go.mod -not -path '*/vendor/*' -not -path './poc/*' | sort)
+          done < <(find . -name go.mod -not -path '*/vendor/*' -not -path '*/testdata/*' -not -path './poc/*' | sort)
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

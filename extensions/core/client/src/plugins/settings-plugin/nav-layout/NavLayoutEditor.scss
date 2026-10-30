@@ -66,17 +66,29 @@
     z-index: 100;
     cursor: var(--pf-v6-c-draggable--m-dragging--Cursor, grabbing);
     background-color: var(--pf-t--global--background--color--floating--default);
-    box-shadow: var(--pf-v6-c-draggable--m-dragging--BoxShadow, var(--pf-t--global--box-shadow--md));
+    box-shadow: var(
+      --pf-v6-c-draggable--m-dragging--BoxShadow,
+      var(--pf-t--global--box-shadow--md)
+    );
 
     &::after {
       position: absolute;
       inset-block: 0;
       inset-inline: 0;
       content: "";
-      border: var(--pf-v6-c-draggable--m-dragging--after--BorderWidth, var(--pf-t--global--border--width--regular))
+      border: var(
+          --pf-v6-c-draggable--m-dragging--after--BorderWidth,
+          var(--pf-t--global--border--width--regular)
+        )
         solid
-        var(--pf-v6-c-draggable--m-dragging--after--BorderColor, var(--pf-t--global--border--color--brand--default));
-      border-radius: var(--pf-v6-c-draggable--m-dragging--after--BorderRadius, var(--pf-t--global--border--radius--small));
+        var(
+          --pf-v6-c-draggable--m-dragging--after--BorderColor,
+          var(--pf-t--global--border--color--brand--default)
+        );
+      border-radius: var(
+        --pf-v6-c-draggable--m-dragging--after--BorderRadius,
+        var(--pf-t--global--border--radius--small)
+      );
     }
   }
 
@@ -111,7 +123,10 @@
       inset-inline: 0;
       pointer-events: none;
       content: "";
-      background-color: var(--pf-v6-c-droppable--m-dragging--before--BackgroundColor, var(--pf-t--global--background--color--primary--default));
+      background-color: var(
+        --pf-v6-c-droppable--m-dragging--before--BackgroundColor,
+        var(--pf-t--global--background--color--primary--default)
+      );
       opacity: var(--pf-v6-c-droppable--m-dragging--before--Opacity, 0.6);
     }
 
@@ -121,10 +136,19 @@
       inset-inline: 0;
       pointer-events: none;
       content: "";
-      border: var(--pf-v6-c-droppable--m-dragging--after--BorderWidth, var(--pf-t--global--border--width--regular))
+      border: var(
+          --pf-v6-c-droppable--m-dragging--after--BorderWidth,
+          var(--pf-t--global--border--width--regular)
+        )
         solid
-        var(--pf-v6-c-droppable--m-dragging--after--BorderColor, var(--pf-t--global--border--color--brand--default));
-      border-radius: var(--pf-v6-c-droppable--m-dragging--after--BorderRadius, var(--pf-t--global--border--radius--small));
+        var(
+          --pf-v6-c-droppable--m-dragging--after--BorderColor,
+          var(--pf-t--global--border--color--brand--default)
+        );
+      border-radius: var(
+        --pf-v6-c-droppable--m-dragging--after--BorderRadius,
+        var(--pf-t--global--border--radius--small)
+      );
     }
   }
 
@@ -143,14 +167,21 @@
     padding: 0;
     border: 0;
     background: none;
-    color: var(--pf-v6-c-data-list__item-draggable-button-icon--Color, var(--pf-t--global--icon--color--subtle));
+    color: var(
+      --pf-v6-c-data-list__item-draggable-button-icon--Color,
+      var(--pf-t--global--icon--color--subtle)
+    );
 
     &:hover {
-      color: var(--pf-v6-c-data-list__item-draggable-button--hover__draggable-icon--Color, var(--pf-t--global--icon--color--regular));
+      color: var(
+        --pf-v6-c-data-list__item-draggable-button--hover__draggable-icon--Color,
+        var(--pf-t--global--icon--color--regular)
+      );
     }
 
     &:focus-visible {
-      outline: var(--pf-t--global--border--width--regular) solid var(--pf-t--global--border--color--brand--default);
+      outline: var(--pf-t--global--border--width--regular) solid
+        var(--pf-t--global--border--color--brand--default);
       outline-offset: 2px;
       border-radius: var(--pf-t--global--border--radius--small);
     }
@@ -198,13 +229,13 @@
 }
 
 .ocm-fleet-settings-tree-item--drop-target {
-   .ocm-fleet-settings-tree-item__row {
-     &--section {
-        background-color: var(--pf-t--global--icon--color--brand--default);
+  .ocm-fleet-settings-tree-item__row {
+    &--section {
+      background-color: var(--pf-t--global--icon--color--brand--default);
 
-        .ocm-fleet-settings-tree-item__label {
-          color: var(--pf-t--global--text--color--inverse) !important;
-        }
+      .ocm-fleet-settings-tree-item__label {
+        color: var(--pf-t--global--text--color--inverse) !important;
       }
-   }
+    }
+  }
 }

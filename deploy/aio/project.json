@@ -5,8 +5,15 @@
   },
   "root": "deploy/aio",
   "projectType": "application",
-  "tags": ["lang:go", "scope:deploy"],
+  "tags": ["lang:go", "scope:deploy", "type:go-module"],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
+    "lint": {},
     "build": {
       "executor": "nx:run-commands",
       "options": {

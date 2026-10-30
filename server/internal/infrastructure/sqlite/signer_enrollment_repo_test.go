@@ -42,7 +42,7 @@ func TestSignerEnrollmentRepo_CreateAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginReadOnly: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	got, err := tx.SignerEnrollments().Get(ctx, "se-1")
 	if err != nil {
@@ -77,7 +77,7 @@ func TestSignerEnrollmentRepo_GetNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginReadOnly: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	_, err = tx.SignerEnrollments().Get(ctx, "nonexistent")
 	if !errors.Is(err, domain.ErrNotFound) {
@@ -117,7 +117,7 @@ func TestSignerEnrollmentRepo_CreateDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	err = tx.SignerEnrollments().Create(ctx, enrollment)
 	if !errors.Is(err, domain.ErrAlreadyExists) {
@@ -189,7 +189,7 @@ func TestSignerEnrollmentRepo_ListBySubject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginReadOnly: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	got, err := tx.SignerEnrollments().ListBySubject(ctx, domain.FederatedIdentity{
 		Subject: "user-1",

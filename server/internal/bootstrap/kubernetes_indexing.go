@@ -90,7 +90,7 @@ func (l storeTargetLister) ListTargets(ctx context.Context) ([]domain.TargetInfo
 	if err != nil {
 		return nil, fmt.Errorf("list targets: begin read-only tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	targets, err := tx.Targets().List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list targets: %w", err)

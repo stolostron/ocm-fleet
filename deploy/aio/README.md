@@ -60,13 +60,13 @@ Routing on this origin is prefix-based, not a catch-all into the SPA:
 2. **Resource manager server** — serves the paths below. Only exact `/` and `/app` redirect
    to `/app/`. Unknown paths return 404; they are not rewritten into `/app`.
 
-| Path | Serves |
-|------|--------|
-| `/idp`… | Peer Dex (Dex-on only) |
-| `/app`… | SPA and static assets |
+| Path                         | Serves                     |
+| ---------------------------- | -------------------------- |
+| `/idp`…                      | Peer Dex (Dex-on only)     |
+| `/app`…                      | SPA and static assets      |
 | `/api`, `/v1alpha`, `/apis`… | Resource manager HTTP APIs |
-| `/livez`, `/readyz` | Health probes |
-| `/` or `/app` (exact) | 302 to `/app/` |
+| `/livez`, `/readyz`          | Health probes              |
+| `/` or `/app` (exact)        | 302 to `/app/`             |
 
 The sandbox certificate is intentionally browser-untrusted (private CA). In an
 unmanaged desktop Chrome, Firefox, or Safari profile that allows overrides,
@@ -87,10 +87,10 @@ replace the scoped bind with `0.0.0.0` or `::`.
 Public sandbox fixtures (not production credentials). Login identifier is the
 email:
 
-| Persona | Email | Password | `preferred_username` | Group |
-|---|---|---|---|---|
-| Operator | `ops@ocm-fleet.local` | `ocm-fleet-ops` | `ops-user` | `ops` |
-| Developer | `dev@ocm-fleet.local` | `ocm-fleet-dev` | `dev-user` | `dev` |
+| Persona   | Email                 | Password        | `preferred_username` | Group |
+| --------- | --------------------- | --------------- | -------------------- | ----- |
+| Operator  | `ops@ocm-fleet.local` | `ocm-fleet-ops` | `ops-user`           | `ops` |
+| Developer | `dev@ocm-fleet.local` | `ocm-fleet-dev` | `dev-user`           | `dev` |
 
 ## Packaging defaults
 
@@ -100,25 +100,25 @@ uses a separate deployment-specific configuration surface; do not mix the two.
 
 **Required from you** — everything else may be left unset.
 
-| Mode | You must set |
-|---|---|
-| Dex-on (default) | nothing |
-| Dex-off | `OIDC_ISSUER_URL` |
-| Kind | a live engine socket mounted at `CONTAINER_HOST` |
+| Mode             | You must set                                     |
+| ---------------- | ------------------------------------------------ |
+| Dex-on (default) | nothing                                          |
+| Dex-off          | `OIDC_ISSUER_URL`                                |
+| Kind             | a live engine socket mounted at `CONTAINER_HOST` |
 
 **Optional — packaging fills if omitted.** Set an env var only to override.
 
-| Setting | Env | If omitted |
-|---|---|---|
-| Issuer | `OIDC_ISSUER_URL` | Peer Dex `https://ocm-fleet.localhost:8085/idp` (Dex-on). Setting this switches to Dex-off; there is no packaging issuer in that mode. |
-| UI client | `OIDC_UI_CLIENT_ID` | `ocm-fleet-console` |
-| UI scope | `OIDC_UI_SCOPE` | Dex-on: `openid profile email groups audience:server:client_id:resource-manager`. Dex-off: `openid profile email` |
-| Resource audience | `OIDC_RESOURCE_AUDIENCE` | `resource-manager` |
-| OIDC CA | `OIDC_CA_FILE` | sandbox CA on Dex-on. Dex-off: unset unless discovery/TLS needs non-system trust |
-| Log level | `LOG_LEVEL` | `error`. One control for the resource manager server, peer Dex, and s6 lifecycle verbosity (`debug`, `info`, `warn`, `error`) |
-| Addons | `OCM_RM_SERVER_ADDONS` | `kind,kubernetes` |
-| Container socket | `CONTAINER_HOST` | image default `unix:///var/run/docker.sock`. Override only if the mount path differs |
-| Kind loopback forward | `KIND_LOOPBACK_FORWARD_TO` | Dex-on + live socket: `ocm-fleet:8085`. Set empty to disable. Not written on Dex-off |
+| Setting               | Env                        | If omitted                                                                                                                             |
+| --------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Issuer                | `OIDC_ISSUER_URL`          | Peer Dex `https://ocm-fleet.localhost:8085/idp` (Dex-on). Setting this switches to Dex-off; there is no packaging issuer in that mode. |
+| UI client             | `OIDC_UI_CLIENT_ID`        | `ocm-fleet-console`                                                                                                                    |
+| UI scope              | `OIDC_UI_SCOPE`            | Dex-on: `openid profile email groups audience:server:client_id:resource-manager`. Dex-off: `openid profile email`                      |
+| Resource audience     | `OIDC_RESOURCE_AUDIENCE`   | `resource-manager`                                                                                                                     |
+| OIDC CA               | `OIDC_CA_FILE`             | sandbox CA on Dex-on. Dex-off: unset unless discovery/TLS needs non-system trust                                                       |
+| Log level             | `LOG_LEVEL`                | `error`. One control for the resource manager server, peer Dex, and s6 lifecycle verbosity (`debug`, `info`, `warn`, `error`)          |
+| Addons                | `OCM_RM_SERVER_ADDONS`     | `kind,kubernetes`                                                                                                                      |
+| Container socket      | `CONTAINER_HOST`           | image default `unix:///var/run/docker.sock`. Override only if the mount path differs                                                   |
+| Kind loopback forward | `KIND_LOOPBACK_FORWARD_TO` | Dex-on + live socket: `ocm-fleet:8085`. Set empty to disable. Not written on Dex-off                                                   |
 
 `LOG_LEVEL` is the only AIO logging control. It is passed to the resource manager
 (`--log-level`), rendered into peer Dex's logger, and mapped to s6-overlay
@@ -270,17 +270,17 @@ the AIO log-level wrapper, which `exec`s `/init` so s6 remains PID 1.
 
 ### Layout
 
-| Path | Role |
-|---|---|
-| `cmd/aio-init` | Init helper: Dex-on/off branch, PKI, Dex config, serve argv, hosts alias, public.env |
-| `cmd/aio-proxy` | TLS edge: terminates the gateway cert and reverse-proxies Dex and the resource manager server |
-| `cmd/kind-loopback-forward` | TCP proxy copied onto kind control-planes for the public origin |
-| `internal/aioinit` | Packaging helpers (same package, separate files: `endpoints`, `pki`, `dexconfig`, `serveargv`, `kind`, `hosts`) |
-| `internal/aioproxy` | Reverse-proxy implementation used by `aio-proxy` |
-| `internal/loopbackforward` | Proxy implementation used by `kind-loopback-forward` |
-| `s6/` | s6-overlay v3 service defs (copied to `/etc/s6-overlay/`) |
-| `s6/scripts/aio-entrypoint` | Maps `LOG_LEVEL` to `S6_VERBOSITY` and execs `/init` |
-| `s6/scripts/aio-welcome` | Polls public `/readyz`, then prints the sandbox welcome |
+| Path                        | Role                                                                                                            |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `cmd/aio-init`              | Init helper: Dex-on/off branch, PKI, Dex config, serve argv, hosts alias, public.env                            |
+| `cmd/aio-proxy`             | TLS edge: terminates the gateway cert and reverse-proxies Dex and the resource manager server                   |
+| `cmd/kind-loopback-forward` | TCP proxy copied onto kind control-planes for the public origin                                                 |
+| `internal/aioinit`          | Packaging helpers (same package, separate files: `endpoints`, `pki`, `dexconfig`, `serveargv`, `kind`, `hosts`) |
+| `internal/aioproxy`         | Reverse-proxy implementation used by `aio-proxy`                                                                |
+| `internal/loopbackforward`  | Proxy implementation used by `kind-loopback-forward`                                                            |
+| `s6/`                       | s6-overlay v3 service defs (copied to `/etc/s6-overlay/`)                                                       |
+| `s6/scripts/aio-entrypoint` | Maps `LOG_LEVEL` to `S6_VERBOSITY` and execs `/init`                                                            |
+| `s6/scripts/aio-welcome`    | Polls public `/readyz`, then prints the sandbox welcome                                                         |
 
 s6 services follow the [s6-overlay README](https://github.com/just-containers/s6-overlay/blob/v3.2.3.2/README.md)
 source format:

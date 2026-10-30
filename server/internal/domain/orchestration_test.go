@@ -80,7 +80,7 @@ func seedFulfillmentAndDeployment(t *testing.T, store domain.Store, depName doma
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if err := tx.Fulfillments().Create(context.Background(), f); err != nil {
 		t.Fatalf("seed fulfillment %q: %v", f.ID(), err)
 	}
@@ -99,7 +99,7 @@ func seedFulfillmentAndDeployment(t *testing.T, store domain.Store, depName doma
 		if err != nil {
 			t.Fatalf("begin touch tx: %v", err)
 		}
-		defer tx2.Rollback()
+		defer tx2.RollbackOnExit()
 		loaded, err := tx2.Fulfillments().Get(context.Background(), f.ID())
 		if err != nil {
 			t.Fatalf("reload fulfillment: %v", err)
@@ -120,7 +120,7 @@ func seedSignerEnrollment(t *testing.T, store domain.Store, se domain.SignerEnro
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if err := tx.SignerEnrollments().Create(context.Background(), se); err != nil {
 		t.Fatalf("seed signer enrollment: %v", err)
 	}
@@ -135,7 +135,7 @@ func seedTargets(t *testing.T, store domain.Store, targets ...domain.TargetInfo)
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	for _, tgt := range targets {
 		if err := tx.Targets().Create(context.Background(), tgt); err != nil {
 			t.Fatalf("seed target %q: %v", tgt.ID(), err)
@@ -152,7 +152,7 @@ func getFulfillment(t *testing.T, store domain.Store, id domain.ResourceName) do
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	f, err := tx.Fulfillments().Get(context.Background(), domain.FulfillmentID(id))
 	if err != nil {
 		t.Fatalf("get fulfillment for deployment %q: %v", id, err)
@@ -166,7 +166,7 @@ func getThinDeployment(t *testing.T, store domain.Store, id domain.ResourceName)
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	dep, err := tx.Deployments().Get(context.Background(), id)
 	if err != nil {
 		t.Fatalf("get deployment %q: %v", id, err)
@@ -180,7 +180,7 @@ func getTarget(t *testing.T, store domain.Store, id domain.TargetID) domain.Targ
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	tgt, err := tx.Targets().Get(context.Background(), id)
 	if err != nil {
 		t.Fatalf("get target %q: %v", id, err)
@@ -194,7 +194,7 @@ func getInventoryItem(t *testing.T, store domain.Store, id domain.InventoryItemI
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	item, err := tx.Inventory().Get(context.Background(), id)
 	if err != nil {
 		t.Fatalf("get inventory item %q: %v", id, err)
@@ -208,7 +208,7 @@ func getDeliveries(t *testing.T, store domain.Store, depName domain.ResourceName
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	records, err := tx.Deliveries().ListByFulfillment(context.Background(), domain.FulfillmentID(depName))
 	if err != nil {
 		t.Fatalf("list deliveries for %q: %v", depName, err)
@@ -222,7 +222,7 @@ func getDelivery(t *testing.T, store domain.Store, id domain.DeliveryID) domain.
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	d, err := tx.Deliveries().Get(context.Background(), id)
 	if err != nil {
 		t.Fatalf("get delivery %q: %v", id, err)
@@ -237,7 +237,7 @@ func seedDelivery(t *testing.T, store domain.Store, d domain.Delivery) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if err := tx.Deliveries().Put(ctx, d); err != nil {
 		t.Fatal(err)
 	}
@@ -1093,7 +1093,7 @@ func TestOrchestration_DeletePipeline_RemovesFromTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	f, err := tx.Fulfillments().Get(context.Background(), domain.FulfillmentID("deployments/d1"))
 	if err != nil {
 		t.Fatalf("expected fulfillment to still exist, got: %v", err)
@@ -1132,7 +1132,7 @@ func TestOrchestration_DeletePipeline_ResetsDeliveryForRemove(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read delivery in Remove: %v", err)
 			}
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			d, err := tx.Deliveries().Get(context.Background(), deliveryID)
 			if err != nil {
 				t.Fatalf("get delivery in Remove: %v", err)
@@ -1295,7 +1295,7 @@ func TestOrchestration_DeletePipeline_HardDeletesRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	f, err := tx.Fulfillments().Get(context.Background(), domain.FulfillmentID("deployments/d1"))
 	if err != nil {
 		t.Fatalf("expected fulfillment to still exist, got: %v", err)
@@ -1335,7 +1335,7 @@ func TestOrchestration_DeletePipeline_NoTargets_HardDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	f, err := tx.Fulfillments().Get(context.Background(), domain.FulfillmentID("deployments/d1"))
 	if err != nil {
 		t.Fatalf("expected fulfillment to still exist, got: %v", err)
@@ -1387,7 +1387,7 @@ func TestOrchestration_DeletePipeline_CleansUpOwnedOutputsAndSecrets(t *testing.
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	if err := tx.Inventory().Create(ctx, domain.InventoryItemFromSnapshot(domain.InventoryItemSnapshot{
 		ID:               "target:k8s-guest-cluster",
@@ -1505,7 +1505,7 @@ func TestOrchestration_DeletePipeline_MissingTargetRowForOwnedInventoryItem_Skip
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	// Deliberately no corresponding tx.Targets().Create call: this
 	// inventory item's target row is already gone through some other path.
 	if err := tx.Inventory().Create(ctx, domain.InventoryItemFromSnapshot(domain.InventoryItemSnapshot{
@@ -1534,7 +1534,7 @@ func TestOrchestration_DeletePipeline_MissingTargetRowForOwnedInventoryItem_Skip
 	if err != nil {
 		t.Fatalf("begin read tx: %v", err)
 	}
-	defer readTx.Rollback()
+	defer readTx.RollbackOnExit()
 	if _, err := readTx.Inventory().Get(ctx, "target:ghost-target"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("expected ghost inventory item to be deleted, got err=%v", err)
 	}
@@ -1579,7 +1579,7 @@ func TestOrchestration_DeletePipeline_MissingDeliveryRecord_Skips(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	f, err := tx.Fulfillments().Get(context.Background(), domain.FulfillmentID("deployments/d1"))
 	if err != nil {
 		t.Fatalf("expected fulfillment to still exist, got: %v", err)
@@ -1691,7 +1691,7 @@ func (r *afterLoadBumpGenRecord) Run(activity domain.Activity[any, any], in any)
 		}
 		thinDep, txErr := tx.Deployments().Get(context.Background(), r.depName)
 		if txErr != nil {
-			tx.Rollback()
+			tx.RollbackOnExit()
 			return out, txErr
 		}
 		// Simulate N separate transactions each advancing generation.
@@ -1701,12 +1701,12 @@ func (r *afterLoadBumpGenRecord) Run(activity domain.Activity[any, any], in any)
 		for range r.bumps {
 			fulf, txErr := tx.Fulfillments().Get(context.Background(), thinDep.FulfillmentID())
 			if txErr != nil {
-				tx.Rollback()
+				tx.RollbackOnExit()
 				return out, txErr
 			}
 			fulf.Touch(time.Now().UTC())
 			if txErr = tx.Fulfillments().Update(context.Background(), fulf); txErr != nil {
-				tx.Rollback()
+				tx.RollbackOnExit()
 				return out, txErr
 			}
 		}
@@ -2190,7 +2190,7 @@ func TestOrchestration_DeleteWithProvenance_AssemblesRemoveAttestation(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	f, err := tx.Fulfillments().Get(context.Background(), domain.FulfillmentID("deployments/del-attested"))
 	if err != nil {
 		t.Fatalf("expected fulfillment to still exist after orchestration cleanup, got: %v", err)
@@ -2301,7 +2301,7 @@ func (tx *commitFaultTx) Commit() error {
 	tx.store.mu.Unlock()
 
 	if shouldFault {
-		tx.Tx.Rollback()
+		tx.RollbackOnExit()
 		return tx.store.err
 	}
 	return tx.Tx.Commit()
@@ -2467,12 +2467,12 @@ func TestOrchestration_DeleteAfterAuthPause_CallsRemove(t *testing.T) {
 	}
 	f, err := tx.Fulfillments().Get(ctx, domain.FulfillmentID("deployments/d1"))
 	if err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatal(err)
 	}
 	f.TransitionToDeleting(f.Auth())
 	if err := tx.Fulfillments().Update(ctx, f); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -2622,15 +2622,15 @@ func TestOrchestration_DeletePausedResume_StaysDeleting(t *testing.T) {
 	}
 	fPtr, err := tx.Fulfillments().Get(ctx, domain.FulfillmentID("deployments/d1"))
 	if err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatal(err)
 	}
 	if err := fPtr.Resume(domain.DeliveryAuth{Token: "fresh-token"}, nil); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("Resume: %v", err)
 	}
 	if err := tx.Fulfillments().Update(ctx, fPtr); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -2768,7 +2768,7 @@ func TestOrchestration_DeliverProgressingDelivery_WaitsForCompletion(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	d, err := tx.Deliveries().Get(context.Background(), "deployments/d1:t1")
 	if err != nil {
 		t.Fatalf("get delivery: %v", err)
@@ -2856,7 +2856,7 @@ func (a *asyncFailOnceThenSucceedAgent) Deliver(_ context.Context, _ domain.Targ
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		d, err := tx.Deliveries().Get(ctx, deliveryID)
 		if err != nil {
 			return err
@@ -3048,7 +3048,7 @@ func TestOrchestration_StaticTarget_LateRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin tx for late target: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if err := tx.Targets().Create(context.Background(), domain.TargetInfoFromSnapshot(domain.TargetInfoSnapshot{
 		ID:   "late-target",
 		Type: "test",

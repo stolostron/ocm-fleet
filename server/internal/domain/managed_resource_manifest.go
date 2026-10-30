@@ -20,7 +20,7 @@ func (s *ManagedResourceManifestStrategy) Generate(ctx context.Context, _ Genera
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	intent, err := tx.ExtensionResources().GetIntent(ctx, s.Ref.ExtensionResourceUID, s.Ref.Version)
 	if err != nil {

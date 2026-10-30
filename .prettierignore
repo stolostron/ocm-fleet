@@ -1,0 +1,7 @@
+# Generated sources and deliberate analyzer fixtures retain their own formatting.
+**/generated/**
+**/testdata/**
+# Standalone experiments are outside the registered Nx quality workflow.
+poc/**
+# npm maintains this file.
+package-lock.json

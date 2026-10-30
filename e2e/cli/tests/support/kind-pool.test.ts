@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect -- Vitest test callbacks are not Playwright tests. */
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

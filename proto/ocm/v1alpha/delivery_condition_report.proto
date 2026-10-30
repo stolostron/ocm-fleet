@@ -2,10 +2,10 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "google/protobuf/timestamp.proto";
 import "ocm/v1alpha/condition.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // DeliveryConditionReport carries ongoing health conditions for an
 // active delivery on a target. Streamed continuously after delivery

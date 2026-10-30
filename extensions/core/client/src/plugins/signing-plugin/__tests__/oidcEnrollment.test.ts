@@ -1,4 +1,3 @@
-/* eslint playwright/no-standalone-expect: "off" -- Vitest uses it/it.each. */
 import type { AuthContextProps } from "react-oidc-context";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

@@ -64,26 +64,26 @@ The browser uses one public origin and never accesses plugin origins directly. E
 
 ### Path ownership
 
-| Path | Owner | Authentication | Purpose |
-| --- | --- | --- | --- |
-| `/client/web/` | Immutable shell origin | Public | Shell HTML and entry assets |
-| `/client/shell/*` | Immutable shell origin | Public | Content-hashed shell assets |
-| `/client/web/config` | Shell/edge | Public | Global plugin and OIDC bootstrap configuration |
-| `/client/web/plugins/*` | Console Gateway | Public | Approved manifests, JavaScript, CSS, chunks |
-| `/api/*` | Resource manager server | Required | Platform APIs, user settings, plugin data |
-| `/idp/*` | IdP proxy or IdP | Public as required by OIDC | OIDC discovery and login exchange |
+| Path                    | Owner                   | Authentication             | Purpose                                        |
+| ----------------------- | ----------------------- | -------------------------- | ---------------------------------------------- |
+| `/client/web/`          | Immutable shell origin  | Public                     | Shell HTML and entry assets                    |
+| `/client/shell/*`       | Immutable shell origin  | Public                     | Content-hashed shell assets                    |
+| `/client/web/config`    | Shell/edge              | Public                     | Global plugin and OIDC bootstrap configuration |
+| `/client/web/plugins/*` | Console Gateway         | Public                     | Approved manifests, JavaScript, CSS, chunks    |
+| `/api/*`                | Resource manager server | Required                   | Platform APIs, user settings, plugin data      |
+| `/idp/*`                | IdP proxy or IdP        | Public as required by OIDC | OIDC discovery and login exchange              |
 
 `/client/*` is reserved for client discovery and bootstrap. `/api/*` remains the resource manager's authenticated domain API namespace. `/client/cli/config` is reserved for future CLI configuration; it does not imply CLI asset delivery through browser routes.
 
 ### Ownership
 
-| Component | Owns | Must not own |
-| --- | --- | --- |
-| Deployment authority | Plugin policy and shell trust anchor | Route policy controlled by the resource manager |
-| Client Asset Operator | Manifest discovery, validation, integrity catalog | Browser asset serving or user authorization |
-| Immutable shell origin | Bootstrap HTML, shell assets, global config assembly | Dynamic upstream route selection |
-| Console Gateway | Plugin route enforcement, fetch, byte validation, optional cache | Initial plugin trust policy or API authorization |
-| Resource manager server | Sanitized catalog persistence, RBAC, user settings | Plugin origins, gateway routes, browser bundle serving |
+| Component               | Owns                                                             | Must not own                                           |
+| ----------------------- | ---------------------------------------------------------------- | ------------------------------------------------------ |
+| Deployment authority    | Plugin policy and shell trust anchor                             | Route policy controlled by the resource manager        |
+| Client Asset Operator   | Manifest discovery, validation, integrity catalog                | Browser asset serving or user authorization            |
+| Immutable shell origin  | Bootstrap HTML, shell assets, global config assembly             | Dynamic upstream route selection                       |
+| Console Gateway         | Plugin route enforcement, fetch, byte validation, optional cache | Initial plugin trust policy or API authorization       |
+| Resource manager server | Sanitized catalog persistence, RBAC, user settings               | Plugin origins, gateway routes, browser bundle serving |
 
 ## Policy and Discovery
 
@@ -160,9 +160,9 @@ Gateway does not proxy platform APIs. Edge routes authenticated `/api/*` directl
 
 Gateway byte validation protects against an altered upstream. It cannot protect against a compromised Gateway that can replace the verifier. The initial shell must therefore be independently trusted.
 
-| Layer | Protects against | Trust anchor |
-| --- | --- | --- |
-| Immutable shell | Gateway replacing bootstrap/verifier | Deployment-owned immutable shell origin or edge-pinned artifact |
+| Layer            | Protects against                      | Trust anchor                                                           |
+| ---------------- | ------------------------------------- | ---------------------------------------------------------------------- |
+| Immutable shell  | Gateway replacing bootstrap/verifier  | Deployment-owned immutable shell origin or edge-pinned artifact        |
 | Direct API proof | Gateway changing dynamic plugin bytes | Operator-signed integrity metadata fetched from authenticated `/api/*` |
 
 Trusted shell code fetches an operator-signed integrity proof directly from the resource manager, verifies it with a shell-anchored public key, and supplies expected SRI values before Module Federation creates dynamic scripts. The resource manager distributes this proof but does not own signing keys. Shell and plugin Rspack/Webpack configurations must set `output.crossOriginLoading = "anonymous"` so standard dynamic chunks use the same CORS/SRI contract as remote entries. If plugins must load before login, that integrity flow needs a separate explicitly designed public bootstrap path.
@@ -200,14 +200,14 @@ Discovery is asynchronous reconciliation, not a startup gate.
 4. The resource manager persists catalog and creates authenticated user settings.
 5. Each component refreshes failed dependencies asynchronously.
 
-| Condition | Result |
-| --- | --- |
-| Valid policy and manifest update | Atomically activate replacement state |
-| Temporary origin or manifest failure | Keep policy-bound last-known-good state and report stale |
-| Invalid manifest | Keep prior valid state, if any; report validation error |
-| No valid cached state | Plugin unavailable; console starts |
-| Policy origin/revision change | Revoke old route before activating new route |
-| Policy removed, disabled, expired, or explicitly revoked | Remove route and global catalog entry immediately |
+| Condition                                                | Result                                                   |
+| -------------------------------------------------------- | -------------------------------------------------------- |
+| Valid policy and manifest update                         | Atomically activate replacement state                    |
+| Temporary origin or manifest failure                     | Keep policy-bound last-known-good state and report stale |
+| Invalid manifest                                         | Keep prior valid state, if any; report validation error  |
+| No valid cached state                                    | Plugin unavailable; console starts                       |
+| Policy origin/revision change                            | Revoke old route before activating new route             |
+| Policy removed, disabled, expired, or explicitly revoked | Remove route and global catalog entry immediately        |
 
 Last-known-good state is a temporary availability fallback, not independent authorization. It remains usable only while its originating policy is current and unexpired. Status must expose last success, last failure, next retry, consecutive failures, and stale state.
 
@@ -257,11 +257,11 @@ Connected deployments use approved external CDNs. Air-gapped deployments mirror 
 
 ## Alternatives
 
-| Alternative | Decision | Reason |
-| --- | --- | --- |
-| Resource manager serves all assets | Rejected | Server compromise controls browser code |
-| Browser directly loads third-party origins | Rejected | Bypasses route, integrity, credential, CSP, and audit policy |
-| Proxy plugins controlled by the resource manager | Rejected | Lets the resource manager supply trusted Gateway code |
+| Alternative                                                 | Decision | Reason                                                              |
+| ----------------------------------------------------------- | -------- | ------------------------------------------------------------------- |
+| Resource manager serves all assets                          | Rejected | Server compromise controls browser code                             |
+| Browser directly loads third-party origins                  | Rejected | Bypasses route, integrity, credential, CSP, and audit policy        |
+| Proxy plugins controlled by the resource manager            | Rejected | Lets the resource manager supply trusted Gateway code               |
 | Asset distribution addon controlled by the resource manager | Rejected | Recreates privileged asset authority with more lifecycle complexity |
 
 An independently provisioned asset distribution component could replace Gateway only if the resource manager cannot configure, replace, or activate it. That is equivalent to this design's independent Gateway boundary and is not proposed separately.

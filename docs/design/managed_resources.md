@@ -31,9 +31,9 @@ These are the consumer-facing "nouns" of the platform, in contrast to the addon-
 
 ## Proposal
 
-*Managed resources* are the "consumer-facing nouns" of the platform. They are addon-driven. Addons register to provide the functions for one or more managed resource types.
+_Managed resources_ are the "consumer-facing nouns" of the platform. They are addon-driven. Addons register to provide the functions for one or more managed resource types.
 
-Managed resources are driven by the core Fulfillment abstraction. A managed resource is a *registered resource type* (as in, a manifest resource type). An addon defines how Fulfillments are derived from managed resources. In a typical case, a managed resource maps to a single, immediate placement with the addon itself as the target.
+Managed resources are driven by the core Fulfillment abstraction. A managed resource is a _registered resource type_ (as in, a manifest resource type). An addon defines how Fulfillments are derived from managed resources. In a typical case, a managed resource maps to a single, immediate placement with the addon itself as the target.
 
 Example: a cluster management addon registers the `clusters` managed resource type. A consumer requests a managed Kubernetes cluster. (**These examples illustrate the structural relationships between managed resources, derived Fulfillments, and addon registration — not a specification of the exact API surface. Field names, nesting, and conventions are assumed for readability. In the two-layer API model, the consumer talks to the addon's extension API, for example `/apis/{addon_service}/v1alpha/clusters`, while the shared platform identity lives separately at `//open-cluster-management.io/clusters/{id}`.**)
 
@@ -246,8 +246,6 @@ sequenceDiagram
     Platform-->>User: state: ACTIVE,<br/>properties: {api_url: https://...,<br/>console_url: https://...}
 ```
 
-
-
 The key property: the platform is a courier throughout. It stores the user's signed intent, mechanically derives a Fulfillment, and delivers the resource spec to the addon through the standard pipeline. The addon — a separate process with its own identity — is the only component that interprets the spec and interacts with the cloud provider. Provenance chains from the user's signature through the managed resource to the derived Fulfillment to the delivery attestation, without the platform ever needing to understand what a "managed cluster" is.
 
 ### Architectural layering
@@ -319,7 +317,7 @@ Deliveries are keyed on `(fulfillment_id, target_id)`. For bundled intents with 
 
 manifest_results has a narrow purpose: "what happened when I tried to apply each manifest." Written at apply time, overwritten on next apply. Not historical — delivery condition events cover the transition story. Failed applies don't produce inventory; manifest_results covers failures.
 
-**Delivery conditions** are addon-reported *operational* status on this target — the addon's own assessment of its ability to function ("can't reach API server", "auth failed", "apply batch completed"). These are NOT a semantic health aggregate of deployed resources. The addon is the thing doing the delivery, so if there's aggregate status only it knows about, it needs a place to put it.
+**Delivery conditions** are addon-reported _operational_ status on this target — the addon's own assessment of its ability to function ("can't reach API server", "auth failed", "apply batch completed"). These are NOT a semantic health aggregate of deployed resources. The addon is the thing doing the delivery, so if there's aggregate status only it knows about, it needs a place to put it.
 
 **Fulfillment conditions** are platform-aggregated from delivery conditions via CEL. Single-target = pass-through. Built-in defaults when no CEL registered. Two stored condition levels: delivery (addon-reported) and Fulfillment (platform-aggregated). No per-manifest condition layer on deliveries — per-manifest health comes from inventory.
 
@@ -360,7 +358,7 @@ Each inventory item has:
 - **Observations**: opaque, addon-defined. The latest point-in-time report of runtime state (replica counts, image versions, allocatable resources, etc.) as seen by the observer. Historical observations are kept over time.
 - **Conditions**: structured, platform-queryable health and progress signals. Historical transitions tracked via condition events. Gives the platform a uniform health query surface across all resource types without understanding observation internals.
 
-Aliases and semantic relationships live on the linked platform resource identity. Inventory reporting may contribute them, but the platform resource remains the canonical owner of that aggregated, *accepted* identity data. A reported alias set is stored as a pending assertion on the extension resource immediately; there is no synchronous check against other reports and no synchronous promotion into the platform resource's aggregated set -- that acceptance/conflict step is future asynchronous reconciliation work.
+Aliases and semantic relationships live on the linked platform resource identity. Inventory reporting may contribute them, but the platform resource remains the canonical owner of that aggregated, _accepted_ identity data. A reported alias set is stored as a pending assertion on the extension resource immediately; there is no synchronous check against other reports and no synchronous promotion into the platform resource's aggregated set -- that acceptance/conflict step is future asynchronous reconciliation work.
 
 For managed resources, the managed thing itself may have an inventory projection. A single intent may explode into many inventory items — the managed resource's own projection plus sub-resources created by the addon (nodes under a cluster, operators, etc.). Side-effect resources associate with the delivery but have no manifest_key.
 
@@ -370,13 +368,13 @@ Validated against cloud APIs with health issue lists, gRPC-coded conditions, pro
 
 #### Managed resource API projection
 
-The managed resource consumer view projects from several kinds of data. The point of this section is *what* those kinds are and *why* they are separated — not a wire-field catalog.
+The managed resource consumer view projects from several kinds of data. The point of this section is _what_ those kinds are and _why_ they are separated — not a wire-field catalog.
 
 - **Spec** → versioned intent (`resource_intents`). The user's declared desired state.
 - **Lifecycle state** → Fulfillment (PROVISIONING, ACTIVE, FAILED, DELETING, …). Whether the management / delivery pipeline is progressing, stuck, or done — not "is the workload healthy."
 - **Properties** → inventory projection for this managed resource (when present). Stable generated values (api_url, provider_id, console_url). Written once, rarely change, no history needed. Live on the inventory item because a single Fulfillment can fan out to many objects, each with its own properties.
 - **Observations** → inventory projection for this managed resource (when present). The latest point-in-time report of what the observer saw.
-- **Conditions** → intended to draw from *both* Fulfillment (aggregated from delivery conditions via CEL — always available because every managed resource has a Fulfillment; operational / management view) *and* inventory conditions when a matching inventory projection exists (resource-health signals). Condition types are self-describing; the consumer should not need a separate API just to tell sources apart. **How those sources merge or otherwise compose on the consumer surface is still an open design question** — today's implementation keeps fulfillment lifecycle and inventory observed-state on distinct paths, which is a staging choice, not a rejection of the merge.
+- **Conditions** → intended to draw from _both_ Fulfillment (aggregated from delivery conditions via CEL — always available because every managed resource has a Fulfillment; operational / management view) _and_ inventory conditions when a matching inventory projection exists (resource-health signals). Condition types are self-describing; the consumer should not need a separate API just to tell sources apart. **How those sources merge or otherwise compose on the consumer surface is still an open design question** — today's implementation keeps fulfillment lifecycle and inventory observed-state on distinct paths, which is a staging choice, not a rejection of the merge.
 
 Management and inventory are composable type capabilities: a type may declare either or both. That does not change the data kinds above; it only means observed-state fields appear when inventory is in play, and management fields when management is.
 
@@ -399,7 +397,6 @@ A thin identity/HEAD table provides the entry point for all managed resource que
 The unique key is `(service_name, resource_name)` — i.e. the full resource name. A resource name is unique within a service regardless of type; the type name is metadata about the resource, not a namespace for it.
 
 The extension resource is the query entry point, not the Fulfillment. Listing all resources of a type (for example `GET /apis/kind.open-cluster-management.io/v1alpha/clusters`) is a direct scan on this table, joined to `resource_intents` for the spec and to the Fulfillment for lifecycle state.
-
 
 State is not denormalized — the Fulfillment join is already required for lifecycle state. Conditions are sourced from both the Fulfillment (always) and a matching inventory item (if present); how those compose for the consumer is still open. Properties and observations come from inventory.
 
@@ -462,7 +459,7 @@ Managed resource types extend both the gRPC and HTTP API surface at runtime. Sch
 
 When a schema is activated, the platform:
 
-1. **Compiles** the addon's inline proto sources into a file descriptor set, resolving well-known imports (`buf/validate/`*, `google/protobuf/`*) from a built-in registry.
+1. **Compiles** the addon's inline proto sources into a file descriptor set, resolving well-known imports (`buf/validate/`_, `google/protobuf/`_) from a built-in registry.
 2. **Builds** a dynamic gRPC `ServiceDesc` with Create, Get, List, and Delete methods. The service name follows the addon's proto package: `{proto_package}.{Singular}Service` (e.g. `ocm.kind.v1alpha.ClusterService`). Request/response messages are constructed dynamically from the compiled spec descriptor.
 3. **Registers** the service in the `DynamicServiceMux`, which is wired as the gRPC server's `UnknownServiceHandler`. Requests to services not registered at server creation time are routed here instead of being rejected. Composite reflection merges dynamic services with static ones so they are discoverable via `grpcurl`.
 4. **Registers HTTP routes** in the `DynamicHTTPMux` — a wrapper around `http.ServeMux` that uses handler indirection for zero-downtime replacement. HTTP handlers proxy to the gRPC service, providing REST access at `/apis/{service_name}/{version}/{plural}` and `/apis/{service_name}/{version}/{plural}/{id}`.
@@ -484,7 +481,7 @@ How does this design guarantee that (under failure conditions)...
 When an addon [re]connects...
 
 - it has to ask about what work it has left to do
-- it has to ensure it's reported the state it knows about. This may require querying for all the things it *should* know about and updating those.
+- it has to ensure it's reported the state it knows about. This may require querying for all the things it _should_ know about and updating those.
 
 ### What was eliminated
 
@@ -527,4 +524,3 @@ Completed in OME-43. The codebase now has `Fulfillment` as its own aggregate wit
 1. **Phase 1:** Versioned intent table (`resource_intents`) + per-Fulfillment strategy versioning (manifest, placement, rollout) + basic lifecycle state. No properties, observations, or conditions. Proves the managed resource → Fulfillment flow end-to-end with the two version histories cleanly separated.
 2. **Phase 2:** Inventory as the per-object knowledge system. Inventory items with properties + observations + conditions. Condition events for inventory. manifest_results on deliveries. Delivery conditions (addon-reported). Fulfillment conditions (CEL aggregation, single-target pass-through). Shared strategy definitions (reusable placement across Fulfillments).
 3. **Phase 3:** CEL-based aggregation for multi-target. Fleet-wide condition and inventory queries. Campaign and deployment as user-facing concepts over Fulfillments.
-

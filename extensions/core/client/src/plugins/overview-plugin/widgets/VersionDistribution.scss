@@ -9,7 +9,8 @@
   // Force all SVG text (title, subtitle, legend labels, tick labels) to
   // use the PF text color variable.
   svg {
-    text, tspan {
+    text,
+    tspan {
       fill: var(--pf-t--global--text--color--regular) !important;
     }
   }

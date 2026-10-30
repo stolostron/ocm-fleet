@@ -4,7 +4,7 @@ import { getCachedPfIcon, loadPfIcon } from "@ocm-fleet/common";
 // The manifest is a flat string[] of PascalCase icon names, generated at
 // build time by scripts/generate-icons.mjs.
 import pfIcons from "@ocm-fleet/common/generated/pf-icons.json";
-import { create, insertMultiple, search } from "@orama/orama";
+import { create, insertMultiple, type Orama, search } from "@orama/orama";
 import {
   Button,
   EmptyState,
@@ -18,7 +18,7 @@ import {
   Skeleton,
 } from "@patternfly/react-core";
 import type { ComponentType } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,6 +37,8 @@ interface IconCellProps {
   onClick: () => void;
 }
 
+type IconIndex = Orama<{ name: "string"; words: "string" }>;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -54,7 +56,7 @@ function nameToWords(name: string): string {
 // Module-level lazy Orama index — built once, reused across opens
 // ---------------------------------------------------------------------------
 
-let indexPromise: Promise<Awaited<ReturnType<typeof create>>> | null = null;
+let indexPromise: Promise<IconIndex> | null = null;
 
 function getOramaIndex() {
   indexPromise ??= (async () => {
@@ -143,8 +145,11 @@ function IconGalleryModal({
 }: IconGalleryModalProps) {
   const [query, setQuery] = useState("");
   const [highlighted, setHighlighted] = useState<string | null>(selected);
-  const oramaRef = useRef<Awaited<ReturnType<typeof create>> | null>(null);
+  const oramaRef = useRef<IconIndex | null>(null);
   const [indexReady, setIndexReady] = useState(false);
+  const [filteredIcons, setFilteredIcons] = useState(() =>
+    pfIcons.slice(0, MAX_VISIBLE),
+  );
 
   // Acquire shared Orama index on open, reset state on close
   useEffect(() => {
@@ -182,29 +187,42 @@ function IconGalleryModal({
   }, [isOpen, selected]);
 
   // Search results
-  const filteredIcons = useMemo(() => {
+  useEffect(() => {
     const allIcons = pfIcons as string[];
 
     if (!query.trim()) {
-      return allIcons.slice(0, MAX_VISIBLE);
+      setFilteredIcons(allIcons.slice(0, MAX_VISIBLE));
+      return;
     }
 
-    if (!indexReady || !oramaRef.current) {
-      // Fallback: simple substring match while index builds
-      const lower = query.toLowerCase();
-      return allIcons
+    // Fallback: simple substring match while the index or search is pending.
+    const lower = query.toLowerCase();
+    setFilteredIcons(
+      allIcons
         .filter((n) => n.toLowerCase().includes(lower))
-        .slice(0, MAX_VISIBLE);
+        .slice(0, MAX_VISIBLE),
+    );
+    if (!indexReady || !oramaRef.current) return;
+
+    let cancelled = false;
+    async function searchIcons(db: IconIndex) {
+      // Orama supports both synchronous and asynchronous search hooks.
+      const results = await search(db, {
+        term: query,
+        properties: ["name", "words"],
+        tolerance: 1,
+        limit: MAX_VISIBLE,
+      });
+      if (!cancelled) {
+        setFilteredIcons(results.hits.map((hit) => hit.document.name));
+      }
     }
+    // Keep the substring fallback if search fails.
+    void searchIcons(oramaRef.current).catch(() => {});
 
-    const results = search(oramaRef.current, {
-      term: query,
-      properties: ["name", "words"],
-      tolerance: 1,
-      limit: MAX_VISIBLE,
-    });
-
-    return results.hits.map((h) => (h.document as { name: string }).name);
+    return () => {
+      cancelled = true;
+    };
   }, [query, indexReady]);
 
   const handleConfirm = useCallback(() => {

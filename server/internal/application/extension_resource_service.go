@@ -89,7 +89,7 @@ func (s *ExtensionResourceService) Create(ctx context.Context, in CreateExtensio
 	if err != nil {
 		return domain.ExtensionResourceView{}, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	typeDef, err := tx.ExtensionResources().GetType(ctx, in.ResourceType)
 	if err != nil {
@@ -166,7 +166,7 @@ func (s *ExtensionResourceService) Get(ctx context.Context, rt domain.ResourceTy
 	if err != nil {
 		return domain.ExtensionResourceView{}, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	fullName := rt.FullName(name)
 	view, err := tx.ExtensionResources().GetView(ctx, fullName)
@@ -182,7 +182,7 @@ func (s *ExtensionResourceService) List(ctx context.Context, rt domain.ResourceT
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	views, err := tx.ExtensionResources().ListViewsByType(ctx, rt)
 	if err != nil {
@@ -207,7 +207,7 @@ func (s *ExtensionResourceService) Delete(ctx context.Context, rt domain.Resourc
 	if err != nil {
 		return domain.ExtensionResourceView{}, fmt.Errorf("begin read tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	typeDef, err := tx.ExtensionResources().GetType(ctx, rt)
 	if err != nil {
@@ -279,7 +279,7 @@ func (s *ExtensionResourceService) Resume(ctx context.Context, in ResumeExtensio
 	if err != nil {
 		return domain.ExtensionResourceView{}, fmt.Errorf("begin read tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	fullName := in.ResourceType.FullName(in.Name)
 	er, err := tx.ExtensionResources().Get(ctx, fullName)

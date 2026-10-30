@@ -14,7 +14,7 @@ import (
 func runEnvelopeFieldFilterTests(t *testing.T, factory Factory) {
 	t.Run("ResourceTypeReturnsManagedCluster", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		results := queryAll(t, tx, fmt.Sprintf("resourceType == %q", string(fx.ManagedType)))
 		if len(results) != 1 {
@@ -30,7 +30,7 @@ func runEnvelopeFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("NameReturnsThatExtensionResource", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		name := extensionEnvelopeName(fx.ManagedType, fx.ManagedName)
 		results := queryAll(t, tx, fmt.Sprintf("name == %q", name))
@@ -47,7 +47,7 @@ func runEnvelopeFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("NameStartsWithMatchesPrefix", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		wantName := extensionEnvelopeName(fx.ManagedType, fx.ManagedName)
 		results := queryAll(t, tx, fmt.Sprintf(`name.startsWith(%q)`, "//"+string(fx.ManagedType.ServiceName())+"/"))
@@ -66,7 +66,7 @@ func runEnvelopeFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("ResourceTypeNotEqualExcludesOnlyThatType", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		filter := fmt.Sprintf("resourceType != %q", string(fx.ManagedType))
 		results := queryAll(t, tx, filter)
@@ -80,7 +80,7 @@ func runEnvelopeFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("OldPOCEnvelopeFieldsAreInvalid", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		for _, filter := range []string{
 			`kind == "extension"`,
@@ -101,7 +101,7 @@ func runEnvelopeFieldFilterTests(t *testing.T, factory Factory) {
 func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 	t.Run("ExtensionLabelsFilter", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		results := queryAll(t, tx, `resource.labels["team"] == "platform"`)
 		if len(results) != 1 {
@@ -114,7 +114,7 @@ func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("ExtensionLabelsStartsWith", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		wantName := extensionEnvelopeName(fx.ManagedType, fx.ManagedName)
 		results := queryAll(t, tx, `resource.labels["team"].startsWith("plat")`)
@@ -133,7 +133,7 @@ func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("SpecFilterGuardedByResourceType", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		filter := fmt.Sprintf(`resourceType == %q && resource.spec.provider == "aws"`, string(fx.ManagedType))
 		results := queryAll(t, tx, filter)
@@ -147,7 +147,7 @@ func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("InventoryLabelsFilter", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		results := queryAll(t, tx, `resource.localLabels["node-role"] == "worker"`)
 		if len(results) != 1 {
@@ -160,7 +160,7 @@ func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("InventoryConditionsFilter", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		results := queryAll(t, tx, `resource.conditions["Ready"].status == "True"`)
 		if len(results) != 1 {
@@ -173,7 +173,7 @@ func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("NumericObservationComparison", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		filter := fmt.Sprintf(`resourceType == %q && resource.observation.capacity.cpu > 4`, string(fx.InventoryType))
 		results := queryAll(t, tx, filter)
@@ -193,7 +193,7 @@ func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("NumericComparisonSafeAcrossConflictingResourceTypes", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		conflictType := domain.ResourceType("kubernetes.open-cluster-management.io/BrokenNode")
@@ -228,7 +228,7 @@ func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("BooleanJSONComparison", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		rt := domain.ResourceType("kind.open-cluster-management.io/Cluster")
@@ -259,7 +259,7 @@ func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 		// and QueryResources expose the ProtoJSON enum name
 		// ("CREATING"). Filters match the response spelling only.
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		wantName := extensionEnvelopeName(fx.ManagedType, fx.ManagedName)
 		results := queryAll(t, tx, `resource.state == "CREATING"`)
@@ -283,7 +283,7 @@ func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("PlatformOnlyBodyFieldsAreInvalid", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		for _, filter := range []string{
 			`resource.effective_labels["env"] == "prod"`,
@@ -305,7 +305,7 @@ func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 func runCaseSensitivityFilterTests(t *testing.T, factory Factory) {
 	t.Run("NameEqualityIsCaseSensitive", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		name := extensionEnvelopeName(fx.ManagedType, fx.ManagedName)
 		results := queryAll(t, tx, fmt.Sprintf("name == %q", name))
@@ -321,7 +321,7 @@ func runCaseSensitivityFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("NameStartsWithIsCaseSensitive", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		prefix := "//" + string(fx.ManagedType.ServiceName()) + "/"
 		results := queryAll(t, tx, fmt.Sprintf(`name.startsWith(%q)`, prefix))
@@ -337,7 +337,7 @@ func runCaseSensitivityFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("LabelEqualityIsCaseSensitive", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		results := queryAll(t, tx, `resource.labels["team"] == "platform"`)
 		if len(results) != 1 {
@@ -352,7 +352,7 @@ func runCaseSensitivityFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("LabelStartsWithIsCaseSensitive", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		results := queryAll(t, tx, `resource.labels["team"].startsWith("plat")`)
 		if len(results) != 1 {
@@ -367,7 +367,7 @@ func runCaseSensitivityFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("StateEqualityIsCaseSensitive", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		wantName := extensionEnvelopeName(fx.ManagedType, fx.ManagedName)
 		results := queryAll(t, tx, `resource.state == "CREATING"`)
@@ -386,7 +386,7 @@ func runCaseSensitivityFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("StateStartsWithIsCaseSensitive", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		wantName := extensionEnvelopeName(fx.ManagedType, fx.ManagedName)
 		results := queryAll(t, tx, `resource.state.startsWith("CRE")`)
@@ -412,7 +412,7 @@ func runCaseSensitivityFilterTests(t *testing.T, factory Factory) {
 func runInvalidFilterTests(t *testing.T, factory Factory) {
 	t.Run("UnsupportedFieldIsInvalid", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		err := queryErr(t, tx, domain.QueryResourcesRequest{Filter: `resource.aliases == "x"`})
 		if !errors.Is(err, domain.ErrInvalidArgument) {
@@ -422,7 +422,7 @@ func runInvalidFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("InvalidSyntaxIsInvalid", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		err := queryErr(t, tx, domain.QueryResourcesRequest{Filter: `name ==`})
 		if !errors.Is(err, domain.ErrInvalidArgument) {
@@ -432,7 +432,7 @@ func runInvalidFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("UnsupportedMacroIsInvalid", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		err := queryErr(t, tx, domain.QueryResourcesRequest{Filter: `["a","b"].exists(x, x == "a")`})
 		if !errors.Is(err, domain.ErrInvalidArgument) {
@@ -442,7 +442,7 @@ func runInvalidFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("NestedInventoryPathsRejected", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		for _, filter := range []string{
 			`resource.inventory.labels["node-role"] == "worker"`,
@@ -460,7 +460,7 @@ func runInvalidFilterTests(t *testing.T, factory Factory) {
 func runNilSchemaProviderTypeScopeTests(t *testing.T, factory Factory) {
 	t.Run("NilSchemaProviderMeansNoActivationScope", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		page, err := tx.Queries().QueryResources(context.Background(), domain.QueryResourcesRequest{
 			PageSize: 500,

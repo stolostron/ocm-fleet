@@ -41,7 +41,7 @@ func (s *DeleteManagedResourceCleanupWorkflowSpec) DeleteManagedResourceAndFulfi
 		if err != nil {
 			return struct{}{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		fullName := input.ResourceType.FullName(input.Name)
 		if err := tx.ExtensionResources().Delete(ctx, fullName); err != nil && !errors.Is(err, ErrNotFound) {

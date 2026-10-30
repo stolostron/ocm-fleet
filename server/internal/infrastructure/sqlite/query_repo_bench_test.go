@@ -29,6 +29,7 @@ import (
 
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
 	"github.com/stolostron/ocm-fleet/server/internal/infrastructure/querysql"
+	"github.com/stolostron/ocm-fleet/server/internal/infrastructure/sqltxtest"
 )
 
 // ---------------------------------------------------------------------------
@@ -574,7 +575,7 @@ func timeQueryResources(t *testing.T, db *sql.DB, scenario string, req domain.Qu
 			return domain.QueryResourcesPage{}, 0, fmt.Errorf("begin: %w", err)
 		}
 		page, err := (&QueryRepo{DB: tx}).QueryResources(ctx, req)
-		_ = tx.Rollback()
+		sqltxtest.Rollback(t, tx)
 		return page, time.Since(start), err
 	}
 
@@ -770,7 +771,7 @@ func TestQueryResourcesBenchmark(t *testing.T) {
 			if err != nil {
 				return domain.QueryResourcesPage{}, err
 			}
-			defer tx.Rollback()
+			defer sqltxtest.Rollback(t, tx)
 			return (&QueryRepo{DB: tx}).QueryResources(context.Background(), domain.QueryResourcesRequest{
 				PageSize: int32(defaultQueryPageSize),
 			})

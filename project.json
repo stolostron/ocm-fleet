@@ -5,6 +5,386 @@
   },
   "root": ".",
   "targets": {
+    "fmt": {
+      "metadata": {
+        "description": "Apply formatters and import organization across registered projects and shared workspace files."
+      },
+      "executor": "nx:run-commands",
+      "options": {
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        },
+        "command": "npx nx run-many --targets=fmt --exclude=ocm-fleet --nxBail=false"
+      },
+      "cache": false,
+      "dependsOn": ["fmt:workspace"]
+    },
+    "verify": {
+      "metadata": {
+        "description": "Format the workspace, then run lint, normal tests, component tests, and available type checks."
+      },
+      "executor": "nx:run-commands",
+      "options": {
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        },
+        "command": "npx nx run ocm-fleet:check"
+      },
+      "cache": false,
+      "dependsOn": ["fmt"]
+    },
+    "fix": {
+      "metadata": {
+        "description": "Format the workspace, apply broader linter fixes, then run checks."
+      },
+      "executor": "nx:run-commands",
+      "options": {
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        },
+        "commands": [
+          "npx nx run ocm-fleet:fix:workspace",
+          "npx nx run-many --targets=fix:lint --exclude=ocm-fleet --nxBail=false",
+          "npx nx run ocm-fleet:check"
+        ],
+        "parallel": false
+      },
+      "cache": false,
+      "dependsOn": ["fmt"]
+    },
+    "lint": {
+      "metadata": {
+        "description": "Run project linters and style checks without editing source."
+      },
+      "executor": "nx:noop",
+      "dependsOn": [
+        "lint:workspace",
+        "lint:format",
+        "lint:nx-projects",
+        {
+          "projects": ["*", "!ocm-fleet"],
+          "target": "lint"
+        },
+        {
+          "projects": ["*", "!ocm-fleet"],
+          "target": "lint:css"
+        },
+        {
+          "projects": ["*", "!ocm-fleet"],
+          "target": "lint:format"
+        }
+      ],
+      "cache": false
+    },
+    "check": {
+      "metadata": {
+        "description": "Run workspace checks without applying source fixes."
+      },
+      "executor": "nx:noop",
+      "dependsOn": [
+        "lint:workspace",
+        "lint:format",
+        "test:generate-agents",
+        "test:eslint-config",
+        "test:workspace-quality",
+        "lint:nx-projects",
+        "test:nx-projects",
+        {
+          "projects": ["*", "!ocm-fleet"],
+          "target": "check"
+        }
+      ],
+      "cache": false
+    },
+    "fmt:workspace": {
+      "executor": "nx:run-commands",
+      "options": {
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        },
+        "commands": [
+          "prettier --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/workspace/prettier\" --write --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" \"*.{json,yaml,yml,md,mjs}\" \".github/**/*.{yml,yaml,json,md}\" \"docs/**/*.{md,json,yaml,yml}\" \"tools/*.{mjs,md,json}\" \"scripts/**/*.{mjs,json,yaml,yml,md}\" \"deploy/**/*.{mjs,json,yaml,yml,md}\" \"e2e/{shared,sandbox}/**/*.{ts,mjs,json,md}\" --no-error-on-unmatched-pattern",
+          "eslint --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/workspace/eslint-layout\" \"{tools,scripts,deploy}/**/*.mjs\" \"*.mjs\" --no-error-on-unmatched-pattern --fix --fix-type layout --exit-on-fatal-error || test \"$?\" -eq 1",
+          "npx nx run ocm-fleet:refresh:inputs"
+        ],
+        "parallel": false
+      },
+      "cache": false
+    },
+    "fix:workspace": {
+      "executor": "nx:run-commands",
+      "options": {
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        },
+        "commands": [
+          "eslint \"{tools,scripts,deploy}/**/*.mjs\" \"*.mjs\" --no-error-on-unmatched-pattern --fix --exit-on-fatal-error || test \"$?\" -eq 1",
+          "npx nx run ocm-fleet:refresh:inputs"
+        ],
+        "parallel": false
+      },
+      "cache": false
+    },
+    "lint:workspace": {
+      "executor": "nx:run-commands",
+      "options": {
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        },
+        "command": "eslint \"{tools,scripts,deploy}/**/*.mjs\" \"*.mjs\" --no-error-on-unmatched-pattern"
+      },
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/tools/**/*.mjs",
+        "{workspaceRoot}/scripts/**/*.mjs",
+        "{workspaceRoot}/deploy/**/*.mjs",
+        "{workspaceRoot}/*.mjs",
+        "eslintConfig"
+      ],
+      "outputs": []
+    },
+    "lint:format": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "prettier --check --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" \"*.{json,yaml,yml,md,mjs}\" \".github/**/*.{yml,yaml,json,md}\" \"docs/**/*.{md,json,yaml,yml}\" \"tools/*.{mjs,md,json}\" \"scripts/**/*.{mjs,json,yaml,yml,md}\" \"deploy/**/*.{mjs,json,yaml,yml,md}\" \"e2e/{shared,sandbox}/**/*.{ts,mjs,json,md}\" --no-error-on-unmatched-pattern",
+        "forwardAllArgs": false
+      },
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/*.{json,yaml,yml,md,mjs}",
+        "{workspaceRoot}/.github/**/*.{yml,yaml,json,md}",
+        "{workspaceRoot}/docs/**/*.{md,json,yaml,yml}",
+        "{workspaceRoot}/tools/*.{mjs,md,json}",
+        "{workspaceRoot}/scripts/**/*.{mjs,json,yaml,yml,md}",
+        "{workspaceRoot}/deploy/**/*.{mjs,json,yaml,yml,md}",
+        "{workspaceRoot}/e2e/{shared,sandbox}/**/*.{ts,mjs,json,md}",
+        "formatConfig"
+      ],
+      "outputs": []
+    },
+    "refresh:inputs": {},
+    "test:eslint-config": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test tools/eslint-config.test.mjs"
+      },
+      "cache": true,
+      "inputs": [
+        "eslintConfig",
+        "{workspaceRoot}/tools/eslint-config.test.mjs",
+        "jsRuntime"
+      ],
+      "outputs": []
+    },
+    "test:workspace-quality": {
+      "executor": "nx:run-commands",
+      "options": {
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        },
+        "command": "node --test tools/workspace-quality.test.mjs"
+      },
+      "cache": true,
+      "dependsOn": ["setup:golangci-lint"],
+      "inputs": [
+        "qualityTaskConfig",
+        "eslintConfig",
+        "{workspaceRoot}/tools/workspace-quality.test.mjs",
+        "{workspaceRoot}/tools/golangci-lint/project.json",
+        "{workspaceRoot}/server/project.json",
+        "{workspaceRoot}/client/cli/project.json",
+        "{workspaceRoot}/proto/project.json",
+        "{workspaceRoot}/sdk/common/project.json",
+        "{workspaceRoot}/sdk/build-utils/project.json",
+        "{workspaceRoot}/e2e/cli/project.json",
+        "{workspaceRoot}/vitest.config.ts",
+        "{workspaceRoot}/.gitignore",
+        "{workspaceRoot}/e2e/cli/playwright.config.ts"
+      ],
+      "outputs": []
+    },
+    "test:nx-projects": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test tools/nx-projects.test.mjs",
+        "env": { "NX_DAEMON": "false" }
+      },
+      "cache": true,
+      "inputs": ["{workspaceRoot}/tools/nx-projects*.mjs", "jsRuntime"],
+      "outputs": []
+    },
+    "lint:nx-projects": {
+      "metadata": {
+        "description": "Check project quality participation and task policy against the current source inventory."
+      },
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/nx-projects.mjs",
+        "env": { "NX_DAEMON": "false" }
+      },
+      "cache": false
+    },
+    "fmt:go": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx nx run-many --targets=fmt --projects=tag:type:go-module",
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        }
+      },
+      "cache": false
+    },
+    "verify:go": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["fmt:go"],
+      "options": {
+        "command": "npx nx run-many --targets=check --projects=tag:type:go-module --nxBail=false",
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        }
+      },
+      "cache": false
+    },
+    "fix:go": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["fmt:go"],
+      "options": {
+        "commands": [
+          "npx nx run-many --targets=fix:lint --projects=tag:type:go-module --nxBail=false",
+          "npx nx run-many --targets=check --projects=tag:type:go-module --nxBail=false"
+        ],
+        "parallel": false,
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        }
+      },
+      "cache": false
+    },
+    "lint:go": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx nx run-many --targets=lint --projects=tag:type:go-module --nxBail=false",
+        "forwardAllArgs": false,
+        "env": {
+          "NX_DAEMON": "false"
+        }
+      },
+      "cache": false
+    },
+    "lint:go:config": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["setup:golangci-lint"],
+      "options": {
+        "command": "bin/tools/golangci-lint config verify --config .golangci.yaml"
+      },
+      "cache": true,
+      "inputs": ["goLintConfig"],
+      "outputs": []
+    },
+    "setup:golangci-lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/golangci-lint.mjs build"
+      },
+      "cache": true,
+      "inputs": ["goLintToolBuild"],
+      "outputs": [
+        "{workspaceRoot}/bin/tools/golangci-lint",
+        "{workspaceRoot}/bin/tools/goimports",
+        "{workspaceRoot}/bin/tools/format-go"
+      ]
+    },
+    "update:golangci-lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/golangci-lint.mjs update"
+      },
+      "cache": false
+    },
+    "test:golangci-lint-setup": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test tools/golangci-lint.test.mjs"
+      },
+      "cache": true,
+      "inputs": [
+        "goLintTool",
+        "{workspaceRoot}/tools/golangci-lint.test.mjs",
+        "{workspaceRoot}/server/go.mod",
+        "jsRuntime"
+      ],
+      "outputs": []
+    },
+    "test:golangci-lint-config": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["setup:golangci-lint"],
+      "options": {
+        "command": "node --test tools/golangci-lint-config.test.mjs"
+      },
+      "cache": true,
+      "inputs": [
+        "goLintConfig",
+        "{workspaceRoot}/tools/golangci-lint-config.test.mjs",
+        "jsRuntime"
+      ],
+      "outputs": []
+    },
+    "test:go-quality": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["setup:golangci-lint"],
+      "options": {
+        "command": "node --test tools/go-quality.test.mjs"
+      },
+      "cache": true,
+      "inputs": [
+        "qualityTaskConfig",
+        "{workspaceRoot}/tools/go-quality.test.mjs",
+        "{workspaceRoot}/server/project.json",
+        "{workspaceRoot}/deploy/aio/project.json",
+        "{workspaceRoot}/sdk/nx-cache-proxy/project.json",
+        "{workspaceRoot}/tools/golangci-lint/project.json"
+      ],
+      "outputs": []
+    },
+    "test:golangci-lint-module": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/golangci-lint.mjs test"
+      },
+      "cache": true,
+      "inputs": ["goLintTool"],
+      "outputs": []
+    },
+    "lint:golangci-lint": {
+      "executor": "nx:noop",
+      "dependsOn": [
+        {
+          "projects": ["go-lint-tool"],
+          "target": "lint"
+        }
+      ],
+      "cache": false
+    },
+    "fmt:golangci-lint": {
+      "executor": "nx:noop",
+      "dependsOn": [
+        {
+          "projects": ["go-lint-tool"],
+          "target": "fmt"
+        }
+      ],
+      "cache": false
+    },
     "generate-agents": {
       "executor": "nx:run-commands",
       "options": {
@@ -17,7 +397,13 @@
       "options": {
         "command": "node --test tools/generate-agents.test.mjs"
       },
-      "cache": false
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/tools/generate-agents.mjs",
+        "{workspaceRoot}/tools/generate-agents.test.mjs",
+        "jsRuntime"
+      ],
+      "outputs": []
     },
     "fleetctl": {
       "executor": "nx:run-commands",
@@ -81,7 +467,10 @@
         "command": "node tools/generate-icons.mjs"
       },
       "cache": true,
-      "inputs": ["{workspaceRoot}/tools/generate-icons.mjs"],
+      "inputs": [
+        "{workspaceRoot}/tools/generate-icons.mjs",
+        "{workspaceRoot}/package-lock.json"
+      ],
       "outputs": ["{workspaceRoot}/sdk/common/src/generated/pf-icons.json"]
     },
     "web:generate-registry": {
@@ -117,22 +506,30 @@
     },
     "deploy:podman:up": {
       "executor": "nx:run-commands",
-      "options": { "command": "./deploy/podman/scripts/start.mjs" },
+      "options": {
+        "command": "./deploy/podman/scripts/start.mjs"
+      },
       "cache": false
     },
     "deploy:podman:dev": {
       "executor": "nx:run-commands",
-      "options": { "command": "DEV=true ./deploy/podman/scripts/start.mjs" },
+      "options": {
+        "command": "DEV=true ./deploy/podman/scripts/start.mjs"
+      },
       "cache": false
     },
     "deploy:podman:down": {
       "executor": "nx:run-commands",
-      "options": { "command": "./deploy/podman/scripts/stop.mjs" },
+      "options": {
+        "command": "./deploy/podman/scripts/stop.mjs"
+      },
       "cache": false
     },
     "deploy:podman:clean": {
       "executor": "nx:run-commands",
-      "options": { "command": "./deploy/podman/scripts/stop.mjs --clean" },
+      "options": {
+        "command": "./deploy/podman/scripts/stop.mjs --clean"
+      },
       "cache": false
     },
     "deploy:podman:logs": {
@@ -151,7 +548,9 @@
     },
     "deploy:podman:rebuild": {
       "executor": "nx:run-commands",
-      "options": { "command": "./deploy/podman/scripts/rebuild.mjs" },
+      "options": {
+        "command": "./deploy/podman/scripts/rebuild.mjs"
+      },
       "cache": false
     },
     "deploy:podman:pull": {
@@ -163,7 +562,9 @@
     },
     "deploy:podman:clock-drift": {
       "executor": "nx:run-commands",
-      "options": { "command": "./deploy/podman/scripts/check-clock-drift.mjs" },
+      "options": {
+        "command": "./deploy/podman/scripts/check-clock-drift.mjs"
+      },
       "cache": false
     },
     "deploy:openshift:keycloak:deploy": {

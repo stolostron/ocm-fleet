@@ -8,7 +8,6 @@
 #   NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN=local-read-token
 
 services:
-
   minio:
     image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
     command: ["server", "/data", "--console-address", ":9001"]
@@ -64,7 +63,6 @@ services:
     depends_on:
       minio-bucket-init:
         condition: service_completed_successfully
-
 
 volumes:
   minio-data:

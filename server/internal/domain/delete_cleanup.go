@@ -36,7 +36,7 @@ func (s *DeleteDeploymentCleanupWorkflowSpec) DeleteDeploymentAndFulfillment() A
 		if err != nil {
 			return struct{}{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		if err := tx.Deployments().Delete(ctx, input.Name); err != nil && !errors.Is(err, ErrNotFound) {
 			return struct{}{}, fmt.Errorf("delete deployment row: %w", err)

@@ -22,7 +22,7 @@ func seedKubernetesObjectType(t *testing.T, store domain.Store) {
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	sch := kubernetesaddon.InventorySchema()
 	def := domain.NewExtensionResourceType(sch.ResourceType, domain.APIVersion(sch.Version), domain.CollectionID(sch.CollectionID), time.Now(), domain.WithInventory())
 	if err := tx.ExtensionResources().CreateType(ctx, def); err != nil {
@@ -151,10 +151,10 @@ func TestDirectInventoryReportBackend_RoundTrip(t *testing.T) {
 		t.Fatalf("begin read: %v", err)
 	}
 	if _, err := readTx.ExtensionResources().Get(ctx, kubernetesaddon.ObjectResourceType.FullName(pod1)); err != nil {
-		readTx.Rollback()
+		readTx.RollbackOnExit()
 		t.Fatalf("Get after ReplaceBatch: %v", err)
 	}
-	readTx.Rollback()
+	readTx.RollbackOnExit()
 
 	if err := backend.ReplaceBatch(ctx, kubernetesaddon.ObjectResourceType, []kubernetesaddon.InventoryObjectReport{{
 		Name: pod1, IsDelete: true,
@@ -166,10 +166,10 @@ func TestDirectInventoryReportBackend_RoundTrip(t *testing.T) {
 		t.Fatalf("begin read: %v", err)
 	}
 	if _, err := readTx.ExtensionResources().Get(ctx, kubernetesaddon.ObjectResourceType.FullName(pod1)); !errors.Is(err, domain.ErrNotFound) {
-		readTx.Rollback()
+		readTx.RollbackOnExit()
 		t.Fatalf("Get after ReplaceBatch delete err=%v, want ErrNotFound", err)
 	}
-	readTx.Rollback()
+	readTx.RollbackOnExit()
 }
 
 func TestStoreTargetLister_BeginError(t *testing.T) {
@@ -227,6 +227,7 @@ func (t *listFailTx) ResourceIdentities() domain.ResourceIdentityRepository {
 func (t *listFailTx) Queries() domain.QueryRepository { panic("Queries unused") }
 func (t *listFailTx) Commit() error                   { return nil }
 func (t *listFailTx) Rollback() error                 { return nil }
+func (t *listFailTx) RollbackOnExit()                 {}
 
 type listFailTargets struct{ err error }
 

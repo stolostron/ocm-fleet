@@ -3,8 +3,21 @@
   "root": "sdk/node-plugin",
   "sourceRoot": "sdk/node-plugin/src",
   "projectType": "library",
-  "tags": ["scope:ui", "type:lib", "visibility:private"],
+  "tags": [
+    "lang:typescript",
+    "scope:ui",
+    "type:lib",
+    "visibility:private",
+    "type:js-project",
+    "test:vitest"
+  ],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "build": {
       "executor": "nx:run-commands",
       "options": {
@@ -43,13 +56,7 @@
         "{projectRoot}/fixtures/**/*.{js,mjs}"
       ]
     },
-    "test": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "npx vitest run --config vitest.config.ts sdk/node-plugin/src"
-      },
-      "inputs": ["{projectRoot}/src/**/*", "{workspaceRoot}/vitest.config.ts"]
-    },
+    "test": {},
     "fixture": {
       "executor": "nx:run-commands",
       "dependsOn": ["build"],
@@ -57,6 +64,8 @@
         "command": "node fixtures/build.mjs",
         "cwd": "sdk/node-plugin"
       }
-    }
+    },
+    "lint:format": {},
+    "typecheck": {}
   }
 }

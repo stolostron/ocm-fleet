@@ -95,7 +95,7 @@ func setupResourceQueryHarness(t *testing.T, seeds []seedManagedCluster) *resour
 		),
 	)
 	if err := tx.ExtensionResources().CreateType(ctx, typeDef); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("CreateType: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func setupResourceQueryHarness(t *testing.T, seeds []seedManagedCluster) *resour
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		})); err != nil {
-			tx.Rollback()
+			tx.RollbackOnExit()
 			t.Fatalf("Create fulfillment %s: %v", seed.ID, err)
 		}
 		spec := seed.Spec
@@ -124,11 +124,11 @@ func setupResourceQueryHarness(t *testing.T, seeds []seedManagedCluster) *resour
 		er := domain.NewExtensionResource(domain.NewExtensionResourceUID(), cfg.ResourceType,
 			domain.ResourceName("clusters/"+seed.ID), now, domain.WithManagedState(fID))
 		if _, err := er.RecordIntent(json.RawMessage(spec), now); err != nil {
-			tx.Rollback()
+			tx.RollbackOnExit()
 			t.Fatalf("RecordIntent %s: %v", seed.ID, err)
 		}
 		if err := tx.ExtensionResources().Create(ctx, er); err != nil {
-			tx.Rollback()
+			tx.RollbackOnExit()
 			t.Fatalf("Create resource %s: %v", seed.ID, err)
 		}
 	}
@@ -659,7 +659,7 @@ func TestResourceQuery_PresenceRoundTrip(t *testing.T) {
 		domain.WithInventory(),
 	)
 	if err := tx.ExtensionResources().CreateType(ctx, typeDef); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("CreateType: %v", err)
 	}
 
@@ -669,7 +669,7 @@ func TestResourceQuery_PresenceRoundTrip(t *testing.T) {
 		ID: fID, State: domain.FulfillmentStateActive, PauseReason: "waiting",
 		Generation: 2, CreatedAt: now, UpdatedAt: now,
 	})); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("Create fulfillment: %v", err)
 	}
 	managedUID := domain.NewExtensionResourceUID()
@@ -679,11 +679,11 @@ func TestResourceQuery_PresenceRoundTrip(t *testing.T) {
 		domain.WithExtensionLabels(map[string]string{"team": "platform"}),
 	)
 	if _, err := managed.RecordIntent(json.RawMessage(`{"name":"presence"}`), now); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("RecordIntent: %v", err)
 	}
 	if err := tx.ExtensionResources().Create(ctx, managed); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("Create managed: %v", err)
 	}
 
@@ -692,23 +692,23 @@ func TestResourceQuery_PresenceRoundTrip(t *testing.T) {
 	if err := tx.Fulfillments().Create(ctx, domain.FulfillmentFromSnapshot(domain.FulfillmentSnapshot{
 		ID: fID2, State: domain.FulfillmentStateActive, Generation: 1, CreatedAt: now, UpdatedAt: now,
 	})); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("Create fulfillment 2: %v", err)
 	}
 	invUID := domain.NewExtensionResourceUID()
 	withInv := domain.NewExtensionResource(invUID, cfg.ResourceType,
 		domain.ResourceName("clusters/with-inv"), now, domain.WithManagedState(fID2))
 	if _, err := withInv.RecordIntent(json.RawMessage(`{"name":"with-inv"}`), now); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("RecordIntent 2: %v", err)
 	}
 	if err := tx.ExtensionResources().Create(ctx, withInv); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("Create with-inv: %v", err)
 	}
 	ready, err := domain.NewCondition("Ready", domain.ConditionTrue, "", "", time.Time{})
 	if err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("NewCondition: %v", err)
 	}
 	obs := json.RawMessage(`{}`)
@@ -722,7 +722,7 @@ func TestResourceQuery_PresenceRoundTrip(t *testing.T) {
 		ObservedAt:   now,
 		ReceivedAt:   now,
 	}}); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("ReplaceInventory: %v", err)
 	}
 	if err := tx.Commit(); err != nil {

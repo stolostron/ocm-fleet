@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+
 	kindaddon "github.com/stolostron/ocm-fleet/server/internal/addon/kind"
 	"github.com/stolostron/ocm-fleet/server/internal/addon/scripted"
 	"github.com/stolostron/ocm-fleet/server/internal/application"
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
 	"github.com/stolostron/ocm-fleet/server/internal/infrastructure/oidc/oidctest"
 	"github.com/stolostron/ocm-fleet/server/internal/infrastructure/sqlite"
-	"google.golang.org/grpc"
 )
 
 // expectedGRPCServiceFamilies is the independent inventory of required gRPC
@@ -227,7 +228,7 @@ func TestExpectedSurface_KindScriptedTargetsAndSchemasLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	targets, err := tx.Targets().List(ctx)
 	if err != nil {

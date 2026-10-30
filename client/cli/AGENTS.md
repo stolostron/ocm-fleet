@@ -26,7 +26,7 @@ Run from repository root through Nx:
 ```text
 npx nx run cli:build
 npx nx run cli:test
-npx nx run cli:lint
+npx nx run cli:verify # formatting/import fixes, lint, typecheck, and tests
 ```
 
 Use `ink-testing-library` for Ink components. Use `execa` for subprocess tests.

@@ -3,10 +3,23 @@
   "metadata": {
     "description": "Nx remote cache proxy backed by MinIO."
   },
+  "tags": [
+    "lang:go",
+    "type:go-module"
+  ],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
+    "lint": {},
     "build": {
       "command": "cd sdk/nx-cache-proxy && go build -o ../../bin/nx-cache-proxy ./cmd/nx-cache-proxy/",
-      "outputs": ["{workspaceRoot}/bin/nx-cache-proxy"]
+      "outputs": [
+        "{workspaceRoot}/bin/nx-cache-proxy"
+      ]
     },
     "test": {
       "executor": "nx:run-commands",
@@ -14,7 +27,12 @@
         "command": "GOTESTSUM_FORMAT=\"${GOTESTSUM_FORMAT:-pkgname-and-test-fails}\" go tool gotestsum --format-icons hivis --format-hide-empty-pkg -- -count=1 ./...",
         "cwd": "sdk/nx-cache-proxy"
       },
-      "cache": false
+      "cache": true,
+      "inputs": [
+        "default",
+        "goRuntime"
+      ],
+      "outputs": []
     }
   }
 }

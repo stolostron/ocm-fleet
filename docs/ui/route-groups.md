@@ -24,7 +24,14 @@ createRoute({
 1. `generatePluginPages` projects the `ocm-fleet.route` declaration into `/api/ui/config`:
 
    ```json
-   { "id": "reports.reports", "title": "Reports", "path": "reports/reports", "scope": "reports-plugin", "module": "ReportsPage", "pluginKey": "reports" }
+   {
+     "id": "reports.reports",
+     "title": "Reports",
+     "path": "reports/reports",
+     "scope": "reports-plugin",
+     "module": "ReportsPage",
+     "pluginKey": "reports"
+   }
    ```
 
 2. `generateNavLayout` adds `{ "type": "page", "pageId": "reports.reports" }` to `/api/ui/user-config`'s `navLayout`. No separate nav-item declaration is needed.
@@ -89,10 +96,10 @@ Sources: [set validation](../../sdk/build-utils/src/extensions/validate.ts), [gr
 
 ## Routes and redirects
 
-| Declaration | Router-relative route |
-|-------------|-----------------------|
-| Ungrouped route | `/{pluginKey}/{routeId}` |
-| Grouped route | `/{groupId}/{routeId}` |
+| Declaration            | Router-relative route                          |
+| ---------------------- | ---------------------------------------------- |
+| Ungrouped route        | `/{pluginKey}/{routeId}`                       |
+| Grouped route          | `/{groupId}/{routeId}`                         |
 | Nonempty backend group | `/{groupId}` redirects to its first child page |
 
 For example, Navigation is `/settings/navigation`, Extensions is `/settings/extensions`, and the ungrouped Clusters route is `/core/clusters`. Browser URLs include the `/app` basename.
@@ -141,16 +148,16 @@ With no full override or legacy saved order, top-level pages and groups sort alp
 
 Registration, the browser-local install preference, sidebar hiding, and authorization are separate:
 
-| Condition | Sidebar and destination behavior |
-|-----------|----------------------------------|
-| Registered page referenced by `navLayout`, no customization | Link appears by default, without an extension-resolution or backend-readiness gate |
-| Local install preference is false | Link remains, with puzzle icon and enable tooltip; clicking opens the enablement page if the scope is configured |
-| No saved install preference | `CORE_EXTENSION_DEFAULTS` applies; Configuration and Virtualization default disabled, other listed plugins enabled; an unknown scope defaults enabled |
-| Scope absent from Scalprum config, page still present | Link remains; destination shows **Plugin unavailable** |
-| Route extension missing from resolved SDK results, page still present | Link remains from backend metadata; its plugin-provided icon may be missing |
-| Page reference absent from `pluginPages` | Item is skipped; a group with no known child pages is hidden |
-| Hidden through navigation customization | Entry moves into **More** rather than losing its route; direct links and feature search remain available |
-| Backend operation forbidden | Link visibility and local enablement grant no permission; API authorization applies separately |
+| Condition                                                             | Sidebar and destination behavior                                                                                                                      |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Registered page referenced by `navLayout`, no customization           | Link appears by default, without an extension-resolution or backend-readiness gate                                                                    |
+| Local install preference is false                                     | Link remains, with puzzle icon and enable tooltip; clicking opens the enablement page if the scope is configured                                      |
+| No saved install preference                                           | `CORE_EXTENSION_DEFAULTS` applies; Configuration and Virtualization default disabled, other listed plugins enabled; an unknown scope defaults enabled |
+| Scope absent from Scalprum config, page still present                 | Link remains; destination shows **Plugin unavailable**                                                                                                |
+| Route extension missing from resolved SDK results, page still present | Link remains from backend metadata; its plugin-provided icon may be missing                                                                           |
+| Page reference absent from `pluginPages`                              | Item is skipped; a group with no known child pages is hidden                                                                                          |
+| Hidden through navigation customization                               | Entry moves into **More** rather than losing its route; direct links and feature search remain available                                              |
+| Backend operation forbidden                                           | Link visibility and local enablement grant no permission; API authorization applies separately                                                        |
 
 The install preference is scoped to the plugin, not an individual route, and stored in browser-origin IndexedDB. Initializing defaults fills missing known keys without overwriting saved choices. “Install” here means local presentation enablement, not packaging, server registration, addon lifecycle enablement, or downloading a plugin on demand: `PluginLoader` attempts all configured plugin loads independently of that preference.
 
