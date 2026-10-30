@@ -6,13 +6,10 @@ import {
   mergeLayout,
   type NavLayoutEntry as CommonNavLayoutEntry,
   type NavLayoutGroup as CommonNavLayoutGroup,
+  useDynamicExtension,
   useExtensionInstall,
   useNavLayout,
 } from "@ocm-fleet/common";
-import {
-  useExtensions,
-  useResolvedExtensions,
-} from "@openshift/dynamic-plugin-sdk";
 import {
   createContext,
   ReactNode,
@@ -76,11 +73,10 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     state: installState,
   } = useExtensionInstall();
 
-  const allRouteExtensions = useExtensions(isRouteExtension);
-  const [routeExtensions, routesLoaded] =
-    useResolvedExtensions(allRouteExtensions);
-  const allCpExtensions = useExtensions(isClusterProviderExtension);
-  const [cpExtensions, cpLoaded] = useResolvedExtensions(allCpExtensions);
+  const [routeExtensions, routesLoaded] = useDynamicExtension(isRouteExtension);
+  const [cpExtensions, cpLoaded] = useDynamicExtension(
+    isClusterProviderExtension,
+  );
   const dbRef = useRef<SearchDB | null>(null);
   const componentMapRef = useRef(
     new Map<string, React.ComponentType<SearchResultProps>>(),

@@ -1,14 +1,11 @@
 import "./WhatsNextPage.scss";
 
-import type {
-  OnboardingActionCardProps,
-  OnboardingActionFormProps,
+import {
+  type OnboardingActionCardProps,
+  type OnboardingActionFormProps,
+  useDynamicExtension,
 } from "@ocm-fleet/common";
 import type { CodeRef, Extension } from "@openshift/dynamic-plugin-sdk";
-import {
-  useExtensions,
-  useResolvedExtensions,
-} from "@openshift/dynamic-plugin-sdk";
 import {
   Button,
   Content,
@@ -48,9 +45,8 @@ interface WhatsNextPageProps {
 }
 
 const WhatsNextPage = ({ onSetupNext, onSetupSkip }: WhatsNextPageProps) => {
-  const onboardingCandidates = useExtensions(isOnboardingAction);
   const [extensions, extensionsLoaded] =
-    useResolvedExtensions(onboardingCandidates);
+    useDynamicExtension(isOnboardingAction);
   const {
     progress,
     loaded: progressLoaded,

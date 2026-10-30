@@ -678,6 +678,15 @@ const configs: Configuration[] = pluginConfigs.map(({ plugin, key }) => ({
     rules: [
       swcLoaderRule,
       {
+        // @ocm-fleet/common emits ESM (dist/esm is "type": "module"), where
+        // Rspack's default ESM rule enforces fully specified imports. Allow
+        // extensionless relative imports from that package.
+        test: /\.m?js$/,
+        resolve: {
+          fullySpecified: false,
+        },
+      },
+      {
         test: /\.css$/,
         use: ["style-loader", "css-loader"],
       },

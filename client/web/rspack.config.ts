@@ -53,6 +53,15 @@ const config: Configuration = {
   module: {
     rules: [
       {
+        // @ocm-fleet/common emits ESM (dist/esm is "type": "module"), where
+        // Rspack's default ESM rule enforces fully specified imports. Allow
+        // extensionless relative imports from that package.
+        test: /\.m?js$/,
+        resolve: {
+          fullySpecified: false,
+        },
+      },
+      {
         test: /\.tsx?$/,
         exclude: [/node_modules/, /__tests__/],
         loader: "builtin:swc-loader",
