@@ -1,6 +1,8 @@
 module github.com/stolostron/ocm-fleet/poc/trust-model-v3
 
-go 1.25.0
+go 1.26.0
+
+toolchain go1.26.10
 
 require (
 	github.com/google/trillian v1.7.3
@@ -20,7 +22,7 @@ require (
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/valyala/fastjson v1.6.7 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 )

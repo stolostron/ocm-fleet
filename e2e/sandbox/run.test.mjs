@@ -29,7 +29,7 @@ describe("parseCommand", () => {
 describe("buildTestEnvironment", () => {
   it("publishes only the sandbox connection contract", () => {
     const env = buildTestEnvironment(
-      { EXISTING: "kept" },
+      { EXISTING: "kept", NODE_OPTIONS: "--max-old-space-size=1024" },
       {
         caFile: "/tmp/run/ca.crt",
         kindPrefix: "kind-e2e-abcd-",
@@ -39,6 +39,7 @@ describe("buildTestEnvironment", () => {
     );
 
     expect(env.EXISTING).toBe("kept");
+    expect(env.NODE_OPTIONS).toBe("--max-old-space-size=1024");
     expect(env.BASE_URL).toBe("https://ocm-fleet.localhost:8085");
     expect(env.OCM_RM_GRPC_TARGET).toBe("127.0.0.1:50051");
     expect(env.OCM_RM_CA_FILE).toBe("/tmp/run/ca.crt");
