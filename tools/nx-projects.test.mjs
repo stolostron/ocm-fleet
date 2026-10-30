@@ -28,6 +28,36 @@ test("missing tags cannot silently exempt source projects", () => {
   assert.match(errors, /ui.*type:js-project/);
 });
 
+test("TypeScript sources require a language tag and a typecheck target", () => {
+  for (const extension of ["ts", "tsx", "mts", "cts"]) {
+    const { graph, inventory } = fixture();
+    graph.nodes.ui.data.tags = ["type:js-project"];
+    delete graph.nodes.ui.data.targets.typecheck;
+    inventory.files = ["api/go.mod", `ui/src/index.${extension}`];
+    const errors = validateProjects(graph, inventory).join("\n");
+    assert.match(errors, /ui.*lang:typescript/, extension);
+    assert.match(errors, /ui:typecheck.*missing/, extension);
+  }
+});
+
+test("TypeScript tags require executable type checks even without discovered source", () => {
+  const { graph, inventory } = fixture();
+  inventory.files = ["api/go.mod"];
+  graph.nodes.ui.data.targets.typecheck = {};
+  assert.match(
+    validateProjects(graph, inventory).join("\n"),
+    /ui:typecheck.*executor/,
+  );
+});
+
+test("JavaScript projects share tooling without requiring TypeScript checks", () => {
+  const { graph, inventory } = fixture();
+  graph.nodes.ui.data.tags = ["type:js-project"];
+  delete graph.nodes.ui.data.targets.typecheck;
+  inventory.files = ["api/go.mod", "ui/src/index.mjs"];
+  assert.deepEqual(validateProjects(graph, inventory), []);
+});
+
 test("catches missing targets and unresolved empty target entries", () => {
   const { graph, inventory } = fixture();
   delete graph.nodes.api.data.targets.check;
@@ -104,9 +134,11 @@ test("cached standard checks must retain their shared configuration inputs", () 
   const { graph, inventory } = fixture();
   graph.nodes.api.data.targets.lint.inputs = ["default"];
   graph.nodes.ui.data.targets["lint:format"].inputs = ["default"];
+  graph.nodes.ui.data.targets.typecheck.inputs = ["default"];
   const errors = validateProjects(graph, inventory).join("\n");
   assert.match(errors, /api:lint.*goLintConfig/);
   assert.match(errors, /ui:lint:format.*formatConfig/);
+  assert.match(errors, /ui:typecheck.*typescriptConfig/);
 });
 
 test("exemptions need a reason and do not cover unregistered nested modules", () => {
@@ -146,7 +178,7 @@ test("nested projects own their capabilities instead of contributing them to a p
     root: "api/nested",
     metadata: { quality: { exemption: "Unimplemented UI experiment." } },
   });
-  inventory.files.push("api/nested/example.scss");
+  inventory.files.push("api/nested/example.scss", "api/nested/example.ts");
   assert.deepEqual(validateProjects(graph, inventory), []);
 });
 
@@ -194,10 +226,11 @@ function fixture() {
           }),
         }),
         ui: project("ui", {
-          tags: ["type:js-project"],
+          tags: ["type:js-project", "lang:typescript"],
           targets: lifecycle({
             lint: task({ cache: true, inputs: ["eslintConfig"] }),
             "lint:format": task({ cache: true, inputs: ["formatConfig"] }),
+            typecheck: task({ cache: true, inputs: ["typescriptConfig"] }),
           }),
         }),
       },

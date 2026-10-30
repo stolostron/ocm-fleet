@@ -68,6 +68,7 @@
         "runtime": "node -p \"JSON.stringify([process.version, process.platform, process.arch])\""
       }
     ],
+    "typescriptConfig": ["{workspaceRoot}/tsconfig.json", "jsRuntime"],
     "qualityTaskConfig": [
       "{workspaceRoot}/nx.json",
       "{workspaceRoot}/project.json",
@@ -371,6 +372,25 @@
         }
       ]
     },
+    "typecheck": [
+      {
+        "filter": {
+          "projects": ["tag:lang:typescript"]
+        },
+        "metadata": {
+          "description": "Check TypeScript types without emitting build output."
+        },
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "tsc --noEmit -p tsconfig.json",
+          "cwd": "{projectRoot}",
+          "forwardAllArgs": false
+        },
+        "cache": true,
+        "inputs": ["default", "^default", "typescriptConfig"],
+        "outputs": []
+      }
+    ],
     "refresh:inputs": {
       "metadata": {
         "description": "Discard Nx 23.1.2's second-resolution file hashes after source rewrites; retain task cache records."

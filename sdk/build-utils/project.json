@@ -6,7 +6,13 @@
   "root": "sdk/build-utils",
   "sourceRoot": "sdk/build-utils/src",
   "projectType": "library",
-  "tags": ["scope:ui", "type:lib", "type:js-project", "test:vitest"],
+  "tags": [
+    "lang:typescript",
+    "scope:ui",
+    "type:lib",
+    "type:js-project",
+    "test:vitest"
+  ],
   "targets": {
     "fmt": {},
     "verify": {},
@@ -30,6 +36,7 @@
       }
     },
     "test": {},
-    "lint:format": {}
+    "lint:format": {},
+    "typecheck": {}
   }
 }

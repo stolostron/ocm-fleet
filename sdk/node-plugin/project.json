@@ -4,6 +4,7 @@
   "sourceRoot": "sdk/node-plugin/src",
   "projectType": "library",
   "tags": [
+    "lang:typescript",
     "scope:ui",
     "type:lib",
     "visibility:private",
@@ -64,6 +65,7 @@
         "cwd": "sdk/node-plugin"
       }
     },
-    "lint:format": {}
+    "lint:format": {},
+    "typecheck": {}
   }
 }

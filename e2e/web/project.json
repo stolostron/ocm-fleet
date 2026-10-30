@@ -6,7 +6,7 @@
   "root": "e2e/web",
   "sourceRoot": "e2e/web/tests",
   "projectType": "library",
-  "tags": ["scope:web", "type:e2e", "type:js-project"],
+  "tags": ["lang:typescript", "scope:web", "type:e2e", "type:js-project"],
   "targets": {
     "fmt": {},
     "verify": {},
@@ -31,6 +31,14 @@
       },
       "inputs": ["{projectRoot}/**/*.{js,mjs,ts,tsx}", "eslintConfig"]
     },
-    "lint:format": {}
+    "lint:format": {},
+    "typecheck": {
+      "inputs": [
+        "default",
+        "^default",
+        "typescriptConfig",
+        "{workspaceRoot}/e2e/shared/**/*.ts"
+      ]
+    }
   }
 }

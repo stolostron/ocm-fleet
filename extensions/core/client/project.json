@@ -7,6 +7,7 @@
   "sourceRoot": "extensions/core/client/src",
   "projectType": "library",
   "tags": [
+    "lang:typescript",
     "scope:ui",
     "type:lib",
     "federation:remote",
@@ -67,6 +68,9 @@
     },
     "fix:css": {},
     "test": {},
-    "lint:format": {}
+    "lint:format": {},
+    "typecheck": {
+      "dependsOn": ["common:build"]
+    }
   }
 }

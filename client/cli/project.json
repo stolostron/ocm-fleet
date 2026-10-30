@@ -43,19 +43,7 @@
         "cwd": "client/cli"
       }
     },
-    "typecheck": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "inputs": [
-        "{projectRoot}/src/**/*",
-        "{projectRoot}/tsconfig.json",
-        "{workspaceRoot}/tsconfig.json"
-      ],
-      "options": {
-        "command": "tsc --noEmit -p tsconfig.json",
-        "cwd": "client/cli"
-      }
-    },
+    "typecheck": {},
     "lint": {
       "executor": "nx:run-commands",
       "inputs": ["uiSource", "eslintConfig"],

@@ -6,7 +6,13 @@
   "root": "e2e/cli",
   "sourceRoot": "e2e/cli/tests",
   "projectType": "library",
-  "tags": ["scope:cli", "scope:e2e", "type:e2e", "type:js-project"],
+  "tags": [
+    "lang:typescript",
+    "scope:cli",
+    "scope:e2e",
+    "type:e2e",
+    "type:js-project"
+  ],
   "targets": {
     "fmt": {},
     "verify": {},
@@ -69,6 +75,14 @@
         "cwd": "e2e/cli"
       }
     },
-    "lint:format": {}
+    "lint:format": {},
+    "typecheck": {
+      "inputs": [
+        "default",
+        "^default",
+        "typescriptConfig",
+        "{workspaceRoot}/e2e/shared/**/*.ts"
+      ]
+    }
   }
 }

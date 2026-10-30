@@ -6,7 +6,13 @@
   "root": "sdk/common",
   "sourceRoot": "sdk/common/src",
   "projectType": "library",
-  "tags": ["scope:ui", "type:lib", "type:js-project", "test:vitest"],
+  "tags": [
+    "lang:typescript",
+    "scope:ui",
+    "type:lib",
+    "type:js-project",
+    "test:vitest"
+  ],
   "targets": {
     "fmt": {},
     "verify": {},
@@ -20,7 +26,11 @@
         "command": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json && echo '{\"type\":\"module\"}' > dist/esm/package.json && node scripts/generate-dynamic-modules.mjs",
         "cwd": "sdk/common"
       },
-      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig*.json"],
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig*.json",
+        "typescriptConfig"
+      ],
       "outputs": ["{projectRoot}/dist"],
       "dependsOn": ["ocm-fleet:web:generate-icons"]
     },
@@ -31,6 +41,9 @@
       }
     },
     "test": {},
-    "lint:format": {}
+    "lint:format": {},
+    "typecheck": {
+      "dependsOn": ["ocm-fleet:web:generate-icons"]
+    }
   }
 }

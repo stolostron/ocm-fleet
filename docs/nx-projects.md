@@ -18,6 +18,8 @@ Add a `project.json` at the project root, with a unique `name`, a short
 Register npm packages in the root `package.json` workspaces too. Every Go module
 outside `poc/` and deliberate fixtures needs its own Nx project at the module root.
 Keep scope/architecture tags alongside the quality tag; they serve different purposes.
+TypeScript projects also use `lang:typescript`. JavaScript and TypeScript share
+the quality profile; the language tag adds the type-checking capability.
 
 ## Keep agent context current
 
@@ -83,7 +85,11 @@ Leave common commands and ordering in `nx.json`. Source-rewriting targets and
 - **Browser components:** provide `test:ct` for `.ct.tsx` files. Install Playwright's
   Chromium browser locally. Declare only the prerequisites the suite consumes:
   browser aliases can use source, while Node-side package imports may need a build.
-- **Type checks:** add `typecheck` where supported; `check` includes it automatically.
+- **TypeScript:** add `"typecheck": {}`. The shared target runs `tsc --noEmit`
+  against the project's `tsconfig.json`; `check` includes it automatically.
+  Declare prerequisites for generated files or dependency declarations in
+  `dependsOn`, as in `common` and `web`. Include shared sources outside the project
+  root in `inputs`, as in the E2E projects.
 
 Keep integration and end-to-end suites explicit, outside normal `check`/`verify`.
 Dependencies on builds or generated assets belong in `dependsOn`, not in a
@@ -92,7 +98,7 @@ the relevant build outputs absent and `--skip-nx-cache`.
 
 For cacheable checks, include source, fixtures/embedded assets, dependency sources,
 configuration, tool versions, and execution settings that affect results. Retain
-the shared named inputs (`goLintConfig`, `eslintConfig`, `formatConfig`, and
+the shared named inputs (`goLintConfig`, `eslintConfig`, `formatConfig`, `typescriptConfig`, and
 `jsRuntime` as applicable) when overriding `inputs`; arrays replace inherited
 values. Declare build outputs so cache restoration can recreate them.
 
@@ -108,6 +114,7 @@ npx nx run ocm-fleet:generate-agents
 source inventory and resolved Nx graphs without running project tools. It catches
 unregistered Go/npm projects, missing tags/targets, checks omitted from the graph,
 unsafe standard caching settings, and discovered tests/styles without their targets.
+TypeScript sources also require the language tag and an executable `typecheck`.
 It always runs so an unregistered file cannot hide behind an old cache hit.
 The companion `test:nx-projects` exercises these rules using Nx's real graph builder.
 

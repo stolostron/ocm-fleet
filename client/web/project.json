@@ -7,7 +7,13 @@
   "root": "client/web",
   "sourceRoot": "client/web/src",
   "projectType": "application",
-  "tags": ["scope:ui", "type:app", "type:js-project", "test:vitest"],
+  "tags": [
+    "lang:typescript",
+    "scope:ui",
+    "type:app",
+    "type:js-project",
+    "test:vitest"
+  ],
   "implicitDependencies": ["plugins", "@ocm-fleet/kind-plugin"],
   "targets": {
     "fmt": {},
@@ -74,6 +80,9 @@
     },
     "fix:css": {},
     "test": {},
-    "lint:format": {}
+    "lint:format": {},
+    "typecheck": {
+      "dependsOn": ["common:build"]
+    }
   }
 }

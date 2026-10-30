@@ -349,6 +349,65 @@ test("reads real source", () => {
   );
 });
 
+test("TypeScript checks invalidate cached passes for compiler settings and dependency sources", async (t) => {
+  const { root, task } = await fixture(t);
+  const cli = JSON.parse(
+    await readFile(join(root, "client/cli/project.json"), "utf8"),
+  );
+  cli.targets.typecheck = {};
+  cli.implicitDependencies = ["typecheck-dependency"];
+  await writeJSON(root, "client/cli/project.json", cli);
+  const compilerOptions = {
+    strict: true,
+    target: "ES2022",
+    module: "ESNext",
+    moduleResolution: "bundler",
+    types: ["node"],
+    skipLibCheck: true,
+    noUnusedLocals: false,
+    rootDir: ".",
+    outDir: "dist",
+  };
+  await writeJSON(root, "tsconfig.json", { compilerOptions });
+  await writeJSON(root, "client/cli/tsconfig.json", {
+    extends: "../../tsconfig.json",
+    include: ["src/**/*.ts"],
+  });
+  await mkdir(join(root, "sdk/common/src"), { recursive: true });
+  await writeJSON(root, "sdk/common/project.json", {
+    name: "typecheck-dependency",
+    root: "sdk/common",
+    targets: {},
+  });
+  const dependency = join(root, "sdk/common/src/value.ts");
+  await writeFile(dependency, "export const value = 1;\n");
+  await writeFile(
+    join(root, "client/cli/src/example.ts"),
+    'import { value } from "../../../sdk/common/src/value";\nconst unused = 1;\nexport const result: number = value;\n',
+  );
+  await task("typecheck", "cli");
+  await assert.rejects(readFile(join(root, "dist")), {
+    code: "ENOENT",
+  });
+
+  await writeJSON(root, "tsconfig.json", {
+    compilerOptions: { ...compilerOptions, noUnusedLocals: true },
+  });
+  await task("refresh:inputs", "cli");
+  await assert.rejects(task("typecheck", "cli"), (error) => {
+    assert.match(error.stdout + error.stderr, /TS6133.*unused/);
+    return true;
+  });
+
+  await writeJSON(root, "tsconfig.json", { compilerOptions });
+  await writeFile(dependency, 'export const value = "wrong type";\n');
+  await task("refresh:inputs", "cli");
+  await assert.rejects(task("typecheck", "cli"), (error) => {
+    assert.match(error.stdout + error.stderr, /TS2322.*string.*number/);
+    return true;
+  });
+});
+
 test("Nx checks include component tests and omit inferred end-to-end suites", async (t) => {
   const { root, graph } = await fixture(t);
   await mkdir(join(root, "e2e/cli"), { recursive: true });

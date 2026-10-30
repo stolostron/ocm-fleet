@@ -118,7 +118,16 @@ export function validateProjects(graph, inventory) {
     participating.push(project);
     for (const target of lifecycle) requireTarget(project, target);
     const sources = ownedFiles.get(project.root);
+    const hasTypeScript = sources.some((file) =>
+      /\.(?:[cm]?ts|tsx)$/.test(file),
+    );
+    if (hasTypeScript && !tags.includes("lang:typescript"))
+      errors.push(
+        `${project.name}: TypeScript sources require the lang:typescript tag.`,
+      );
     const required = new Set();
+    if (hasTypeScript || tags.includes("lang:typescript"))
+      required.add("typecheck");
     if (tags.includes("type:go-module") || tags.includes("test:vitest"))
       required.add("test");
     if (tags.includes("type:js-project")) required.add("lint:format");
@@ -154,6 +163,10 @@ export function validateProjects(graph, inventory) {
       ],
       ["lint:format", "formatConfig"],
       ["test", tags.includes("test:vitest") ? "jsRuntime" : undefined],
+      [
+        "typecheck",
+        tags.includes("lang:typescript") ? "typescriptConfig" : undefined,
+      ],
     ]) {
       const target = project.targets?.[name];
       if (input && target?.cache && !target.inputs?.includes(input))
