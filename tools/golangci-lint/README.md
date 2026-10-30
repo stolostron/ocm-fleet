@@ -77,9 +77,11 @@ workspaces. They check source files on disk, per-module completion markers, lint
 failure propagation, and Nx's exported task dependencies. These contracts keep
 the tests independent of terminal colors and progress-message formatting. One
 workspace lint-failure test exercises propagation; graphs exported from the actual
-workspace commands check module coverage. Individual failure cases use project
-targets. Nx caches these suites against tooling inputs, rather than application
-source changes.
+workspace commands check Go project selection, including newly added modules.
+Individual failure cases use project targets or their relevant fix/check stages.
+Nx caches these suites against the project definitions and configuration they read,
+rather than application source changes. Fast fileset tests check selected input
+inclusion and exclusion boundaries.
 
 `fmt:go` applies the shared formatters, including import organization. `verify:go`
 does that first, then runs lint and the normal tests. `fix:go` additionally applies
@@ -145,6 +147,9 @@ read-only module resolution and staged dependency files, rejecting any checksum 
 
 The executables go to `bin/tools/`. Nx caches them using tool source,
 module files, the build helper, and the selected compiler and host settings.
+Build inputs exclude documentation, project metadata, Go tests, and test fixtures;
+module tests and lint still include test code. Keep any production embedded assets
+outside those excluded paths, or include them explicitly in the build inputs.
 Application lint cache keys include these inputs too. Building the tool disables
 CGO and ambient Go flags, experiments, and workspace overrides. During analysis,
 only the compiler selection is pinned; application Go flags and CGO settings

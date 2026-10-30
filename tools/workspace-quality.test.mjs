@@ -11,10 +11,16 @@ import {
 } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+// Nx has no public fileset-expansion API; use the pinned implementation so
+// these fileset checks use named inputs and exclusions as Nx reads them.
+import {
+  filterUsingGlobPatterns,
+  getTargetInputs,
+} from "nx/src/hasher/task-hasher";
 
 const run = promisify(execFile);
 const repository = fileURLToPath(new URL("../", import.meta.url));
@@ -33,8 +39,65 @@ test("workspace Nx configuration matches the installed schema", async () => {
   );
 });
 
+test("tooling input filesets include required files and exclude unrelated files", async () => {
+  const config = await json("nx.json");
+  const workspace = await json("project.json");
+  const tooling = await json("tools/golangci-lint/project.json");
+  // These examples check selected fileset boundaries, not dependency discovery
+  // or complete task hashes and cache hits.
+  const cases = [
+    ["test:workspace-quality", "vitest.config.ts", true],
+    ["test:workspace-quality", "sdk/common/project.json", true],
+    ["test:workspace-quality", "e2e/cli/playwright.config.ts", true],
+    ["test:workspace-quality", "client/web/project.json", false],
+    ["test:go-quality", "deploy/aio/project.json", true],
+    ["test:go-quality", "tools/golangci-lint/project.json", true],
+    ["test:go-quality", "client/cli/project.json", false],
+    ["test:go-quality", "tools/golangci-lint/README.md", false],
+    ["setup:golangci-lint", "tools/golangci-lint/main.go", true],
+    ["setup:golangci-lint", "tools/golangci-lint/go.sum", true],
+    ["setup:golangci-lint", "tools/golangci-lint/cmd/new/analyzer.go", true],
+    ["setup:golangci-lint", "tools/golangci-lint/cmd/new/embedded.txt", true],
+    ["setup:golangci-lint", "tools/golangci-lint/README.md", false],
+    ["setup:golangci-lint", "tools/golangci-lint/project.json", false],
+    [
+      "setup:golangci-lint",
+      "tools/golangci-lint/cmd/format-go/main_test.go",
+      false,
+    ],
+    [
+      "test:golangci-lint-module",
+      "tools/golangci-lint/cmd/format-go/main_test.go",
+      true,
+    ],
+    [
+      "test:golangci-lint-module",
+      "tools/golangci-lint/testdata/input.go",
+      true,
+    ],
+    ["lint", "tools/golangci-lint/cmd/format-go/main_test.go", true],
+    ["test:golangci-lint-config", "nx.json", false],
+    ["test:golangci-lint-config", "project.json", false],
+    ["test:golangci-lint-config", "tools/golangci-lint/README.md", false],
+    ["test:golangci-lint-config", "tools/golangci-lint/project.json", false],
+  ];
+  for (const [target, path, expected] of cases) {
+    const project = target === "lint" ? tooling : workspace;
+    const { selfInputs } = getTargetInputs(config, { data: project }, target);
+    const patterns = selfInputs.map((input) =>
+      input.replaceAll("{workspaceRoot}", "."),
+    );
+    assert.equal(
+      filterUsingGlobPatterns(project.root, [{ file: path }], patterns).length >
+        0,
+      expected,
+      `${target}: fileset must ${expected ? "include" : "exclude"} ${path}`,
+    );
+  }
+});
+
 test("workspace verification formats Go, TypeScript, styles and protobuf before checks", async (t) => {
-  const { root, task } = await fixture(t);
+  const { root, task, tasks } = await fixture(t, { workspaceChecks: true });
   await task("verify");
   assert.match(
     await readFile(join(root, "server/example.go"), "utf8"),
@@ -62,49 +125,57 @@ test("workspace verification formats Go, TypeScript, styles and protobuf before 
   // A second check should reuse successful checks of the rewritten inputs.
   await task("check");
   assert.equal(await readFile(join(root, "tested"), "utf8"), "passed");
+
+  // Reuse the clean workspace rather than formatting a second fixture just to
+  // establish the baseline for read-only formatting and cache checks.
+  await t.test(
+    "format checks catch configuration and documentation drift without rewriting files",
+    async () => {
+      const files = [
+        ["client/cli/settings.json", '{"value":1}\n'],
+        ["docs/example.md", "#  Example\n"],
+        [".github/workflows/example.yaml", "name:   Example\n"],
+      ];
+      const rejectDrift = () =>
+        assert.rejects(tasks("lint:format", ["cli", "ocm-fleet"]), (error) => {
+          assert.equal(error.code, 1);
+          for (const [path] of files)
+            assert.ok(
+              (error.stdout + error.stderr).includes(basename(path)),
+              path,
+            );
+          return true;
+        });
+      for (const [path, source] of files) {
+        await mkdir(dirname(join(root, path)), { recursive: true });
+        await writeFile(join(root, path), source);
+      }
+      await rejectDrift();
+      for (const [path, source] of files) {
+        assert.equal(await readFile(join(root, path), "utf8"), source);
+      }
+      await task("fmt", "cli");
+      await task("fmt:workspace");
+      await tasks("lint:format", ["cli", "ocm-fleet"]);
+      // A prior success must not hide subsequent project or workspace drift.
+      for (const [path, source] of files)
+        await writeFile(join(root, path), source);
+      await task("refresh:inputs");
+      await rejectDrift();
+    },
+  );
 });
 
-test("workspace lint is read-only and propagates findings", async (t) => {
+test("project lint is read-only and propagates findings", async (t) => {
   const { root, task } = await fixture(t);
   const path = join(root, "client/cli/src/example.ts");
   const source = await readFile(path, "utf8");
-  await assert.rejects(task("lint"));
+  await assert.rejects(task("lint", "cli"));
   assert.equal(await readFile(path, "utf8"), source);
 });
 
-test("format checks catch configuration and documentation drift without rewriting files", async (t) => {
-  const { root, task } = await fixture(t);
-  await task("fmt:workspace");
-  await task("fmt", "cli");
-  for (const [project, files] of [
-    ["cli", [["client/cli/settings.json", '{"value":1}\n']]],
-    [
-      "ocm-fleet",
-      [
-        ["docs/example.md", "#  Example\n"],
-        [".github/workflows/example.yaml", "name:   Example\n"],
-      ],
-    ],
-  ]) {
-    for (const [path, source] of files) {
-      await mkdir(dirname(join(root, path)), { recursive: true });
-      await writeFile(join(root, path), source);
-    }
-    await assert.rejects(task("lint:format", project));
-    for (const [path, source] of files) {
-      assert.equal(await readFile(join(root, path), "utf8"), source);
-    }
-    await task(project === "ocm-fleet" ? "fmt:workspace" : "fmt", project);
-    await task("lint:format", project);
-    // A prior success must not hide a subsequent formatting regression.
-    const [path, source] = files[0];
-    await writeFile(join(root, path), source);
-    await assert.rejects(task("lint:format", project));
-  }
-});
-
 test("fmt leaves broader fixes for fix and ignores generated files", async (t) => {
-  const { root, task } = await fixture(t);
+  const { root, task, tasks } = await fixture(t);
   const path = join(root, "client/cli/src/example.ts");
   await writeFile(path, "export let value='hello'\n");
   const styles = join(root, "client/cli/src/example.css");
@@ -112,11 +183,11 @@ test("fmt leaves broader fixes for fix and ignores generated files", async (t) =
   const generated = join(root, "client/cli/dist/example.js");
   await mkdir(dirname(generated));
   await writeFile(generated, "export let value='generated'\n");
-  await task("fmt");
+  await task("fmt", "cli");
   assert.match(await readFile(path, "utf8"), /export let value = "hello";/);
   assert.match(await readFile(styles, "utf8"), /#ffffff/);
-  await assert.rejects(task("check"));
-  await task("fix");
+  await assert.rejects(tasks("lint,lint:css", ["cli"]));
+  await task("fix", "cli");
   assert.match(await readFile(path, "utf8"), /export const value = "hello";/);
   assert.match(await readFile(styles, "utf8"), /#fff;/);
   assert.equal(
@@ -128,7 +199,6 @@ test("fmt leaves broader fixes for fix and ignores generated files", async (t) =
 test("formatter parse failures and unfixable lint findings remain failures", async (t) => {
   const { root, task } = await fixture(t);
   const path = join(root, "client/cli/src/example.ts");
-  await task("fmt");
   await writeFile(path, "export const = ;\n");
   await assert.rejects(task("fmt", "cli"), (error) => {
     assert.equal(error.code, 1);
@@ -136,7 +206,10 @@ test("formatter parse failures and unfixable lint findings remain failures", asy
     return true;
   });
   await writeFile(path, "export const value: any = 'hello'\n");
-  await assert.rejects(task("fix", "cli"), (error) => {
+  // Fix stages deliberately allow remaining findings. Read-only checks must
+  // still reject them; the shared fix orchestration is exercised separately.
+  await task("fix:lint", "cli");
+  await assert.rejects(task("lint", "cli"), (error) => {
     assert.equal(error.code, 1);
     assert.match(error.stdout + error.stderr, /no-explicit-any/);
     return true;
@@ -146,7 +219,8 @@ test("formatter parse failures and unfixable lint findings remain failures", asy
     join(root, "client/cli/src/example.css"),
     "a { color: #zzzzzz; }\n",
   );
-  await assert.rejects(task("fix", "cli"), (error) => {
+  await task("fix:css", "cli");
+  await assert.rejects(task("lint:css", "cli"), (error) => {
     assert.equal(error.code, 1);
     assert.match(error.stdout + error.stderr, /color-no-invalid-hex/);
     return true;
@@ -256,7 +330,7 @@ test("Nx checks include component tests and omit inferred end-to-end suites", as
 // Exercise production Nx definitions with real tools and disposable source files.
 // The normal and component checks observe the formatted files on disk; no test
 // depends on Nx's console output or replaces a formatter/linter implementation.
-async function fixture(t) {
+async function fixture(t, { workspaceChecks = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), "ocm-fleet-workspace-quality-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const directory of [
@@ -429,9 +503,13 @@ async function fixture(t) {
     join(root, "check.mjs"),
     `import assert from "node:assert/strict";
 import { readFile, appendFile } from "node:fs/promises";
-assert.match(await readFile("server/example.go", "utf8"), /func Example\\(\\) int \\{ return 1 \\}/);
 assert.match(await readFile("client/cli/src/example.ts", "utf8"), /value = "hello";/);
-assert.match(await readFile("proto/example/v1/greeting.proto", "utf8"), /  string name = 1;/);
+${
+  workspaceChecks
+    ? `assert.match(await readFile("server/example.go", "utf8"), /func Example\\(\\) int \\{ return 1 \\}/);
+assert.match(await readFile("proto/example/v1/greeting.proto", "utf8"), /  string name = 1;/);`
+    : ""
+}
 await appendFile(process.argv[2], "passed");
 `,
   );
@@ -443,6 +521,9 @@ await appendFile(process.argv[2], "passed");
         NX_DAEMON: "false",
         NX_ISOLATE_PLUGINS: "false",
         NX_NO_CLOUD: "true",
+        // An uncached outer test run must still exercise this fixture's cache.
+        NX_SKIP_NX_CACHE: "false",
+        NX_DISABLE_NX_CACHE: "false",
       },
       maxBuffer: 8 * 1024 * 1024,
     });
@@ -450,6 +531,14 @@ await appendFile(process.argv[2], "passed");
     root,
     task: (target, project = "ocm-fleet") =>
       runNx(["run", `${project}:${target}`, "--outputStyle=static"]),
+    tasks: (targets, projects) =>
+      runNx([
+        "run-many",
+        `--targets=${targets}`,
+        `--projects=${projects.join(",")}`,
+        "--nxBail=false",
+        "--outputStyle=static",
+      ]),
     graph: async (target) => {
       const path = join(root, ".nx", "quality-task-graph.json");
       await mkdir(dirname(path), { recursive: true });

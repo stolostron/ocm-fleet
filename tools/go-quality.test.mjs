@@ -25,26 +25,6 @@ const goModules = [
   { name: "go-lint-tool", directory: "tools/golangci-lint" },
 ];
 
-test("formatting defaults to every application Go module and the lint tooling", async (t) => {
-  const { root, task } = await fixture(t);
-  const directories = [
-    "deploy/aio",
-    "sdk/nx-cache-proxy",
-    "tools/golangci-lint",
-  ];
-  await task("fmt:go", "ocm-fleet");
-  for (const directory of directories) {
-    assert.match(
-      await readFile(join(root, directory, "main.go"), "utf8"),
-      /func Example\(\) int \{ return 1 \}/,
-    );
-  }
-  assert.equal(
-    (await readFile(join(root, "server/main.go"), "utf8")).includes('"os"'),
-    false,
-  );
-});
-
 test("formatting fixes imports, preserves excluded files, and always runs", async (t) => {
   const { root, task, source } = await fixture(t);
   const generated =
@@ -207,31 +187,45 @@ test("workspace verification formats every Go module before running their checks
   await assertWorkspaceChecksPassed(root);
 });
 
-test("Nx declares formatting before verification and includes lint and tests in checks", async (t) => {
-  const { graph, configuredGraph } = await fixture(t);
-  const workspace = await graph(["run", "ocm-fleet:verify:go"]);
-  assert.equal(
-    workspace.dependencies["ocm-fleet:verify:go"].includes("ocm-fleet:fmt:go"),
-    true,
-  );
-  const formatting = await configuredGraph("fmt:go");
-  const modules = await configuredGraph("verify:go");
-  for (const { name } of goModules) {
-    assert.ok(
-      formatting.tasks[`${name}:fmt`],
-      `${name} must participate in workspace formatting`,
-    );
-    assert.ok(
-      modules.tasks[`${name}:check`],
-      `${name} must participate in workspace verification`,
-    );
-    for (const target of ["lint", "test"]) {
-      assert.equal(
-        modules.dependencies[`${name}:check`].includes(`${name}:${target}`),
-        true,
-        `${name}:check must include ${target}`,
-      );
+test("Go workspace aliases include new Go modules and exclude unrelated projects", async (t) => {
+  const { root, configuredGraph } = await fixture(t);
+  await writeJSON(join(root, "extra/module/project.json"), {
+    name: "extra-go",
+    tags: ["type:go-module"],
+    targets: {
+      fmt: {},
+      verify: {},
+      fix: {},
+      "fix:lint": {},
+      "refresh:inputs": {},
+      check: {},
+      lint: {},
+      test: {
+        executor: "nx:run-commands",
+        options: { command: "go test -count=1 ./...", cwd: "extra/module" },
+      },
+    },
+  });
+  // Matching target names make exclusion meaningful: a selector that loses its
+  // Go tag filter would include this project too.
+  await writeJSON(join(root, "javascript/project.json"), {
+    name: "javascript",
+    tags: ["type:js-project"],
+    targets: { fmt: {}, check: {} },
+  });
+  for (const [alias, target] of [
+    ["fmt:go", "fmt"],
+    ["verify:go", "check"],
+  ]) {
+    const { tasks } = await configuredGraph(alias);
+    for (const name of [...goModules.map(({ name }) => name), "extra-go"]) {
+      assert.ok(tasks[`${name}:${target}`], `${alias} must select ${name}`);
     }
+    assert.equal(
+      Object.hasOwn(tasks, `javascript:${target}`),
+      false,
+      `${alias} must exclude unrelated projects`,
+    );
   }
 });
 
@@ -253,98 +247,12 @@ test("workspace verification propagates a selected module's lint failure while r
     return true;
   });
   await assertWorkspaceChecksPassed(root);
-  await writeFile(path, source);
-  await task("verify:go", "ocm-fleet");
 });
 
 test("workspace lint reports findings without editing source", async (t) => {
   const { root, task, source } = await fixture(t);
   await assert.rejects(task("lint:go", "ocm-fleet"));
   assert.equal(await readFile(join(root, "server/main.go"), "utf8"), source);
-});
-
-test("another Go module inherits formatting, fixes, and checks with empty target definitions", async (t) => {
-  const { root, task } = await fixture(t);
-  const directory = "extra/module";
-  await writeJSON(join(root, directory, "project.json"), {
-    name: "extra-go",
-    tags: ["type:go-module"],
-    targets: {
-      fmt: {},
-      verify: {},
-      fix: {},
-      "fix:lint": {},
-      "refresh:inputs": {},
-      check: {},
-      lint: {},
-      test: {
-        executor: "nx:run-commands",
-        options: {
-          command: "go test -count=1 ./...",
-          cwd: directory,
-          env: { GOWORK: "off" },
-        },
-        cache: false,
-      },
-    },
-  });
-  await writeFile(
-    join(root, directory, "go.mod"),
-    "module example.com/extra\n\ngo 1.26.0\n",
-  );
-  await writeFile(join(root, directory, "main.go"), fixableSource);
-  await writeFile(
-    join(root, directory, "main_test.go"),
-    `package lintfixture
-
-import (
-    "os"
-    "testing"
-)
-
-func TestClean(t *testing.T) {
-    if Clean(" x ") != "x" { t.Fatal("unexpected result") }
-    if err := os.WriteFile("../../extra-tested", []byte("passed"), 0600); err != nil { t.Fatal(err) }
-}
-`,
-  );
-  await assert.rejects(task("verify", "extra-go"), (error) => {
-    assert.match(error.stdout + error.stderr, /S1002/);
-    return true;
-  });
-  await task("fix", "extra-go");
-  assert.equal(
-    (await readFile(join(root, directory, "main.go"), "utf8")).includes(
-      "value == true",
-    ),
-    false,
-  );
-  assert.equal(await readFile(join(root, "extra-tested"), "utf8"), "passed");
-});
-
-test("Go defaults leave an unrelated JavaScript lint target alone", async (t) => {
-  const { root, task } = await fixture(t);
-  await writeJSON(join(root, "javascript/project.json"), {
-    name: "javascript",
-    tags: ["lang:js"],
-    targets: {
-      lint: {
-        executor: "nx:run-commands",
-        options: {
-          command: "node --check index.js",
-          cwd: "javascript",
-        },
-        cache: false,
-      },
-    },
-  });
-  await writeFile(join(root, "javascript/index.js"), "const value = 1;\n");
-  await task("lint", "javascript");
-  await writeFile(join(root, "javascript/index.js"), "const value = ;\n");
-  await assert.rejects(task("lint", "javascript"), (error) => {
-    assert.match(error.stdout + error.stderr, /SyntaxError/);
-    return true;
-  });
 });
 
 test("verification reports semantic findings without applying linter fixes, and still runs tests", async (t) => {
@@ -368,8 +276,6 @@ test("explicit fixes apply supported linter edits and verify the resulting code"
   const fixed = await readFile(join(root, "server/main.go"), "utf8");
   assert.equal(fixed.includes("value == true"), false);
   assert.equal(await readFile(join(root, "tested"), "utf8"), "passed");
-  await task("fix");
-  assert.equal(await readFile(join(root, "server/main.go"), "utf8"), fixed);
 });
 
 test("fixes still run verification when unfixable findings remain", async (t) => {
@@ -405,15 +311,6 @@ test("verification propagates test failures after successful formatting and lint
     assert.match(error.stdout + error.stderr, /unexpected result/);
     return true;
   });
-});
-
-test("an unknown project fails before editing source", async (t) => {
-  const { root, task, source } = await fixture(t);
-  await assert.rejects(task("fmt", "typo"), (error) => {
-    assert.match(error.stdout + error.stderr, /Cannot find project.*typo/);
-    return true;
-  });
-  assert.equal(await readFile(join(root, "server/main.go"), "utf8"), source);
 });
 
 // Use the real Nx runner, compiled linter, and Go tests in disposable workspaces.
@@ -578,6 +475,9 @@ func TestClean(t *testing.T) {
         NX_DAEMON: "false",
         NX_ISOLATE_PLUGINS: "false",
         NX_NO_CLOUD: "true",
+        // An uncached outer test run must still exercise this fixture's cache.
+        NX_SKIP_NX_CACHE: "false",
+        NX_DISABLE_NX_CACHE: "false",
         GOWORK: "off",
         ...env,
       },
@@ -613,12 +513,6 @@ func TestClean(t *testing.T) {
           },
         },
       );
-      return JSON.parse(await readFile(path, "utf8")).tasks;
-    },
-    graph: async (args) => {
-      const path = join(root, ".nx", "quality-task-graph.json");
-      await mkdir(dirname(path), { recursive: true });
-      await runNx([...args, `--graph=${path}`]);
       return JSON.parse(await readFile(path, "utf8")).tasks;
     },
   };

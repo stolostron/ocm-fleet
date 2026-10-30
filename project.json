@@ -197,7 +197,14 @@
         "qualityTaskConfig",
         "eslintConfig",
         "{workspaceRoot}/tools/workspace-quality.test.mjs",
-        "{workspaceRoot}/stylelint.config.mjs",
+        "{workspaceRoot}/tools/golangci-lint/project.json",
+        "{workspaceRoot}/server/project.json",
+        "{workspaceRoot}/client/cli/project.json",
+        "{workspaceRoot}/proto/project.json",
+        "{workspaceRoot}/sdk/common/project.json",
+        "{workspaceRoot}/sdk/build-utils/project.json",
+        "{workspaceRoot}/e2e/cli/project.json",
+        "{workspaceRoot}/vitest.config.ts",
         "{workspaceRoot}/.gitignore",
         "{workspaceRoot}/e2e/cli/playwright.config.ts"
       ],
@@ -290,7 +297,7 @@
         "command": "node tools/golangci-lint.mjs build"
       },
       "cache": true,
-      "inputs": ["goLintTool"],
+      "inputs": ["goLintToolBuild"],
       "outputs": [
         "{workspaceRoot}/bin/tools/golangci-lint",
         "{workspaceRoot}/bin/tools/goimports",
@@ -328,8 +335,6 @@
       "inputs": [
         "goLintConfig",
         "{workspaceRoot}/tools/golangci-lint-config.test.mjs",
-        "{workspaceRoot}/nx.json",
-        "{workspaceRoot}/project.json",
         "jsRuntime"
       ],
       "outputs": []
@@ -343,7 +348,11 @@
       "cache": true,
       "inputs": [
         "qualityTaskConfig",
-        "{workspaceRoot}/tools/go-quality.test.mjs"
+        "{workspaceRoot}/tools/go-quality.test.mjs",
+        "{workspaceRoot}/server/project.json",
+        "{workspaceRoot}/deploy/aio/project.json",
+        "{workspaceRoot}/sdk/nx-cache-proxy/project.json",
+        "{workspaceRoot}/tools/golangci-lint/project.json"
       ],
       "outputs": []
     },

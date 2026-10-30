@@ -120,7 +120,7 @@ test("still rejects modules requiring a newer Go version than the linter support
   });
 });
 
-test("reports unchecked production errors with a failing exit status", async (t) => {
+test("reports unchecked production errors with a failing exit status and absolute paths", async (t) => {
   const { directory, lint } = await fixture(t);
   await writeFile(join(directory, "main.go"), uncheckedError);
   await assert.rejects(lint(), (error) => {
@@ -129,15 +129,6 @@ test("reports unchecked production errors with a failing exit status", async (t)
       error.stdout + error.stderr,
       /main\.go.*os\.Chdir.*not checked.*errcheck/,
     );
-    return true;
-  });
-});
-
-test("uses absolute diagnostic paths from the shared config", async (t) => {
-  const { directory, lint } = await fixture(t);
-  await writeFile(join(directory, "main.go"), uncheckedError);
-  await assert.rejects(lint(), (error) => {
-    assert.equal(error.code, 1);
     assert.match(error.stdout + error.stderr, /^\/[^\n]*\/main\.go:\d+:\d+:/m);
     return true;
   });

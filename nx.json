@@ -27,12 +27,25 @@
   ],
   "namedInputs": {
     "goSource": ["{projectRoot}/**/*"],
-    "goLintTool": [
-      "{workspaceRoot}/tools/golangci-lint/**/*",
+    "goLintToolchain": [
       "{workspaceRoot}/tools/golangci-lint.mjs",
       {
         "runtime": "node tools/golangci-lint.mjs env"
       }
+    ],
+    "goLintToolModule": [
+      "goLintToolchain",
+      "{workspaceRoot}/tools/golangci-lint/**/*",
+      "!{workspaceRoot}/tools/golangci-lint/**/*.md"
+    ],
+    "goLintTool": [
+      "goLintToolModule",
+      "!{workspaceRoot}/tools/golangci-lint/**/project.json"
+    ],
+    "goLintToolBuild": [
+      "goLintTool",
+      "!{workspaceRoot}/tools/golangci-lint/**/*_test.go",
+      "!{workspaceRoot}/tools/golangci-lint/**/testdata/**/*"
     ],
     "goLintConfig": [
       "{workspaceRoot}/.golangci.yaml",
@@ -58,8 +71,9 @@
     "qualityTaskConfig": [
       "{workspaceRoot}/nx.json",
       "{workspaceRoot}/project.json",
-      "{workspaceRoot}/**/project.json",
-      "goLintConfig",
+      "{workspaceRoot}/.golangci.yaml",
+      "goLintToolModule",
+      "goRuntime",
       "jsRuntime"
     ],
     "goRuntime": [
