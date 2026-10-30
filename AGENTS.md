@@ -7,6 +7,7 @@ This is the monorepo for OCM Fleet, an experimental Open Cluster Management vari
 - Run workspace tasks (build, test, lint, proto, image, infrastructure) through the repository's Nx CLI: `npx nx`. Deployment scripts provide platform-specific checks.
 - Iterate with the relevant test target; finish with `npx nx run <project>:verify` (format/import fixes, lint, and available tests/type checks). Use `npx nx run ocm-fleet:verify` across projects; Go-only tasks retain the `:go` suffix. Integration and end-to-end suites stay explicit.
 - Broader linter fixes are opt-in: `npx nx run <project>:fix`; review the diff.
+- For new projects or quality targets, follow [the Nx project setup guide](docs/nx-projects.md); `ocm-fleet:lint:nx-projects` checks participation and shared task policy.
 
 ## Understanding the domain
 

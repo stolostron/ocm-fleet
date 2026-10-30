@@ -63,6 +63,7 @@
       "dependsOn": [
         "lint:workspace",
         "lint:format",
+        "lint:nx-projects",
         {
           "projects": ["*", "!ocm-fleet"],
           "target": "lint"
@@ -89,6 +90,8 @@
         "test:generate-agents",
         "test:eslint-config",
         "test:workspace-quality",
+        "lint:nx-projects",
+        "test:nx-projects",
         {
           "projects": ["*", "!ocm-fleet"],
           "target": "check"
@@ -199,6 +202,27 @@
         "{workspaceRoot}/e2e/cli/playwright.config.ts"
       ],
       "outputs": []
+    },
+    "test:nx-projects": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test tools/nx-projects.test.mjs",
+        "env": { "NX_DAEMON": "false" }
+      },
+      "cache": true,
+      "inputs": ["{workspaceRoot}/tools/nx-projects*.mjs", "jsRuntime"],
+      "outputs": []
+    },
+    "lint:nx-projects": {
+      "metadata": {
+        "description": "Check project quality participation and task policy against the current source inventory."
+      },
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/nx-projects.mjs",
+        "env": { "NX_DAEMON": "false" }
+      },
+      "cache": false
     },
     "fmt:go": {
       "executor": "nx:run-commands",

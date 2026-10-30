@@ -151,6 +151,9 @@ component test, and typecheck targets; `fix:lint` applies broader fixes before
 that check. Nx handles project selection and ordering without a task wrapper.
 Generated files and analyzer `testdata` fixtures retain their formatting;
 standalone `poc/` modules are outside this workflow.
+For new projects, follow [the Nx project setup guide](docs/nx-projects.md).
+CI's `ocm-fleet:lint:nx-projects` checks registration, lifecycle targets, and
+participation in the resolved task graph.
 
 Go quality tasks build or restore the cached tool and validate the shared config
 automatically. The checked-in [`.golangci.yaml`](.golangci.yaml) starts from OCM's
@@ -168,8 +171,9 @@ verification starts a fresh Nx invocation so checks hash the resulting files.
 Prettier and ESLint use content-based file caches within those rewrite stages.
 Tooling regression tests are cached against their scripts, task definitions,
 configuration, and tool versions. UI unit tests run per project, with dependency
-sources included in their cache keys. Component tests consume source directly,
-so they generate the icon manifest but skip production builds. Server tests,
+sources included in their cache keys. Component tests consume source directly
+and generate the icon manifest. Plugin component tests also build `common` for
+their Node-side imports; application bundles are unnecessary. Server tests,
 including Postgres checks, are cached against source, assets, dependencies, and
 Go/test settings. Use `npx nx run server:test --skip-nx-cache` for a fresh run.
 CI runs `ocm-fleet:check` once, without source rewrites: application and tooling
@@ -182,8 +186,8 @@ run, add `CI` to main's required status checks alongside the existing image chec
 Go compilation/modules, npm downloads, and golangci-lint analysis are cached across
 CI runs. Nx shares setup within the job; optional HTTP caching can also reuse
 task results across runners (see [cache setup](docs/nx-remote-cache.md#github-actions)).
-CI limits Nx to three concurrent tasks, avoids production builds for component
-tests, and cancels superseded pull-request runs. No cache is required to pass.
+CI limits Nx to three concurrent tasks, limits component-test builds to required
+packages, and cancels superseded pull-request runs. No cache is required to pass.
 
 To update the linter, select an explicit stable v2 release:
 

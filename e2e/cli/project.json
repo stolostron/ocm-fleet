@@ -37,7 +37,7 @@
         "{projectRoot}/plugin/**/*",
         "{workspaceRoot}/e2e/shared/**/*.ts",
         "{workspaceRoot}/e2e/sandbox/**/*.mjs",
-        "{workspaceRoot}/eslint.config.mjs"
+        "eslintConfig"
       ]
     },
     "test:e2e": {
