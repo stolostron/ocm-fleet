@@ -50,7 +50,7 @@
         "command": "playwright test",
         "cwd": "extensions/core/client"
       },
-      "dependsOn": ["ocm-fleet:web:generate-icons"]
+      "dependsOn": ["common:build"]
     },
     "lint": {
       "executor": "@nx/eslint:lint",
