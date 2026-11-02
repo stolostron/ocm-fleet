@@ -29,7 +29,6 @@
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "fake-indexeddb": "^6.2.5",
     "husky": "^9.1.7",
-    "lint-staged": "^16.4.0",
     "nx": "23.3.1",
     "prettier": "^3.8.1",
     "stylelint": "^17.13.0",
@@ -39,7 +38,9 @@
     "zx": "^8.8.5"
   },
   "scripts": {
-    "nx": "nx"
+    "nx": "nx",
+    "prepare": "husky",
+    "verify:commit": "node tools/verify-commit.mjs"
   },
   "dependencies": {
     "dompurify": "^3.4.13",

@@ -15,6 +15,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # Skip Git hook installation during npm ci and hook execution in CI;
+  # this workflow runs the Nx checks directly.
+  HUSKY: "0"
   TESTCONTAINERS_PROVIDER: docker
   NX_DAEMON: "false"
   GOTESTSUM_FORMAT: github-actions

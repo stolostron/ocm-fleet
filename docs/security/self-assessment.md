@@ -117,7 +117,7 @@ Isolation is provided by authentication, tenant/workspace authorization, process
 
 ## Development and support
 
-The repository has Go unit tests, selected Docker-based integration tests, Kubernetes race tests, deploy-script tests, and CodeQL for Go. The UI has lint and Vitest commands. This draft does not claim signed releases, published SBOMs, reproducible builds, complete fuzz coverage, or a mature incident-response process. Those are assessment gaps.
+The repository has Go unit tests, selected Docker-based integration tests, Kubernetes race tests, deploy-script tests, and CodeQL for Go, JavaScript/TypeScript (including repository tooling), and GitHub Actions. The UI has lint and Vitest commands. This draft does not claim signed releases, published SBOMs, reproducible builds, complete fuzz coverage, or a mature incident-response process. Those are assessment gaps.
 
 Security reports should use the repository's private security-reporting path when one is configured. The response owner, notification timeline, embargo policy, and patch process need to be documented before this assessment is complete.
 

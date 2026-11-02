@@ -7,6 +7,12 @@
   "plugins": [
     {
       "plugin": "@nx/docker",
+      // We build this image through the explicit image:* targets. Automatic Docker
+      // task discovery would add targets whose image tag uses the checkout's absolute path.
+      // Nx includes those targets in cache keys for other root-project tasks, so
+      // the pre-commit hook's temporary checkout would rerun checks that already
+      // passed in the working checkout. Excluding this file preserves cache reuse.
+      "exclude": ["Dockerfile"],
       "options": {
         "buildTarget": {
           "name": "docker:build"
@@ -30,7 +36,11 @@
     "goLintToolchain": [
       "{workspaceRoot}/tools/golangci-lint.mjs",
       {
-        "runtime": "node tools/golangci-lint.mjs env"
+        // Nx hashes stdout and stderr from this toolchain fingerprint command.
+        // Nested Nx runs can set conflicting color variables, making Node emit
+        // a warning containing its process ID. Suppress warnings for this probe
+        // so identical toolchains reuse cached checks across runs.
+        "runtime": "node --no-warnings tools/golangci-lint.mjs env"
       }
     ],
     "goLintToolModule": [

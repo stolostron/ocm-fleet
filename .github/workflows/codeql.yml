@@ -24,6 +24,9 @@ jobs:
           - language: go
             build-mode: manual
           - language: javascript-typescript
+            build-mode: none
+          - language: actions
+            build-mode: none
 
     steps:
       - name: Checkout
@@ -42,15 +45,9 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          # paths apply to JS/TS only. Go coverage comes from the build step below.
+          # Scan source by default, including tooling and local actions, so new
+          # directories stay covered. Go coverage comes from the builds below.
           config: |
-            paths:
-              - client/web
-              - sdk/common
-              - sdk/build-utils
-              - extensions/core/client
-              - extensions/kind/client
-              - e2e
             paths-ignore:
               - "**/node_modules"
               - "**/dist"
