@@ -2,11 +2,11 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "ocm/v1alpha/manifest_result.proto";
-import "ocm/v1alpha/provisioned_target.proto";
 import "ocm/v1alpha/produced_secret.proto";
+import "ocm/v1alpha/provisioned_target.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // DeliveryCompleted reports the terminal outcome of a delivery attempt.
 message DeliveryCompleted {

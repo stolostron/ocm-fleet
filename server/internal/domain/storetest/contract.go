@@ -15,6 +15,23 @@ import (
 // Factory creates a fresh [domain.Store] for each test invocation.
 type Factory func(t *testing.T) domain.Store
 
+// NewObserver reports unexpected transaction cleanup failures to the test.
+func NewObserver(testingT testing.TB) domain.StoreObserver {
+	return testObserver{testingT: testingT}
+}
+
+type testObserver struct {
+	testingT testing.TB
+}
+
+func (observer testObserver) RollbackFailed(ctx context.Context, err error) {
+	observer.testingT.Helper()
+	if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		return
+	}
+	observer.testingT.Errorf("transaction rollback: %v", err)
+}
+
 func sampleFulfillment(id domain.FulfillmentID, now time.Time) *domain.Fulfillment {
 	f := domain.FulfillmentFromSnapshot(domain.FulfillmentSnapshot{
 		ID:        id,
@@ -34,6 +51,56 @@ func sampleFulfillment(id domain.FulfillmentID, now time.Time) *domain.Fulfillme
 
 // Run exercises the [domain.Store] contract.
 func Run(t *testing.T, factory Factory) {
+	t.Run("CancellationRollsBack", func(t *testing.T) {
+		store := factory(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		tx, err := store.Begin(ctx)
+		if err != nil {
+			cancel()
+			t.Fatalf("Begin: %v", err)
+		}
+		defer tx.RollbackOnExit()
+		defer cancel()
+		if err := tx.Targets().Create(ctx, domain.TargetInfoFromSnapshot(domain.TargetInfoSnapshot{ID: "t1", Name: "cluster-a"})); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		cancel()
+		tx.RollbackOnExit()
+		readTx, err := store.BeginReadOnly(context.Background())
+		if err != nil {
+			t.Fatalf("BeginReadOnly: %v", err)
+		}
+		defer readTx.RollbackOnExit()
+		if _, err := readTx.Targets().Get(context.Background(), "t1"); !errors.Is(err, domain.ErrNotFound) {
+			t.Fatalf("Get after cancellation = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("RollbackOnExitReverts", func(t *testing.T) {
+		store := factory(t)
+		ctx := context.Background()
+		tx, err := store.Begin(ctx)
+		if err != nil {
+			t.Fatalf("Begin: %v", err)
+		}
+		defer tx.RollbackOnExit()
+		if err := tx.Targets().Create(ctx, domain.TargetInfoFromSnapshot(domain.TargetInfoSnapshot{ID: "t1", Name: "cluster-a"})); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		tx.RollbackOnExit()
+		if err := tx.Commit(); err == nil {
+			t.Fatal("Commit after RollbackOnExit succeeded")
+		}
+		readTx, err := store.BeginReadOnly(ctx)
+		if err != nil {
+			t.Fatalf("BeginReadOnly: %v", err)
+		}
+		defer readTx.RollbackOnExit()
+		if _, err := readTx.Targets().Get(ctx, "t1"); !errors.Is(err, domain.ErrNotFound) {
+			t.Fatalf("Get after rollback = %v, want ErrNotFound", err)
+		}
+	})
+
 	t.Run("CommitPersists", func(t *testing.T) {
 		store := factory(t)
 		ctx := context.Background()
@@ -42,7 +109,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		if err := tx.Targets().Create(ctx, domain.TargetInfoFromSnapshot(domain.TargetInfoSnapshot{ID: "t1", Name: "cluster-a"})); err != nil {
 			t.Fatalf("Create: %v", err)
@@ -55,7 +122,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		defer tx2.Rollback()
+		defer tx2.RollbackOnExit()
 
 		got, err := tx2.Targets().Get(ctx, "t1")
 		if err != nil {
@@ -86,7 +153,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		defer tx2.Rollback()
+		defer tx2.RollbackOnExit()
 
 		_, err = tx2.Targets().Get(ctx, "t1")
 		if !errors.Is(err, domain.ErrNotFound) {
@@ -117,7 +184,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		defer tx2.Rollback()
+		defer tx2.RollbackOnExit()
 
 		_, err = tx2.Targets().Get(ctx, "t1")
 		if err != nil {
@@ -134,7 +201,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		if err := tx.Targets().Create(ctx, domain.TargetInfoFromSnapshot(domain.TargetInfoSnapshot{ID: "t1", Name: "cluster-a"})); err != nil {
 			t.Fatalf("Create target: %v", err)
@@ -159,7 +226,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		defer tx2.Rollback()
+		defer tx2.RollbackOnExit()
 
 		if _, err := tx2.Targets().Get(ctx, "t1"); err != nil {
 			t.Fatalf("target not found after cross-repo commit: %v", err)
@@ -187,7 +254,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		r := domain.NewPlatformResource(name, nil, fixed)
 		if err := tx.ResourceIdentities().Create(ctx, r); err != nil {
@@ -201,7 +268,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		defer tx2.Rollback()
+		defer tx2.RollbackOnExit()
 
 		got, err := tx2.ResourceIdentities().GetByName(ctx, name)
 		if err != nil {
@@ -221,7 +288,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		if err := tx.Fulfillments().Create(ctx, sampleFulfillment("f-acc", fixed)); err != nil {
 			t.Fatalf("Fulfillments().Create: %v", err)
 		}
@@ -233,7 +300,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		defer tx2.Rollback()
+		defer tx2.RollbackOnExit()
 
 		got, err := tx2.Fulfillments().Get(ctx, "f-acc")
 		if err != nil {

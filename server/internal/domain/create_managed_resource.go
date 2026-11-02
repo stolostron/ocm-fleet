@@ -49,7 +49,7 @@ func (s *CreateManagedResourceWorkflowSpec) PersistManagedResource() Activity[Cr
 		if err != nil {
 			return ExtensionResourceView{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		mgmt := in.TypeDef.Management()
 		if mgmt == nil {

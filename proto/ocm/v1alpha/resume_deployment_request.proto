@@ -2,11 +2,11 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // Request message for
 // [DeploymentService.ResumeDeployment][ocm.v1alpha.DeploymentService.ResumeDeployment].
@@ -15,9 +15,7 @@ message ResumeDeploymentRequest {
   // Format: deployments/{deployment}
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "open-cluster-management.io/Deployment"
-    }
+    (google.api.resource_reference) = {type: "open-cluster-management.io/Deployment"}
   ];
 
   // ECDSA-P256-SHA256 signature over sha256(canonical signed envelope).

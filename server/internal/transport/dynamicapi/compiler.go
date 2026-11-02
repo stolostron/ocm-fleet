@@ -8,6 +8,7 @@ import (
 
 	"github.com/bufbuild/protocompile"
 	"github.com/bufbuild/protocompile/reporter"
+
 	// Register standard API annotations for runtime-compiled addon schemas.
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	"google.golang.org/protobuf/reflect/protoreflect"

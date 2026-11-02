@@ -365,10 +365,10 @@ func Run(t *testing.T, infraFactory InfraFactory, registryFactory RegistryFactor
 
 		tgt, err := tx.Targets().Get(ctx, "k8s-new-cluster")
 		if err != nil {
-			tx.Rollback()
+			tx.RollbackOnExit()
 			t.Fatalf("provisioned target not found: %v", err)
 		}
-		tx.Rollback()
+		tx.RollbackOnExit()
 
 		if tgt.Type() != "kubernetes" {
 			t.Errorf("target type = %q, want %q", tgt.Type(), "kubernetes")
@@ -480,7 +480,7 @@ func Run(t *testing.T, infraFactory InfraFactory, registryFactory RegistryFactor
 			if err != nil {
 				t.Fatalf("Begin: %v", err)
 			}
-			defer tx.Rollback()
+			defer tx.RollbackOnExit()
 			view, err := tx.Deployments().GetView(ctx, "deployments/d1")
 			if err != nil {
 				t.Fatalf("GetView: %v", err)
@@ -851,7 +851,7 @@ func registerTargets(ctx context.Context, t *testing.T, infra Infra, ids ...stri
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	for _, id := range ids {
 		must(t, tx.Targets().Create(ctx, domain.TargetInfoFromSnapshot(domain.TargetInfoSnapshot{
 			ID:   domain.TargetID(id),
@@ -870,7 +870,7 @@ func awaitObservedGeneration(ctx context.Context, t *testing.T, infra Infra, id 
 			t.Fatalf("Begin: %v", err)
 		}
 		view, err := tx.Deployments().GetView(ctx, id)
-		tx.Rollback()
+		tx.RollbackOnExit()
 		if err != nil {
 			t.Fatalf("GetView(%s): %v", id, err)
 		}
@@ -893,7 +893,7 @@ func awaitDeploymentPaused(ctx context.Context, t *testing.T, infra Infra, id do
 			t.Fatalf("Begin: %v", err)
 		}
 		view, err := tx.Deployments().GetView(ctx, id)
-		tx.Rollback()
+		tx.RollbackOnExit()
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("GetView(%s): %v", id, err)
 		}
@@ -916,7 +916,7 @@ func awaitDeploymentState(ctx context.Context, t *testing.T, infra Infra, id dom
 			t.Fatalf("Begin: %v", err)
 		}
 		view, err := tx.Deployments().GetView(ctx, id)
-		tx.Rollback()
+		tx.RollbackOnExit()
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("GetView(%s): %v", id, err)
 		}
@@ -957,7 +957,7 @@ func queryDeliveries(ctx context.Context, t *testing.T, infra Infra, depName dom
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	view, err := tx.Deployments().GetView(ctx, depName)
 	if err != nil {
 		t.Fatalf("GetView(%s): %v", depName, err)
@@ -975,7 +975,7 @@ func queryDeliveriesByFulfillment(ctx context.Context, t *testing.T, infra Infra
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	records, err := tx.Deliveries().ListByFulfillment(ctx, fID)
 	if err != nil {
 		t.Fatalf("ListByFulfillment: %v", err)
@@ -989,7 +989,7 @@ func queryDeploymentView(ctx context.Context, t *testing.T, infra Infra, id doma
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	return tx.Deployments().GetView(ctx, id)
 }
 
@@ -999,7 +999,7 @@ func fulfillmentID(ctx context.Context, t *testing.T, infra Infra, id domain.Res
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	view, err := tx.Deployments().GetView(ctx, id)
 	if err != nil {
 		t.Fatalf("GetView(%s): %v", id, err)
@@ -1032,7 +1032,7 @@ func seedFulfillmentCreating(ctx context.Context, t *testing.T, infra Infra, dep
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	must(t, tx.Fulfillments().Create(ctx, f))
 	must(t, tx.Deployments().Create(ctx, dep))
 	must(t, tx.Commit())
@@ -1045,7 +1045,7 @@ func createTargets(ctx context.Context, t *testing.T, infra Infra, targets ...do
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	for _, tgt := range targets {
 		must(t, tx.Targets().Create(ctx, tgt))
 	}

@@ -200,8 +200,12 @@ const FleetSearch = ({ onStateChange }: FleetSearchProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const blockCloseRef = useRef(false);
   const requestIdRef = useRef(0);
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const advancedDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const advancedDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const advancedRequestIdRef = useRef(0);
 
   const total = totalCount(results);

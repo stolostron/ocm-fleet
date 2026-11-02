@@ -6,8 +6,20 @@
   "root": "sdk/common",
   "sourceRoot": "sdk/common/src",
   "projectType": "library",
-  "tags": ["scope:ui", "type:lib"],
+  "tags": [
+    "lang:typescript",
+    "scope:ui",
+    "type:lib",
+    "type:js-project",
+    "test:vitest"
+  ],
   "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
     "build": {
       "executor": "nx:run-commands",
       "options": {
@@ -16,7 +28,8 @@
       },
       "inputs": [
         "{projectRoot}/src/**/*",
-        "{projectRoot}/tsconfig*.json"
+        "{projectRoot}/tsconfig*.json",
+        "typescriptConfig"
       ],
       "outputs": ["{projectRoot}/dist"],
       "dependsOn": ["ocm-fleet:web:generate-icons"]
@@ -27,15 +40,10 @@
         "lintFilePatterns": ["{projectRoot}/src/**/*.{ts,tsx}"]
       }
     },
-    "test": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "npx vitest run --config vitest.config.ts"
-      },
-      "inputs": [
-        "{projectRoot}/src/**/*",
-        "{workspaceRoot}/vitest.config.ts"
-      ]
+    "test": {},
+    "lint:format": {},
+    "typecheck": {
+      "dependsOn": ["ocm-fleet:web:generate-icons"]
     }
   }
 }

@@ -37,11 +37,11 @@ paths:
         "200":
           description: A successful response.
           schema:
-            $ref: '#/definitions/v1alphaQueryResourcesResponse'
+            $ref: "#/definitions/v1alphaQueryResourcesResponse"
         default:
           description: An unexpected error response.
           schema:
-            $ref: '#/definitions/rpcStatus'
+            $ref: "#/definitions/rpcStatus"
       parameters:
         - name: scope
           description: |-
@@ -111,18 +111,18 @@ paths:
         "200":
           description: A successful response.
           schema:
-            $ref: '#/definitions/v1alphaAuthMethod'
+            $ref: "#/definitions/v1alphaAuthMethod"
         default:
           description: An unexpected error response.
           schema:
-            $ref: '#/definitions/rpcStatus'
+            $ref: "#/definitions/rpcStatus"
       parameters:
         - name: authMethod
           description: The auth method to create.
           in: body
           required: true
           schema:
-            $ref: '#/definitions/v1alphaAuthMethod'
+            $ref: "#/definitions/v1alphaAuthMethod"
         - name: authMethodId
           description: |-
             The ID to use for the auth method, which becomes the final component
@@ -140,11 +140,11 @@ paths:
         "200":
           description: A successful response.
           schema:
-            $ref: '#/definitions/v1alphaListDeploymentsResponse'
+            $ref: "#/definitions/v1alphaListDeploymentsResponse"
         default:
           description: An unexpected error response.
           schema:
-            $ref: '#/definitions/rpcStatus'
+            $ref: "#/definitions/rpcStatus"
       parameters:
         - name: pageSize
           description: |-
@@ -171,18 +171,18 @@ paths:
         "200":
           description: A successful response.
           schema:
-            $ref: '#/definitions/v1alphaDeployment'
+            $ref: "#/definitions/v1alphaDeployment"
         default:
           description: An unexpected error response.
           schema:
-            $ref: '#/definitions/rpcStatus'
+            $ref: "#/definitions/rpcStatus"
       parameters:
         - name: deployment
           description: The deployment to create.
           in: body
           required: true
           schema:
-            $ref: '#/definitions/v1alphaDeployment'
+            $ref: "#/definitions/v1alphaDeployment"
         - name: deploymentId
           description: |-
             The ID to use for the deployment, which becomes the final component
@@ -222,11 +222,11 @@ paths:
         "200":
           description: A successful response.
           schema:
-            $ref: '#/definitions/v1alphaSignerEnrollment'
+            $ref: "#/definitions/v1alphaSignerEnrollment"
         default:
           description: An unexpected error response.
           schema:
-            $ref: '#/definitions/rpcStatus'
+            $ref: "#/definitions/rpcStatus"
       parameters:
         - name: body
           description: |-
@@ -239,7 +239,7 @@ paths:
           in: body
           required: true
           schema:
-            $ref: '#/definitions/v1alphaCreateSignerEnrollmentRequest'
+            $ref: "#/definitions/v1alphaCreateSignerEnrollmentRequest"
       tags:
         - SignerEnrollmentService
   /v1alpha/{name_1}:
@@ -250,11 +250,11 @@ paths:
         "200":
           description: A successful response.
           schema:
-            $ref: '#/definitions/v1alphaDeployment'
+            $ref: "#/definitions/v1alphaDeployment"
         default:
           description: An unexpected error response.
           schema:
-            $ref: '#/definitions/rpcStatus'
+            $ref: "#/definitions/rpcStatus"
       parameters:
         - name: name_1
           description: |-
@@ -274,11 +274,11 @@ paths:
         "200":
           description: A successful response.
           schema:
-            $ref: '#/definitions/v1alphaAuthMethod'
+            $ref: "#/definitions/v1alphaAuthMethod"
         default:
           description: An unexpected error response.
           schema:
-            $ref: '#/definitions/rpcStatus'
+            $ref: "#/definitions/rpcStatus"
       parameters:
         - name: name
           description: |-
@@ -297,11 +297,11 @@ paths:
         "200":
           description: A successful response.
           schema:
-            $ref: '#/definitions/v1alphaDeployment'
+            $ref: "#/definitions/v1alphaDeployment"
         default:
           description: An unexpected error response.
           schema:
-            $ref: '#/definitions/rpcStatus'
+            $ref: "#/definitions/rpcStatus"
       parameters:
         - name: name
           description: |-
@@ -325,11 +325,11 @@ paths:
         "200":
           description: A successful response.
           schema:
-            $ref: '#/definitions/v1alphaDeployment'
+            $ref: "#/definitions/v1alphaDeployment"
         default:
           description: An unexpected error response.
           schema:
-            $ref: '#/definitions/rpcStatus'
+            $ref: "#/definitions/rpcStatus"
       parameters:
         - name: name
           description: |-
@@ -343,7 +343,7 @@ paths:
           in: body
           required: true
           schema:
-            $ref: '#/definitions/DeploymentServiceResumeDeploymentBody'
+            $ref: "#/definitions/DeploymentServiceResumeDeploymentBody"
       tags:
         - DeploymentService
 definitions:
@@ -381,7 +381,7 @@ definitions:
   protobufAny:
     type: object
     properties:
-      '@type':
+      "@type":
         type: string
     additionalProperties: true
   protobufNullValue:
@@ -413,18 +413,18 @@ definitions:
         type: array
         items:
           type: object
-          $ref: '#/definitions/protobufAny'
+          $ref: "#/definitions/protobufAny"
   v1alphaAuthMethod:
     type: object
     properties:
       name:
         type: string
-        title: 'Resource name. Format: authMethods/{auth_method}'
+        title: "Resource name. Format: authMethods/{auth_method}"
       type:
-        $ref: '#/definitions/v1alphaAuthMethodType'
+        $ref: "#/definitions/v1alphaAuthMethodType"
         description: The type of authentication method.
       oidcConfig:
-        $ref: '#/definitions/v1alphaOIDCConfig'
+        $ref: "#/definitions/v1alphaOIDCConfig"
         description: OIDC-specific configuration. Set when type is TYPE_OIDC.
     description: AuthMethod is a configured authentication method.
   v1alphaAuthMethodType:
@@ -466,19 +466,19 @@ definitions:
     properties:
       name:
         type: string
-        title: 'Resource name. Format: deployments/{deployment}'
+        title: "Resource name. Format: deployments/{deployment}"
       uid:
         type: string
         description: System-assigned UUID.
         readOnly: true
       manifestStrategy:
-        $ref: '#/definitions/v1alphaManifestStrategy'
+        $ref: "#/definitions/v1alphaManifestStrategy"
         description: Strategy for generating manifests.
       placementStrategy:
-        $ref: '#/definitions/v1alphaPlacementStrategy'
+        $ref: "#/definitions/v1alphaPlacementStrategy"
         description: Strategy for selecting targets.
       rolloutStrategy:
-        $ref: '#/definitions/v1alphaRolloutStrategy'
+        $ref: "#/definitions/v1alphaRolloutStrategy"
         description: Strategy for pacing the rollout. If omitted, immediate rollout is used.
       resolvedTargetIds:
         type: array
@@ -487,7 +487,7 @@ definitions:
         description: Target IDs resolved by placement.
         readOnly: true
       state:
-        $ref: '#/definitions/v1alphaDeploymentState'
+        $ref: "#/definitions/v1alphaDeploymentState"
         description: Lifecycle state of the deployment.
         readOnly: true
       reconciling:
@@ -513,7 +513,7 @@ definitions:
           requests to abort if the resource has been modified since their
           last read.
       provenance:
-        $ref: '#/definitions/v1alphaProvenance'
+        $ref: "#/definitions/v1alphaProvenance"
         description: |-
           Cryptographic proof that a user authorized this deployment.
           Present when the deployment was created with a user signature.
@@ -579,7 +579,7 @@ definitions:
         type: array
         items:
           type: object
-          $ref: '#/definitions/v1alphaDeployment'
+          $ref: "#/definitions/v1alphaDeployment"
         description: The deployments.
       nextPageToken:
         type: string
@@ -605,13 +605,13 @@ definitions:
     type: object
     properties:
       type:
-        $ref: '#/definitions/v1alphaManifestStrategyType'
+        $ref: "#/definitions/v1alphaManifestStrategyType"
         description: Type of manifest strategy.
       manifests:
         type: array
         items:
           type: object
-          $ref: '#/definitions/v1alphaManifest'
+          $ref: "#/definitions/v1alphaManifest"
         description: Manifests to deliver verbatim. Required when type is TYPE_INLINE.
     description: ManifestStrategy specifies how manifests are generated.
     required:
@@ -662,7 +662,7 @@ definitions:
           signer's base64-encoded SPKI/PKIX public key (for OIDC key
           registries). Example: "claims.signing_public_key".
       registrySubjectMapping:
-        $ref: '#/definitions/v1alphaRegistrySubjectMapping'
+        $ref: "#/definitions/v1alphaRegistrySubjectMapping"
         description: |-
           Maps ID token claims to a key registry subject. When set, the
           delivery agent derives the registry subject from the signer's
@@ -682,7 +682,7 @@ definitions:
     type: object
     properties:
       type:
-        $ref: '#/definitions/v1alphaPlacementStrategyType'
+        $ref: "#/definitions/v1alphaPlacementStrategyType"
         description: Type of placement strategy.
       targetIds:
         type: array
@@ -690,7 +690,7 @@ definitions:
           type: string
         description: Target IDs for static placement. Used when type is TYPE_STATIC.
       targetSelector:
-        $ref: '#/definitions/v1alphaTargetSelector'
+        $ref: "#/definitions/v1alphaTargetSelector"
         description: Label selector for target matching. Used when type is TYPE_SELECTOR.
     description: PlacementStrategy specifies how targets are selected.
     required:
@@ -714,7 +714,7 @@ definitions:
     type: object
     properties:
       signature:
-        $ref: '#/definitions/v1alphaSignature'
+        $ref: "#/definitions/v1alphaSignature"
       validUntil:
         type: string
         format: date-time
@@ -725,7 +725,7 @@ definitions:
         type: array
         items:
           type: object
-          $ref: '#/definitions/v1alphaOutputConstraint'
+          $ref: "#/definitions/v1alphaOutputConstraint"
     description: |-
       Provenance carries the cryptographic proof that a user authorized
       a deployment. Does NOT carry deployment content or the full key
@@ -738,7 +738,7 @@ definitions:
         type: array
         items:
           type: object
-          $ref: '#/definitions/v1alphaResourceResult'
+          $ref: "#/definitions/v1alphaResourceResult"
         description: The resources matching the query, in the applied order.
       nextPageToken:
         type: string
@@ -791,7 +791,7 @@ definitions:
     type: object
     properties:
       type:
-        $ref: '#/definitions/v1alphaRolloutStrategyType'
+        $ref: "#/definitions/v1alphaRolloutStrategyType"
         description: Type of rollout strategy.
     description: RolloutStrategy specifies how the rollout is paced.
     required:
@@ -811,7 +811,7 @@ definitions:
     type: object
     properties:
       signer:
-        $ref: '#/definitions/v1alphaFederatedIdentity'
+        $ref: "#/definitions/v1alphaFederatedIdentity"
       contentHash:
         type: string
         format: byte
@@ -824,7 +824,7 @@ definitions:
     properties:
       name:
         type: string
-        title: 'Resource name. Format: signerEnrollments/{signer_enrollment}'
+        title: "Resource name. Format: signerEnrollments/{signer_enrollment}"
       subject:
         type: string
         description: Subject identifier from the identity token (jwt.sub).

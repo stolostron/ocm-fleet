@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
+	"github.com/stolostron/ocm-fleet/server/internal/infrastructure/sqltx"
 )
 
 // Store implements [domain.Store] backed by SQLite.
@@ -20,6 +21,9 @@ type Store struct {
 	// [domain.ResolveQueryResourceTypeScope]). Nil is a valid,
 	// permissive default (no activation IN constraint).
 	SchemaProvider domain.QuerySchemaProvider
+
+	// Observer receives transaction cleanup failures. Nil disables observation.
+	Observer domain.StoreObserver
 }
 
 func (s *Store) Begin(ctx context.Context) (domain.Tx, error) {
@@ -27,7 +31,7 @@ func (s *Store) Begin(ctx context.Context) (domain.Tx, error) {
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	return &storeTx{tx: tx, schemaProvider: s.SchemaProvider}, nil
+	return &storeTx{Transaction: sqltx.New(ctx, tx, s.Observer), tx: tx, schemaProvider: s.SchemaProvider}, nil
 }
 
 func (s *Store) BeginReadOnly(ctx context.Context) (domain.Tx, error) {
@@ -35,13 +39,13 @@ func (s *Store) BeginReadOnly(ctx context.Context) (domain.Tx, error) {
 	if err != nil {
 		return nil, fmt.Errorf("begin read-only tx: %w", err)
 	}
-	return &storeTx{tx: tx, schemaProvider: s.SchemaProvider}, nil
+	return &storeTx{Transaction: sqltx.New(ctx, tx, s.Observer), tx: tx, schemaProvider: s.SchemaProvider}, nil
 }
 
 type storeTx struct {
+	*sqltx.Transaction
 	tx             *sql.Tx
 	schemaProvider domain.QuerySchemaProvider
-	done           bool
 }
 
 func (t *storeTx) Targets() domain.TargetRepository           { return &TargetRepo{DB: t.tx} }
@@ -60,20 +64,4 @@ func (t *storeTx) ResourceIdentities() domain.ResourceIdentityRepository {
 }
 func (t *storeTx) Queries() domain.QueryRepository {
 	return &QueryRepo{DB: t.tx, SchemaProvider: t.schemaProvider}
-}
-
-func (t *storeTx) Commit() error {
-	if t.done {
-		return nil
-	}
-	t.done = true
-	return t.tx.Commit()
-}
-
-func (t *storeTx) Rollback() error {
-	if t.done {
-		return nil
-	}
-	t.done = true
-	return t.tx.Rollback()
 }

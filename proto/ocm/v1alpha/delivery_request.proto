@@ -2,12 +2,12 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "google/api/field_behavior.proto";
 import "ocm/v1alpha/attestation.proto";
-import "ocm/v1alpha/manifest.proto";
 import "ocm/v1alpha/delivery_auth.proto";
+import "ocm/v1alpha/manifest.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // DeliveryRequest instructs the fleetlet to deliver manifests to a target.
 message DeliveryRequest {

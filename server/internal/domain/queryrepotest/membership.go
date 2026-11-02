@@ -15,7 +15,7 @@ import (
 func runMembershipFilterTests(t *testing.T, factory Factory) {
 	t.Run("DynamicObjectKeyMembership", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		wantName := extensionEnvelopeName(fx.InventoryType, fx.InventoryName)
 		replaceInventory(t, tx, fx, nil,
@@ -29,7 +29,7 @@ func runMembershipFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("DynamicListValueMembership", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		wantName := extensionEnvelopeName(fx.InventoryType, fx.InventoryName)
 		replaceInventory(t, tx, fx, nil,
@@ -49,7 +49,7 @@ func runMembershipFilterTests(t *testing.T, factory Factory) {
 		// store lowerings) must not treat nested occurrences as hits —
 		// including Postgres @> containment, which must not deep-match.
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		replaceInventory(t, tx, fx, nil,
 			json.RawMessage(`{"foo":[["k"], {"value":"k"}]}`), nil)
@@ -61,7 +61,7 @@ func runMembershipFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("InvalidContainerShapesAreSQLNull", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		wantName := extensionEnvelopeName(fx.InventoryType, fx.InventoryName)
 		replaceInventory(t, tx, fx, nil,
@@ -89,7 +89,7 @@ func runMembershipFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("KnownMapContainerKeyIn", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		wantName := extensionEnvelopeName(fx.InventoryType, fx.InventoryName)
 		assertResultNames(t, queryAll(t, tx, `"node-role" in resource.localLabels`), wantName)

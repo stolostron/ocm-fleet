@@ -57,7 +57,7 @@ func (s *PlatformResourceService) Create(ctx context.Context, in CreatePlatformR
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	now := s.now()
 	pr := domain.NewPlatformResource(in.Name, in.Labels, now)
@@ -78,7 +78,7 @@ func (s *PlatformResourceService) Get(ctx context.Context, name domain.ResourceN
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	pr, err := tx.ResourceIdentities().GetByName(ctx, name)
 	if err != nil {
@@ -93,7 +93,7 @@ func (s *PlatformResourceService) List(ctx context.Context, collection domain.Co
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	all, err := tx.ResourceIdentities().ListByCollection(ctx, collection)
 	if err != nil {

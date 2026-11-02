@@ -112,7 +112,7 @@ func (s *ExtensionResourceTypeService) Create(ctx context.Context, in CreateExte
 	if err != nil {
 		return domain.ExtensionResourceType{}, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	if err := tx.ExtensionResources().CreateType(ctx, def); err != nil {
 		return domain.ExtensionResourceType{}, err
@@ -131,7 +131,7 @@ func (s *ExtensionResourceTypeService) Update(ctx context.Context, def domain.Ex
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	if err := tx.ExtensionResources().UpdateType(ctx, def); err != nil {
 		return err
@@ -145,7 +145,7 @@ func (s *ExtensionResourceTypeService) Get(ctx context.Context, rt domain.Resour
 	if err != nil {
 		return domain.ExtensionResourceType{}, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	def, err := tx.ExtensionResources().GetType(ctx, rt)
 	if err != nil {
@@ -160,7 +160,7 @@ func (s *ExtensionResourceTypeService) List(ctx context.Context) ([]domain.Exten
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	defs, err := tx.ExtensionResources().ListTypes(ctx)
 	if err != nil {
@@ -175,7 +175,7 @@ func (s *ExtensionResourceTypeService) Delete(ctx context.Context, rt domain.Res
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	if err := tx.ExtensionResources().DeleteType(ctx, rt); err != nil {
 		return err

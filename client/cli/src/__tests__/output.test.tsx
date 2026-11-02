@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect */
 import { PassThrough, Writable } from "node:stream";
 
 import { Text } from "ink";

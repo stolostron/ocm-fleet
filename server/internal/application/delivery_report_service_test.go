@@ -28,7 +28,7 @@ func seedDeliveryRecord(t *testing.T, store domain.Store, d domain.Delivery) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if err := tx.Deliveries().Put(ctx, d); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func seedTarget(t *testing.T, store domain.Store, target domain.TargetInfo) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if err := tx.Targets().Create(ctx, target); err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func getDeliveryState(t *testing.T, store domain.Store, id domain.DeliveryID) do
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	d, err := tx.Deliveries().Get(context.Background(), id)
 	if err != nil {
 		t.Fatalf("get delivery %q: %v", id, err)
@@ -355,7 +355,7 @@ func seedFulfillment(t *testing.T, store domain.Store, f *domain.Fulfillment) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if err := tx.Fulfillments().Create(ctx, f); err != nil {
 		t.Fatal(err)
 	}

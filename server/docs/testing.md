@@ -69,17 +69,19 @@ This means these files are **excluded from compilation** by default. They only c
 
 ### Running locally
 
-The default test suite excludes integration tests automatically:
+Run from the repository root. The default suite excludes integration-tagged tests:
 
-    go test ./...
+    npx nx run server:test
+
+Nx caches the default suite, including its Postgres tests.
+To force execution, use:
+
+    npx nx run server:test --skip-nx-cache
 
 To run integration tests explicitly (requires Docker or Podman):
 
-    go test -tags integration ./internal/addon/kind/
+    npx nx run server:test-integration
 
-### CI behavior
-
-CI runs the default suite (`go test ./...`) first. A separate step runs the integration tests with `-tags integration` for the `server/` module. This avoids Docker resource contention between the two sets.
 
 ### Why build tags instead of `-short`?
 

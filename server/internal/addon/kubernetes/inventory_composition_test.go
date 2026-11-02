@@ -50,7 +50,7 @@ func seedObjectType(t *testing.T, store domain.Store) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	sch := InventorySchema()
 	def := domain.NewExtensionResourceType(sch.ResourceType, domain.APIVersion(sch.Version), domain.CollectionID(sch.CollectionID), time.Now(), domain.WithInventory())
 	if err := tx.ExtensionResources().CreateType(ctx, def); err != nil {
@@ -95,7 +95,7 @@ func listObjectInventory(t *testing.T, store domain.Store) []*domain.ExtensionRe
 	if err != nil {
 		t.Fatalf("BeginReadOnly: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	objs, err := tx.ExtensionResources().ListByResourceType(context.Background(), ObjectResourceType)
 	if err != nil {
 		t.Fatalf("ListByResourceType: %v", err)

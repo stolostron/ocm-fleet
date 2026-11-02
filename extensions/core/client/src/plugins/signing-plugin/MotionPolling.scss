@@ -1,6 +1,8 @@
 .ocm-fleet-signing-poll {
   --ocm-fleet-signing-blob-color: var(--pf-t--global--color--brand--default);
-  --ocm-fleet-signing-bg: var(--pf-t--global--background--color--primary--default);
+  --ocm-fleet-signing-bg: var(
+    --pf-t--global--background--color--primary--default
+  );
 
   position: relative;
   margin-top: var(--pf-t--global--spacer--md);
@@ -98,6 +100,8 @@
 
   .pf-v6-theme-glass & {
     --ocm-fleet-signing-bg: transparent;
-    --ocm-fleet-signing-blob-color: var(--pf-t--global--color--brand--subtle--200);
+    --ocm-fleet-signing-blob-color: var(
+      --pf-t--global--color--brand--subtle--200
+    );
   }
 }

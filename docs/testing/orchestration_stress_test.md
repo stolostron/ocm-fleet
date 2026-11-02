@@ -20,13 +20,12 @@ bottlenecks are, and validate the correctness of generation skipping.
 The test runs entirely inside `go test` with a Postgres testcontainer
 (no external services). Following files were added:
 
-| File | Responsibility |
-|------|----------------|
-| `server/internal/application/stress_test.go` | Test entry point, workload runner, drain phase, convergence loop |
+| File                                                 | Responsibility                                                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `server/internal/application/stress_test.go`         | Test entry point, workload runner, drain phase, convergence loop                                  |
 | `server/internal/application/stress_harness_test.go` | Configuration, mock delivery agent, fulfillment observer, Pareto distribution, pool stats sampler |
-| `server/internal/application/stress_report_test.go` | Latency distributions, generation convergence, JSON results dump |
-| `scripts/plot_stress.py` | Plots Mutation_to_Dispatch latency from JSON results dump |
-
+| `server/internal/application/stress_report_test.go`  | Latency distributions, generation convergence, JSON results dump                                  |
+| `scripts/plot_stress.py`                             | Plots Mutation_to_Dispatch latency from JSON results dump                                         |
 
 ### Workload model
 
@@ -54,7 +53,7 @@ The agent simulates realistic addon behavior with configurable delays:
 - **Completion delay**: Gaussian-distributed between
   `STRESS_COMPLETION_DELAY_{MIN,MAX}`. After the remaining time, sends a
   `ReportResult` (delivered or failed).
-- **Failure rate**: a configurable fraction of deliveries report failure 
+- **Failure rate**: a configurable fraction of deliveries report failure
   (Not exercised at the time of the writing).
 
 The agent records its chosen delays per delivery so the report can isolate
@@ -62,17 +61,17 @@ system overhead from agent-induced latency.
 
 ### Measured metrics
 
-| Metric | What it measures |
-|--------|-----------------|
-| Reconciliation latency | `RunStarted` to `End` per orchestration run |
-| Ack latency | Dispatch to ack received per delivery |
-| Completion latency | Dispatch to completed per delivery |
-| Ack / completion overhead | Observed latency minus the agent's chosen delay |
-| Mutation-to-dispatch latency | Mutation commit to delivery dispatch -- isolates system queueing |
-| Runs per fulfillment | How many times each fulfillment's orchestration ran |
-| Restarts per run | Inner-loop restarts of the orchestration run due to generation advancement |
-| Generation convergence | Final snapshot: converged vs lagged fulfillments, skip counts |
-| Connection pool utilization | Time-series of in-use / max-open for app and workflow pools |
+| Metric                       | What it measures                                                           |
+| ---------------------------- | -------------------------------------------------------------------------- |
+| Reconciliation latency       | `RunStarted` to `End` per orchestration run                                |
+| Ack latency                  | Dispatch to ack received per delivery                                      |
+| Completion latency           | Dispatch to completed per delivery                                         |
+| Ack / completion overhead    | Observed latency minus the agent's chosen delay                            |
+| Mutation-to-dispatch latency | Mutation commit to delivery dispatch -- isolates system queueing           |
+| Runs per fulfillment         | How many times each fulfillment's orchestration ran                        |
+| Restarts per run             | Inner-loop restarts of the orchestration run due to generation advancement |
+| Generation convergence       | Final snapshot: converged vs lagged fulfillments, skip counts              |
+| Connection pool utilization  | Time-series of in-use / max-open for app and workflow pools                |
 
 Results are printed to the test log and dumped to a JSON file for
 post-hoc analysis with `scripts/plot_stress.py`.
@@ -220,7 +219,7 @@ npx nx run server:test-stress
 uv run --with matplotlib python3 scripts/plot_stress.py /tmp/stress-results-*.json
 
 # With connection pool overlay
-uv run --with matplotlib python3 scripts/plot_stress.py /tmp/stress-results-*.json --pool-stats 
+uv run --with matplotlib python3 scripts/plot_stress.py /tmp/stress-results-*.json --pool-stats
 
 # Highlight last-generation deliveries, showing superseded in gray
 uv run --with matplotlib python3 scripts/plot_stress.py /tmp/stress-results-*.json --last-gen

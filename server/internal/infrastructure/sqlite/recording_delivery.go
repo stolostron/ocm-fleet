@@ -37,7 +37,7 @@ func (s *RecordingDeliveryService) Deliver(ctx context.Context, target domain.Ta
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	if err := tx.Deliveries().Put(ctx, d); err != nil {
 		return err
@@ -60,7 +60,7 @@ func (s *RecordingDeliveryService) Remove(ctx context.Context, target domain.Tar
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	_, err = tx.Deliveries().GetByFulfillmentTarget(ctx, fulfillmentIDFromDeliveryID(deliveryID), target.ID())
 	if errors.Is(err, domain.ErrNotFound) {

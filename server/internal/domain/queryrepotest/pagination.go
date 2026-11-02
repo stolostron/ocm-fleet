@@ -14,7 +14,7 @@ import (
 func runPaginationTests(t *testing.T, factory Factory) {
 	t.Run("PageSizeLimitsResultsAndReturnsNextPageToken", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		page, err := tx.Queries().QueryResources(context.Background(), domain.QueryResourcesRequest{PageSize: 1})
 		if err != nil {
@@ -30,7 +30,7 @@ func runPaginationTests(t *testing.T, factory Factory) {
 
 	t.Run("DefaultOrderGroupsByCollectionThenResourceID", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		results := queryAll(t, tx, "")
 		if len(results) != 2 {
@@ -50,7 +50,7 @@ func runPaginationTests(t *testing.T, factory Factory) {
 
 	t.Run("SecondPageResumesWithoutDuplicates", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		seen := map[string]bool{}
@@ -86,7 +86,7 @@ func runPaginationTests(t *testing.T, factory Factory) {
 
 	t.Run("PageTokenWithDifferentFilterIsInvalid", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		page, err := tx.Queries().QueryResources(ctx, domain.QueryResourcesRequest{
@@ -125,7 +125,7 @@ func runPaginationTests(t *testing.T, factory Factory) {
 
 	t.Run("PageTokenWithDifferentOrderModeIsInvalid", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		page, err := tx.Queries().QueryResources(ctx, domain.QueryResourcesRequest{PageSize: 1})
@@ -148,7 +148,7 @@ func runPaginationTests(t *testing.T, factory Factory) {
 
 	t.Run("ResourceTypeNameOrderMode", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		page, err := tx.Queries().QueryResources(context.Background(), domain.QueryResourcesRequest{
 			OrderBy:  "resource_type,name",
@@ -174,7 +174,7 @@ func runPaginationTests(t *testing.T, factory Factory) {
 
 	t.Run("UnsupportedOrderByIsInvalid", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		err := queryErr(t, tx, domain.QueryResourcesRequest{OrderBy: "name"})
 		if !errors.Is(err, domain.ErrInvalidArgument) {
@@ -184,7 +184,7 @@ func runPaginationTests(t *testing.T, factory Factory) {
 
 	t.Run("PriorVersionPageTokenIsInvalid", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		// Version 1 was the previous POC token shape; current version
 		// is 2. A prior-version token must fail closed.

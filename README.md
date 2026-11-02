@@ -61,12 +61,12 @@ or console. Remove any previous development clusters and volumes explicitly.
 
 ### Other ways to run
 
-| Path | What you launch | Guide |
-|------|-----------------|-------|
-| Podman compose stack | All-in-one image via compose/Nx (HTTPS origin, source builds, local-web watch) | [deploy/podman/](deploy/podman/README.md) |
-| OpenShift example | Cluster deployment using Routes and ImageStreams | [deploy/openshift/](deploy/openshift/README.md) |
-| Keycloak (OpenShift) | External OIDC for cluster deploy or AIO compose (`OIDC_ISSUER_URL` in `.env`) | [deploy/openshift/keycloak/](deploy/openshift/keycloak/README.md) |
-| Nx remote cache | Shared build cache backed by MinIO | [docs/nx-remote-cache.md](docs/nx-remote-cache.md) |
+| Path                 | What you launch                                                                | Guide                                                             |
+| -------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| Podman compose stack | All-in-one image via compose/Nx (HTTPS origin, source builds, local-web watch) | [deploy/podman/](deploy/podman/README.md)                         |
+| OpenShift example    | Cluster deployment using Routes and ImageStreams                               | [deploy/openshift/](deploy/openshift/README.md)                   |
+| Keycloak (OpenShift) | External OIDC for cluster deploy or AIO compose (`OIDC_ISSUER_URL` in `.env`)  | [deploy/openshift/keycloak/](deploy/openshift/keycloak/README.md) |
+| Nx remote cache      | Shared build cache backed by MinIO                                             | [docs/nx-remote-cache.md](docs/nx-remote-cache.md)                |
 
 ## Develop in this repo
 
@@ -101,10 +101,105 @@ dependency graph, affected detection, and parallel execution.
 ```bash
 npx nx show projects        # list all projects
 npx nx graph                # visualize dependency graph
-npx nx run server:test      # run a single target (cached)
+npx nx run server:test      # run a single target
 npx nx run-many -t test     # run target across all projects (parallel)
 npx nx affected -t test     # only test what changed
 ```
+
+Nx builds our custom Go linter from the isolated
+[`tools/golangci-lint`](tools/golangci-lint) module into
+`bin/tools/golangci-lint`. Its Go dependencies and source hashes are committed in
+`go.mod` and `go.sum`, and its compiler is pinned separately from application Go
+versions. The linter also uses that compiler for package loading, so a newer
+installed Go does not change its analysis environment. The
+[tooling rationale](tools/golangci-lint/README.md#why-a-dedicated-module)
+explains the alternatives and provenance tradeoffs.
+
+```bash
+npx nx run ocm-fleet:verify # format/import fixes, then checks across projects
+npx nx run ocm-fleet:fmt    # formatting and import organization only
+npx nx run ocm-fleet:fix    # also apply broader linter fixes, then check
+npx nx run ocm-fleet:lint   # lint across projects without editing source
+npx nx run ocm-fleet:check  # all checks without formatting first
+
+# Select a project or subset with standard Nx commands:
+npx nx run server:verify
+npx nx run cli:verify
+npx nx run-many --targets=verify --projects=web,plugins
+npx nx run ocm-fleet:verify:go # Go-only aliases remain available
+```
+
+The workspace targets collect each project's supported checks: Go uses our
+custom golangci-lint; JavaScript/TypeScript uses Prettier and ESLint; styles use
+Prettier and stylelint; protobuf uses Buf. Shared scripts and configuration have
+workspace formatting and lint targets too. Verification includes normal tests,
+browser component tests, and existing type checks where available. Install
+Playwright's Chromium browser with `npx playwright install chromium` for component
+tests. Integration and end-to-end suites remain explicit.
+
+Local verification fixes formatting and imports automatically. Broader ESLint,
+stylelint, and Go linter rewrites require `fix`; review its diff. Both workflows
+finish with checks and fail if findings or test failures remain. Existing lint
+backlogs have scoped, temporary exclusions tracked in
+[FM-144](https://redhat.atlassian.net/browse/FM-144); unsuppressed lint errors fail CI.
+Existing ESLint warning severities are unchanged.
+
+Shared lifecycle definitions live in `nx.json`, scoped to `type:go-module`,
+`type:js-project`, and `lang:proto` as appropriate. Projects opt in with target
+entries in their Nx configuration. `check` collects available lint, formatting, style, test,
+component test, and typecheck targets; `fix:lint` applies broader fixes before
+that check. Nx handles project selection and ordering without a task wrapper.
+Generated files and analyzer `testdata` fixtures retain their formatting;
+standalone `poc/` modules are outside this workflow.
+For new projects, follow [the Nx project setup guide](docs/nx-projects.md).
+CI's `ocm-fleet:lint:nx-projects` checks registration, lifecycle targets, and
+participation in the resolved task graph.
+
+Go quality tasks build or restore the cached tool and validate the shared config
+automatically. The checked-in [`.golangci.yaml`](.golangci.yaml) starts from OCM's
+config, with its source revision recorded in the file. It checks linters and
+Go/import formatting in production and tests; generated code is excluded.
+Upstream exclusion presets are disabled. Temporary backlog exclusions are scoped
+and explained in the config; remove them as cleanup lands. They also hide new
+findings that match those scopes. Standalone `poc/` modules are not included.
+
+Nx caches the tool build and successful lint results using source, configuration,
+dependency pins, and Go environment. Go's build cache and golangci-lint's analysis
+cache also reduce repeated work. Concurrent lint tasks wait for the linter's
+shared lock. Source-rewriting tasks always run and refresh Nx's file-hash metadata;
+verification starts a fresh Nx invocation so checks hash the resulting files.
+Prettier and ESLint use content-based file caches within those rewrite stages.
+Tooling regression tests are cached against their scripts, task definitions,
+configuration, and tool versions. UI unit tests run per project, with dependency
+sources included in their cache keys. Component tests consume source directly
+and generate the icon manifest. Plugin component tests also build `common` for
+their Node-side imports; application bundles are unnecessary. Server tests,
+including Postgres checks, are cached against source, assets, dependencies, and
+Go/test settings. Use `npx nx run server:test --skip-nx-cache` for a fresh run.
+CI runs `ocm-fleet:check` once, without source rewrites: application and tooling
+linters, formatting (including shared configuration and docs), normal tests,
+component tests, and available type checks. Backend integration tests run in a
+parallel job; end-to-end tests retain their separate workflow. The final `CI`
+check fails if either quality job fails or is skipped. After the workflow's first
+run, add `CI` to main's required status checks alongside the existing image checks.
+
+Go compilation/modules, npm downloads, and golangci-lint analysis are cached across
+CI runs. Nx shares setup within the job; optional HTTP caching can also reuse
+task results across runners (see [cache setup](docs/nx-remote-cache.md#github-actions)).
+CI limits Nx to three concurrent tasks, limits component-test builds to required
+packages, and cancels superseded pull-request runs. No cache is required to pass.
+
+To update the linter, select an explicit stable v2 release:
+
+```bash
+npx nx run ocm-fleet:update:golangci-lint --release=v2.15.0
+npx nx run go-lint-tool:verify
+```
+
+Replace the example version with your chosen release, review the module diff and
+upstream release notes, and run the tests before committing. See the
+[tooling guide](tools/golangci-lint/README.md#working-with-the-tool) for adding
+analyzers and updating the compiler.
 
 ### Build
 
@@ -169,7 +264,7 @@ helpers), `plugins` (core MF remotes), and `@ocm-fleet/kind-plugin`.
 ```bash
 npx nx run-many -t test     # unit tests for Nx projects
 npx nx affected -t test     # only test what changed
-npx nx run server:test      # Go server tests (cached)
+npx nx run server:test      # Go server tests, including container checks
 npx nx run deploy-aio:test  # AIO packaging unit tests
 npx nx run common:test      # shared UI lib tests
 

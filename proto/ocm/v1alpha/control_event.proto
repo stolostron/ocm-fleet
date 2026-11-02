@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "ocm/v1alpha/register_target.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // ControlEvent is the envelope for fleetlet-to-platform messages on
 // the control channel.

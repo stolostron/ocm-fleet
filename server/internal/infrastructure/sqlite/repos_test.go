@@ -20,7 +20,7 @@ import (
 func beginTestTx(t *testing.T) *sqlite.Store {
 	t.Helper()
 	db := sqlite.OpenTestDB(t)
-	return &sqlite.Store{DB: db}
+	return &sqlite.Store{DB: db, Observer: storetest.NewObserver(t)}
 }
 
 func TestTargetRepo(t *testing.T) {
@@ -30,7 +30,7 @@ func TestTargetRepo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		t.Cleanup(func() { tx.Rollback() })
+		t.Cleanup(tx.RollbackOnExit)
 		return tx.Targets()
 	})
 }
@@ -42,7 +42,7 @@ func TestDeploymentRepo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		t.Cleanup(func() { tx.Rollback() })
+		t.Cleanup(tx.RollbackOnExit)
 		return tx
 	})
 }
@@ -54,7 +54,7 @@ func TestFulfillmentRepo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		t.Cleanup(func() { tx.Rollback() })
+		t.Cleanup(tx.RollbackOnExit)
 		return tx.Fulfillments()
 	})
 }
@@ -66,7 +66,7 @@ func TestDeliveryRepo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		t.Cleanup(func() { tx.Rollback() })
+		t.Cleanup(tx.RollbackOnExit)
 		return tx.Deliveries()
 	})
 }
@@ -78,7 +78,7 @@ func TestInventoryRepo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		t.Cleanup(func() { tx.Rollback() })
+		t.Cleanup(tx.RollbackOnExit)
 		return tx.Inventory()
 	})
 }
@@ -97,7 +97,7 @@ func TestResourceIdentityRepo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		t.Cleanup(func() { tx.Rollback() })
+		t.Cleanup(tx.RollbackOnExit)
 		return tx
 	})
 }
@@ -109,7 +109,7 @@ func TestExtensionResourceRepo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		t.Cleanup(func() { tx.Rollback() })
+		t.Cleanup(tx.RollbackOnExit)
 		return tx
 	})
 }

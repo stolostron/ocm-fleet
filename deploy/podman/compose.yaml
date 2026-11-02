@@ -28,7 +28,6 @@ x-ocm-fleet-aio: &ocm-fleet-aio
         - ocm-fleet
 
 services:
-
   # Compose service name for the AIO container (proxy + API + UI + Dex).
   ocm-fleet:
     <<: *ocm-fleet-aio

@@ -37,7 +37,7 @@ Read this when you need the full target-side delivery protocol — how targets a
 
 ## Overview
 
-A *Target* in the platform is a logical "location" that can fulfill manifest delivery, report inventory, or both. The output of a placement decision is targets. A rollout is a (potentially complex) sequencing of targets. Targets are supported by addons. An addon can support many targets. The properties and scope of a target are arbitrary and addon-defined. With the properties of a target alone, an addon SHOULD (for efficiency; it is not a must) be able to query what resources it is managing under the scope of that target (ignoring whether it has the authority on its own to run that query).
+A _Target_ in the platform is a logical "location" that can fulfill manifest delivery, report inventory, or both. The output of a placement decision is targets. A rollout is a (potentially complex) sequencing of targets. Targets are supported by addons. An addon can support many targets. The properties and scope of a target are arbitrary and addon-defined. With the properties of a target alone, an addon SHOULD (for efficiency; it is not a must) be able to query what resources it is managing under the scope of that target (ignoring whether it has the authority on its own to run that query).
 
 Examples:
 
@@ -51,9 +51,9 @@ Targets have to handle two main things:
 1. Fulfillment (eventually converging on latest fulfillment intent)
 2. Reporting back (status, inventory)
 
-> Note: See [./managed_resources.md](../managed_resources.md)  description of condition events and inventory
+> Note: See [./managed_resources.md](../managed_resources.md) description of condition events and inventory
 
-This contract is intentionally Kubernetes-like. It is also intentionally not 1-1 defined and coupled to the kubernetes API. A kubernetes cluster is, and should be, a natural target. However, to the extent that other targets may fit that shape, they can also be targets, without forcing them to be fronted by a Kubernetes resource and controller (and thus API server semantics like the security and tenancy model). 
+This contract is intentionally Kubernetes-like. It is also intentionally not 1-1 defined and coupled to the kubernetes API. A kubernetes cluster is, and should be, a natural target. However, to the extent that other targets may fit that shape, they can also be targets, without forcing them to be fronted by a Kubernetes resource and controller (and thus API server semantics like the security and tenancy model).
 
 ## Fulfillment
 
@@ -102,9 +102,10 @@ When an addon starts up, it should:
 1. Connect to the resource manager (in process or through a to-be-built fleetlet)
 2. Wait asynchronously for delivery requests, evaluate authorization, and acknowledge only once enough state is safely retained to guarantee progress (see next steps). Acknowledgement may precede effects after safe acceptance of evaluated work. The quicker the acknowledgement, the more responsive progression will be; it should generally fit within a typical synchronous RPC response time.
 3. Ask for what fulfillments are in progress ("deliveries" not yet terminal)
-  - The platform returns `ActiveDelivery` values: the delivery record enriched with full `TargetInfo`, caller `DeliveryAuth`, and (when signed) a re-assembled `Attestation`. This gives the addon everything `Deliver` would have provided.
-  - Stale deliveries — where the fulfillment's generation has advanced past the delivery's — are excluded from the response. Their auth and attestation cannot be correctly reconstructed. The orchestration will re-dispatch with the current generation.
-  - Due to the platform's guarantees, an addon will never receive a follow-up delivery for a fulfillment that is still in progress. So races between 3 and 2 should never happen. However, a `Pending` delivery may appear in both the list response (step 3) and arrive via `Deliver` (step 2) if the addon starts while a `DeliverToTarget` activity is in flight. Addons must deduplicate by `DeliveryID` across both paths.
+
+- The platform returns `ActiveDelivery` values: the delivery record enriched with full `TargetInfo`, caller `DeliveryAuth`, and (when signed) a re-assembled `Attestation`. This gives the addon everything `Deliver` would have provided.
+- Stale deliveries — where the fulfillment's generation has advanced past the delivery's — are excluded from the response. Their auth and attestation cannot be correctly reconstructed. The orchestration will re-dispatch with the current generation.
+- Due to the platform's guarantees, an addon will never receive a follow-up delivery for a fulfillment that is still in progress. So races between 3 and 2 should never happen. However, a `Pending` delivery may appear in both the list response (step 3) and arrive via `Deliver` (step 2) if the addon starts while a `DeliverToTarget` activity is in flight. Addons must deduplicate by `DeliveryID` across both paths.
 
 > NOTE: Somewhere the addon needs to discover new targets that come over time. Does this just come as part of deliveries from step 2?
 
@@ -112,7 +113,7 @@ When an addon starts up, it should:
 
 Generation is a **first-class delivery protocol field** — every `DeliveryRequest` carries it unconditionally, independent of attestation. This is the single source of truth for fencing: the addon uses this field to detect stale deliveries regardless of whether attestation is present.
 
-When attestation *is* present, the platform's verification step asserts that the delivery-level generation matches the signed `expected_generation` in the attestation. This is a consistency gate: attestation does not introduce a second generation value; it validates the one carried by the protocol. The addon never chooses between two values — attestation either passes or rejects the whole delivery.
+When attestation _is_ present, the platform's verification step asserts that the delivery-level generation matches the signed `expected_generation` in the attestation. This is a consistency gate: attestation does not introduce a second generation value; it validates the one carried by the protocol. The addon never chooses between two values — attestation either passes or rejects the whole delivery.
 
 The addon must never apply a delivery whose generation is older than one it has already accepted or applied. This is a safety property, not just a consistency mechanism: a stale delivery can visibly regress a customer's environment (e.g. reverting a cluster upgrade).
 
@@ -121,11 +122,14 @@ The platform enforces a concurrency limit of one in-flight delivery per fulfillm
 This decomposes into two independent subproblems:
 
 1. **Platform-side stale delivery.** The addon receives a delivery with an older generation than one it has already processed for the same fulfillment. Solutions:
-  - **Resource metadata.** Store the generation as target-side metadata (Kubernetes annotation, cloud resource tag, etc.). Each apply must atomically compare the stored generation and mutate the resource, for example with a target-native compare-and-swap. A separate read-check followed by an unconditional write is not a fence.
-  - **Platform-provided journal.** If the addon uses the platform journal (see [Journaling](#journaling) below), the journal write enforces acceptance ordering: the platform rejects an entry for an older generation when a newer one is already recorded. The addon must revalidate that high-water mark before each externally visible effect, or combine the journal with a strict at-most-one processor guarantee. A journal check only at the start cannot stop an already-running old worker after a newer worker advances the journal. The platform also discards stale acks.
+
+- **Resource metadata.** Store the generation as target-side metadata (Kubernetes annotation, cloud resource tag, etc.). Each apply must atomically compare the stored generation and mutate the resource, for example with a target-native compare-and-swap. A separate read-check followed by an unconditional write is not a fence.
+- **Platform-provided journal.** If the addon uses the platform journal (see [Journaling](#journaling) below), the journal write enforces acceptance ordering: the platform rejects an entry for an older generation when a newer one is already recorded. The addon must revalidate that high-water mark before each externally visible effect, or combine the journal with a strict at-most-one processor guarantee. A journal check only at the start cannot stop an already-running old worker after a newer worker advances the journal. The platform also discards stale acks.
+
 2. **Addon-side concurrency.** The addon itself may have concurrent processes (e.g. one still alive when another connects), causing read-modify-write races against the target. Solutions:
-  - **Strict at-most-one processor per target.** Only one process may be able to produce target effects at a time. An expiring lease alone does not provide this under pause or partition if the old holder can continue writing after expiry. The target must either make the old holder unable to continue or validate a monotonically increasing fencing token on every effect.
-  - **Optimistic concurrency.** Use the target's native concurrency control (Kubernetes `resourceVersion`, Azure ARM etags) to detect and retry conflicting writes.
+
+- **Strict at-most-one processor per target.** Only one process may be able to produce target effects at a time. An expiring lease alone does not provide this under pause or partition if the old holder can continue writing after expiry. The target must either make the old holder unable to continue or validate a monotonically increasing fencing token on every effect.
+- **Optimistic concurrency.** Use the target's native concurrency control (Kubernetes `resourceVersion`, Azure ARM etags) to detect and retry conflicting writes.
 
 > NOTE: "The workflow eventually realizes its lock is lost" – we should be careful that within an activity, these races are detected. For example, we don't want an old ack to overwrite a more recent one.
 
@@ -212,11 +216,11 @@ could hold a scoped nonce key, generation, and retirement time. Using **256 byte
 per record** as a planning estimate:
 
 | New retired instances per target per day | One year without forgetting | 90-day retention, steady state |
-| ---: | ---: | ---: |
-| 100 | 9.3 MB | 2.3 MB |
-| 1,000 | 93 MB | 23 MB |
-| 10,000 | 934 MB | 230 MB |
-| 100,000 | 9.34 GB | 2.30 GB |
+| ---------------------------------------: | --------------------------: | -----------------------------: |
+|                                      100 |                      9.3 MB |                         2.3 MB |
+|                                    1,000 |                       93 MB |                          23 MB |
+|                                   10,000 |                      934 MB |                         230 MB |
+|                                  100,000 |                     9.34 GB |                        2.30 GB |
 
 These estimates use decimal units and 365-day years, and exclude evidence
 payloads, journal proof storage, and backups. Storage is approximately daily
@@ -255,7 +259,7 @@ That is, journaling may be necessary to make progress at all, regardless of whet
 
 Sometimes identifying a resource is easy–it's "self-identifying." A kube manifest itself is self-identifying. In other cases, the identity of resources resulting may be sourced from input not contained within that manifest itself. This could be other state known only to the addon at runtime, obtained via I/O like syscalls or service calls or otherwise. In this case, identifiers must be stored so they can be retrieved later.
 
-Spec shrink refers to the need to act on now-missing information. There are two kinds of spec shrink: 
+Spec shrink refers to the need to act on now-missing information. There are two kinds of spec shrink:
 
 1. Within a manifest, there is an implicit removal requested. The absence of information in a manifest implies something should be removed. Acting on this requires seeing what was there before. The target must be able to get this from somewhere.
 2. Within a fulfillment with more than one manifest, one or more manifests are removed. This is again an absence of information that implies something to be removed. Acting on this requires knowing what was there before.
@@ -288,10 +292,13 @@ OCM's ManifestWork controller reprocesses manifests periodically against desired
 These should all be achievable, generally, by adding two more steps to the protocol above:
 
 1. Ask for what active fulfillments (those not creating, deleting, or terminal) it should watch for observations (drift) and conditions.
-  - This can be done in one or more ways: either by asking for active fulfillments directly, or by asking for what targets the addon is currently fulfilling.
+
+- This can be done in one or more ways: either by asking for active fulfillments directly, or by asking for what targets the addon is currently fulfilling.
+
 2. Watch the implied resources for changes.
-  - How this is done is implementation dependent. A target may have native, efficient change detection. Or, it may just poll.
-  - The scope of what is reported may vary based on configuration TBD. For example, it is unlikely we'd index all state about all resources in a managed kubernetes clusters, but some subset.
+
+- How this is done is implementation dependent. A target may have native, efficient change detection. Or, it may just poll.
+- The scope of what is reported may vary based on configuration TBD. For example, it is unlikely we'd index all state about all resources in a managed kubernetes clusters, but some subset.
 
 ## Formal model
 

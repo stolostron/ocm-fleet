@@ -15,7 +15,7 @@ func queryRepoTestTx(t *testing.T) domain.Tx {
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	t.Cleanup(func() { _ = tx.Rollback() })
+	t.Cleanup(tx.RollbackOnExit)
 	return tx
 }
 

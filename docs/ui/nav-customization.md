@@ -31,7 +31,10 @@ An example stored layout is:
       "description": "Frequently used fleet pages",
       "children": [{ "type": "page", "pageId": "core.clusters" }]
     },
-    { "type": "more", "children": [{ "type": "page", "pageId": "overview.overview" }] }
+    {
+      "type": "more",
+      "children": [{ "type": "page", "pageId": "overview.overview" }]
+    }
   ]
 }
 ```

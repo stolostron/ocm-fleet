@@ -20,7 +20,7 @@ import (
 func newStore(t *testing.T) *postgres.Store {
 	t.Helper()
 	db := postgres.OpenTestDB(t)
-	return &postgres.Store{DB: db}
+	return &postgres.Store{DB: db, Observer: storetest.NewObserver(t)}
 }
 
 func newTxRepo[T any](t *testing.T, accessor func(domain.Tx) T) T {
@@ -30,7 +30,7 @@ func newTxRepo[T any](t *testing.T, accessor func(domain.Tx) T) T {
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	t.Cleanup(func() { tx.Rollback() })
+	t.Cleanup(tx.RollbackOnExit)
 	return accessor(tx)
 }
 
@@ -56,7 +56,7 @@ func TestDeploymentRepo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		t.Cleanup(func() { _ = tx.Rollback() })
+		t.Cleanup(tx.RollbackOnExit)
 		return tx
 	})
 }
@@ -90,7 +90,7 @@ func TestResourceIdentityRepo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		t.Cleanup(func() { _ = tx.Rollback() })
+		t.Cleanup(tx.RollbackOnExit)
 		return tx
 	})
 }
@@ -103,7 +103,7 @@ func TestExtensionResourceRepo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		t.Cleanup(func() { _ = tx.Rollback() })
+		t.Cleanup(tx.RollbackOnExit)
 		return tx
 	})
 }

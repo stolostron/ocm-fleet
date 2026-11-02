@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect -- These are Vitest tests. */
 import rspack from "@rspack/core";
 import { describe, expect, it } from "vitest";
 

@@ -195,7 +195,7 @@ func enrollSignerDirect(t *testing.T, store domain.Store, enrollment domain.Sign
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if err := tx.SignerEnrollments().Create(ctx, enrollment); err != nil {
 		t.Fatalf("create signer enrollment: %v", err)
 	}

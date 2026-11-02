@@ -11,11 +11,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stolostron/ocm-fleet/server/internal/addon/kind"
-	"github.com/stolostron/ocm-fleet/server/internal/domain"
 	"sigs.k8s.io/kind/pkg/cluster"
 	"sigs.k8s.io/kind/pkg/cluster/nodes"
 	"sigs.k8s.io/kind/pkg/exec"
+
+	"github.com/stolostron/ocm-fleet/server/internal/addon/kind"
+	"github.com/stolostron/ocm-fleet/server/internal/domain"
 )
 
 func TestNewLoopbackForward(t *testing.T) {

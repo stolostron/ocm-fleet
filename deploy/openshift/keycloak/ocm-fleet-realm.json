@@ -160,9 +160,7 @@
       "name": "Resource manager signing enrollment",
       "publicClient": true,
       "fullScopeAllowed": false,
-      "redirectUris": [
-        "http://127.0.0.1/callback"
-      ],
+      "redirectUris": ["http://127.0.0.1/callback"],
       "webOrigins": ["+"],
       "attributes": {
         "pkce.code.challenge.method": "S256"
@@ -234,7 +232,10 @@
       { "client": "resource-manager-signing", "roles": ["ocm-fleet-user"] }
     ],
     "account": [
-      { "client": "ocm-fleet-console", "roles": ["manage-account", "view-profile"] }
+      {
+        "client": "ocm-fleet-console",
+        "roles": ["manage-account", "view-profile"]
+      }
     ]
   },
   "users": [

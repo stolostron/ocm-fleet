@@ -32,17 +32,19 @@ the platform. In delivery discussions, **delivery agent** means the component
 that receives a [fulfillment](#fulfillment) payload, verifies the applicable
 [delivery authorization](#delivery-authorization), applies it to a [target](#target),
 and reports progress and health. The canonical implementation combines:
-- The [fleetlet](#fleetlet), which provides common infrastructure used to implement agents. 
+
+- The [fleetlet](#fleetlet), which provides common infrastructure used to implement agents.
 - [Add-ons](#add-on-addon), supplying domain-specific capability implementations.
+
 ```mermaid
-flowchart LR 
+flowchart LR
     RM[Resource Manager]
     subgraph Agent
         Fleetlet
         Handler[Addon Delivery Handler]
         Indexer[Addon Indexer]
     end
-    Target 
+    Target
 
     RM <--> Fleetlet
     Fleetlet <--> Handler
@@ -85,8 +87,8 @@ supply executable code.
 A named, bidirectional message stream multiplexed by a [fleetlet](#fleetlet). Channels are the
 unit of routing, access control, traffic prioritization, and independent
 stream lifecycle. Built-in channels include control, access, delivery,
-status, and index; add-ons may define additional channels. 
-The local protocol and the platform-facing transport are independent choices. 
+status, and index; add-ons may define additional channels.
+The local protocol and the platform-facing transport are independent choices.
 Local connections use the same gRPC contract whether the fleetlet reaches the
 platform through gRPC/TLS, NATS, Kafka, HTTP/WebSocket, or some compatibility transport.
 
@@ -104,6 +106,7 @@ the payload; the [delivery agent](#agent) performs application at the
 [target](#target).
 
 The common evaluator is used by:
+
 - The [resource manager](#resource-manager-rm), when accepting evidence, assembling deliveries,
   and updating the evidence log.
 - The [fleetlet](#fleetlet), independently of the resource manager, before forwarding a delivery
@@ -159,7 +162,7 @@ reconciliation state.
 
 The common append-only log of accepted [`TypedEvidence`](#typed-evidence)
 identities. It addresses the threat of a compromised [resource manager](#resource-manager-rm)
-rewriting a [verifier](#verifier)'s accepted history: 
+rewriting a [verifier](#verifier)'s accepted history:
 omitting an earlier assertion, presenting a rollback, or assigning inconsistent positions.
 The honest resource manager assigns each evidence identity one canonical position, at most once,
 and delivers inclusion and consistency proofs to [targets](#target), which retain checkpoints.
@@ -189,9 +192,8 @@ an add-on-provided UI plugin.
 The command-line client for [OCM Fleet](#ocm-fleet). It authenticates users,
 invokes resource-manager APIs, and can provide operator workflows without
 being part of the [resource manager server](#resource-manager-rm).
-As client applications, fleetctl and the [console](#console) share a common core, 
+As client applications, fleetctl and the [console](#console) share a common core,
 with extensions that apply to both simultaneously.
-
 
 ### Fleetlet
 
@@ -230,6 +232,7 @@ rollout strategies drive delivery. A managed-cluster resource can likewise
 own a fulfillment that targets a provisioning add-on.
 
 ## G-M
+
 ### Generation
 
 A monotonically advancing version of a [fulfillment](#fulfillment)'s effective intent or
@@ -400,7 +403,7 @@ The process of comparing a [fulfillment](#fulfillment)'s current target state wi
 desired intent and taking the delivery actions needed to converge them. Unlike Kubernetes controllers,
 reconciliation uses [durable execution](https://temporal.io/blog/what-is-durable-execution) in
 [resource manager server](#resource-manager-rm). A reconciliation pass resolves placement, computes
- a delta, plans rollout, generates payloads, delivers changes, and evaluates resulting status.
+a delta, plans rollout, generates payloads, delivers changes, and evaluates resulting status.
 
 For example, a reconciliation pass may notice that a newly labeled target now
 matches placement, generate its payload, deliver it, and update fulfillment

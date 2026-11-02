@@ -10,17 +10,52 @@ const distDirs = [
 const outputDir = process.argv[2] ? resolve(process.argv[2]) : distDirs[0];
 
 const pluginMeta = [
-  { name: "management-plugin", key: "management", label: "Management", persona: "ops" },
+  {
+    name: "management-plugin",
+    key: "management",
+    label: "Management",
+    persona: "ops",
+  },
   { name: "core-plugin", key: "core", label: "Core Plugin", persona: "ops" },
   { name: "kind-plugin", key: "kind", label: "Kind", persona: "ops" },
-  { name: "signing-plugin", key: "signing", label: "Signing Keys", persona: "ops" },
+  {
+    name: "signing-plugin",
+    key: "signing",
+    label: "Signing Keys",
+    persona: "ops",
+  },
   { name: "routing-plugin", key: "routing", label: "Routing", persona: "ops" },
   { name: "setup-plugin", key: "setup", label: "Setup", persona: "ops" },
-  { name: "overview-plugin", key: "overview", label: "Overview", persona: "ops" },
-  { name: "configuration-plugin", key: "configuration", label: "Configuration", persona: "obs" },
-  { name: "virtualization-plugin", key: "virtualization", label: "Virtualization", persona: "obs" },
-  { name: "addon-demo-plugin", key: "addon-demo", label: "Addon Demo", persona: "obs" },
-  { name: "settings-plugin", key: "settings", label: "Settings", persona: "obs" }
+  {
+    name: "overview-plugin",
+    key: "overview",
+    label: "Overview",
+    persona: "ops",
+  },
+  {
+    name: "configuration-plugin",
+    key: "configuration",
+    label: "Configuration",
+    persona: "obs",
+  },
+  {
+    name: "virtualization-plugin",
+    key: "virtualization",
+    label: "Virtualization",
+    persona: "obs",
+  },
+  {
+    name: "addon-demo-plugin",
+    key: "addon-demo",
+    label: "Addon Demo",
+    persona: "obs",
+  },
+  {
+    name: "settings-plugin",
+    key: "settings",
+    label: "Settings",
+    persona: "obs",
+  },
 ];
 
 const metaByName = new Map(pluginMeta.map((p) => [p.name, p]));
@@ -107,4 +142,6 @@ for (const { path: filePath, rel } of manifests) {
 
 const registryPath = resolve(outputDir, "plugin-registry.json");
 writeFileSync(registryPath, JSON.stringify(registry, null, 2));
-console.log(`Plugin registry written (${Object.keys(registry.plugins).length} plugins) → ${registryPath}`);
+console.log(
+  `Plugin registry written (${Object.keys(registry.plugins).length} plugins) → ${registryPath}`,
+);

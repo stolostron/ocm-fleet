@@ -2,10 +2,10 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "google/api/field_behavior.proto";
 import "ocm/v1alpha/string_list.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // SubjectClaims represents the identity claims of an authenticated subject.
 message SubjectClaims {

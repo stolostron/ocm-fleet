@@ -2,10 +2,10 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // Request message for
 // [DeploymentService.GetDeployment][ocm.v1alpha.DeploymentService.GetDeployment].
@@ -14,8 +14,6 @@ message GetDeploymentRequest {
   // Format: deployments/{deployment}
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "open-cluster-management.io/Deployment"
-    }
+    (google.api.resource_reference) = {type: "open-cluster-management.io/Deployment"}
   ];
 }

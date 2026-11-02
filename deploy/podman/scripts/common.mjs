@@ -113,11 +113,7 @@ export async function copySandboxCA() {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     try {
-      await compose(
-        "cp",
-        "ocm-fleet:/data/sandbox/pki/ca.crt",
-        destination,
-      );
+      await compose("cp", "ocm-fleet:/data/sandbox/pki/ca.crt", destination);
       return;
     } catch {
       await sleep(1000);

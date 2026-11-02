@@ -16,7 +16,9 @@ const monorepoRoot = resolve(__dirname, "..");
 
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const pfIconsPkg = dirname(require.resolve("@patternfly/react-icons/package.json"));
+const pfIconsPkg = dirname(
+  require.resolve("@patternfly/react-icons/package.json"),
+);
 const iconsDir = join(pfIconsPkg, "dist/esm/icons");
 
 /** Convert kebab-case file stem to PascalCase component name. */
@@ -25,13 +27,6 @@ function toPascalCase(kebab) {
     .split("-")
     .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
     .join("");
-}
-
-/** Derive search keywords from the kebab-case stem. */
-function deriveKeywords(stem) {
-  // Remove trailing "-icon" suffix, split remaining parts
-  const base = stem.replace(/-icon$/, "");
-  return base.split("-").filter((w) => w.length > 0);
 }
 
 const files = readdirSync(iconsDir).filter(
@@ -54,10 +49,7 @@ for (const file of files) {
 // Sort alphabetically by name for deterministic output
 manifest.sort((a, b) => a.localeCompare(b));
 
-const outPath = join(
-  monorepoRoot,
-  "sdk/common/src/generated/pf-icons.json",
-);
+const outPath = join(monorepoRoot, "sdk/common/src/generated/pf-icons.json");
 
 mkdirSync(dirname(outPath), { recursive: true });
 writeFileSync(outPath, JSON.stringify(manifest) + "\n");

@@ -1457,7 +1457,7 @@ func awaitFulfillmentActive(ctx context.Context, t *testing.T, store domain.Stor
 			t.Fatalf("Begin: %v", err)
 		}
 		view, err := tx.ExtensionResources().GetView(ctx, fullName)
-		tx.Rollback()
+		tx.RollbackOnExit()
 		if err == nil && view.Fulfillment != nil && view.Fulfillment.State() == domain.FulfillmentStateActive {
 			return
 		}
@@ -1482,7 +1482,7 @@ func awaitExtensionResourceGone(ctx context.Context, t *testing.T, store domain.
 			t.Fatalf("Begin: %v", err)
 		}
 		_, err = tx.ExtensionResources().Get(ctx, fullName)
-		tx.Rollback()
+		tx.RollbackOnExit()
 		if errors.Is(err, domain.ErrNotFound) {
 			return
 		}

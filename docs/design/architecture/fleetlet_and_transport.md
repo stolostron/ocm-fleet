@@ -199,17 +199,17 @@ The primary authentication mode is OIDC token passthrough. User identity flows e
 
 ```yaml
 clusters:
-- cluster:
-    server: https://platform.example.com/targets/cluster-abc/api
-    certificate-authority-data: <platform TLS CA>
-  name: cluster-abc
+  - cluster:
+      server: https://platform.example.com/targets/cluster-abc/api
+      certificate-authority-data: <platform TLS CA>
+    name: cluster-abc
 users:
-- name: me
-  user:
-    exec:
-      apiVersion: client.authentication.k8s.io/v1
-      command: fleetctl
-      args: ["auth", "token"]
+  - name: me
+    user:
+      exec:
+        apiVersion: client.authentication.k8s.io/v1
+        command: fleetctl
+        args: ["auth", "token"]
 ```
 
 `kubectl` sends requests to the platform URL; the platform authorizes and proxies through the fleetlet. A CLI helper such as `fleetctl kubeconfig generate cluster-abc` can generate these kubeconfig entries, while `fleetctl auth token` handles OIDC token refresh. Multiple targets become multiple kubeconfig contexts that point at different paths on the same platform URL.

@@ -55,7 +55,7 @@ func (s *DeleteDeploymentWorkflowSpec) MutateToDeleting() Activity[DeleteDeploym
 			probe.Error(err)
 			return deploymentMutationResult{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		dep, err := tx.Deployments().Get(ctx, in.Name)
 		if err != nil {
@@ -93,7 +93,7 @@ func (s *DeleteDeploymentWorkflowSpec) LoadFulfillment() Activity[FulfillmentID,
 		if err != nil {
 			return nil, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		f, err := tx.Fulfillments().Get(ctx, id)
 		if errors.Is(err, ErrNotFound) {

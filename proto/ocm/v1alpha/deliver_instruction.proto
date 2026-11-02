@@ -2,10 +2,10 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "ocm/v1alpha/delivery_request.proto";
 import "ocm/v1alpha/remove_request.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // DeliverInstruction is the envelope for platform-to-fleetlet messages
 // on the delivery channel.

@@ -11,12 +11,12 @@ Plugin discovery gives the shell an inventory of available UI contributions whil
 
 The current routes are:
 
-| Route | Current role |
-| --- | --- |
-| `GET /api/ui/config` | Public pre-login plugin and OIDC bootstrap metadata |
-| `GET /api/ui/plugin-registry` | Public build-generated registry |
-| `GET /api/ui/user-config` | Default generated navigation; authentication required when OIDC is configured |
-| `/app/` and asset paths below it | Shell and plugin assets served from the configured web directory |
+| Route                            | Current role                                                                  |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `GET /api/ui/config`             | Public pre-login plugin and OIDC bootstrap metadata                           |
+| `GET /api/ui/plugin-registry`    | Public build-generated registry                                               |
+| `GET /api/ui/user-config`        | Default generated navigation; authentication required when OIDC is configured |
+| `/app/` and asset paths below it | Shell and plugin assets served from the configured web directory              |
 
 The user-config handler does not currently persist a separate layout per identity. Browser navigation overrides and presentation enablement are held locally in IndexedDB.
 

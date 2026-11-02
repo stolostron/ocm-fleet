@@ -19,7 +19,7 @@ import (
 func runHardeningTests(t *testing.T, factory Factory) {
 	t.Run("InjectionInLabelValueIsInert", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		const payload = `worker'; DROP TABLE extension_resources; --`
@@ -51,7 +51,7 @@ func runHardeningTests(t *testing.T, factory Factory) {
 
 	t.Run("InjectionInFieldPathSegmentIsRejected", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		// A field path segment can only ever be a CEL identifier
 		// (resource.spec.<ident>), so there is no CEL syntax that lets
@@ -67,7 +67,7 @@ func runHardeningTests(t *testing.T, factory Factory) {
 
 	t.Run("MalformedPageTokens", func(t *testing.T) {
 		tx, _ := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		for name, token := range map[string]string{
 			"not base64":           "not-valid-base64!!!",

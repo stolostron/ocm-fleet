@@ -2,10 +2,10 @@ syntax = "proto3";
 
 package ocm.v1alpha;
 
-option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
-
 import "google/api/field_behavior.proto";
 import "ocm/v1alpha/auth_method.proto";
+
+option go_package = "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha;ocmv1alpha";
 
 // Request message for
 // [AuthMethodService.CreateAuthMethod][ocm.v1alpha.AuthMethodService.CreateAuthMethod].

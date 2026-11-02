@@ -84,8 +84,6 @@ graph TB
     virtualization -.->|roles| managed
 ```
 
-
-
 ---
 
 ## Platform resource
@@ -93,7 +91,6 @@ graph TB
 The platform resource is the canonical identity for a logical resource. Its message schema is generic and does not change as extensions are added, but the services (and thus HTTP paths) are dynamic — new resource types add new services.
 
 ### Shape
-
 
 | Field              | Writability    | Description                                                                         |
 | ------------------ | -------------- | ----------------------------------------------------------------------------------- |
@@ -105,16 +102,15 @@ The platform resource is the canonical identity for a logical resource. Its mess
 | `aliases`          | Server-managed | Namespaced key:value pairs for alternate identifiers                                |
 | `relationships`    | Server-managed | Links to other platform resource identities (semantic relationships)                |
 
-
 ### No surrogate UID
 
-Platform resources have no `uid` field at all — `name` is the sole, permanent identifier. This is allowed by AIP-122/148 (`uid` is explicitly optional), and it is a deliberate choice, not an omission: AIP-148's entire purpose for `uid` is distinguishing a resource from a *different* resource that later reuses the same name after deletion, but a platform resource has no coherent notion of "this specific incarnation" to distinguish. It is a metadata shell aggregating representations across multiple extension resources with independent lifecycles — one service's representation can disappear and reappear (e.g. a transient scrape gap) without that meaning "a new identity now exists." There is no well-defined generation boundary to mint a UID against, so none is minted.
+Platform resources have no `uid` field at all — `name` is the sole, permanent identifier. This is allowed by AIP-122/148 (`uid` is explicitly optional), and it is a deliberate choice, not an omission: AIP-148's entire purpose for `uid` is distinguishing a resource from a _different_ resource that later reuses the same name after deletion, but a platform resource has no coherent notion of "this specific incarnation" to distinguish. It is a metadata shell aggregating representations across multiple extension resources with independent lifecycles — one service's representation can disappear and reappear (e.g. a transient scrape gap) without that meaning "a new identity now exists." There is no well-defined generation boundary to mint a UID against, so none is minted.
 
 Extension resources (the representations underneath a platform resource) keep their own `uid` — AIP-148 semantics genuinely apply there, since delete/recreate under the same name is a real, observable event with clear boundaries (e.g. a Kubernetes object's replacement).
 
 ### Materialization
 
-Platform resources are **virtual**: a resource name is visible through the platform API as soon as *anything* backs it — a live extension resource representation, a registered alias, or an explicit `Create`/label attachment — with no independent physical row required (unless an optimization–the API is decoupled from this). Reads derive the platform resource from whatever backing data exists for that name.
+Platform resources are **virtual**: a resource name is visible through the platform API as soon as _anything_ backs it — a live extension resource representation, a registered alias, or an explicit `Create`/label attachment — with no independent physical row required (unless an optimization–the API is decoupled from this). Reads derive the platform resource from whatever backing data exists for that name.
 
 Thus, there is no explicit _delete_ or _create_ operation for a platform resource. It exists so long as there is a reference across all service names. It is gone when there is none.
 
@@ -123,7 +119,6 @@ TODO: Consider history / retention – that may keep it around in a different st
 ### Platform-wide, user-managed state
 
 Users may desire to add labels, IAM policies, or other state, about a cluster that was just imported, or yet to be managed (somewhat equivalent to eagerly creating a ManagedCluster resource). This should be its own service, separate from the "platform resource" service, so that it can have its own AIP-compatible, "declarative-friendly" state.
-
 
 ### Dynamic service registration
 
@@ -189,13 +184,13 @@ Versioning is defined separately from the service name. An addon registers a ser
 
 The implementation's naming types mirror AIP-122 terminology:
 
-| Type               | Example                            | Description                                                           |
-| ------------------ | ---------------------------------- | --------------------------------------------------------------------- |
-| `ResourceID`       | `foo`                              | Leaf segment identifier (rarely used in isolation)                    |
-| `ResourceName`     | `clusters/foo`                     | Collection-qualified resource name; the primary identity type         |
+| Type               | Example                                          | Description                                                                         |
+| ------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `ResourceID`       | `foo`                                            | Leaf segment identifier (rarely used in isolation)                                  |
+| `ResourceName`     | `clusters/foo`                                   | Collection-qualified resource name; the primary identity type                       |
 | `FullResourceName` | `//kind.open-cluster-management.io/clusters/foo` | Globally unique including service; used in attestation and cross-service references |
-| `CollectionID`     | `clusters`                         | Single collection segment (rarely used in isolation)                  |
-| `CollectionName`   | `clusters`                         | Full path to a collection; generalizes to hierarchical names          |
+| `CollectionID`     | `clusters`                                       | Single collection segment (rarely used in isolation)                                |
+| `CollectionName`   | `clusters`                                       | Full path to a collection; generalizes to hierarchical names                        |
 
 `ResourceName` is the standard currency for domain APIs. `ResourceID` is used only at boundaries (e.g. parsing a resource name from an HTTP path segment). The current implementation is flat (`clusters/foo`), but `CollectionName` and `ResourceName` do not structurally prevent future hierarchy.
 
@@ -236,7 +231,7 @@ Multiple extensions defining the same resource name is expected and correct — 
 Conflicts arise from:
 
 - **Value claimed by a different resource**: extension A asserts `clusters/foo` has `kube-system-ns-uid=1` while extension B asserts `clusters/bar` also has `kube-system-ns-uid=1` — regardless of which extension resource(s) contributed either claim.
-- **Resource has a different value for the same key**: an extension resource representing `clusters/foo` already has `kube-system-ns-uid=1` on file, and a *different* extension resource also representing `clusters/foo` reports `kube-system-ns-uid=2` for the same key — rejected. This does not fire when the same extension resource that originally set `kube-system-ns-uid=1` reports a new value itself; that's a replace of its own contribution, not a conflict, unless another extension resource representing `clusters/foo` is still asserting the old value.
+- **Resource has a different value for the same key**: an extension resource representing `clusters/foo` already has `kube-system-ns-uid=1` on file, and a _different_ extension resource also representing `clusters/foo` reports `kube-system-ns-uid=2` for the same key — rejected. This does not fire when the same extension resource that originally set `kube-system-ns-uid=1` reports a new value itself; that's a replace of its own contribution, not a conflict, unless another extension resource representing `clusters/foo` is still asserting the old value.
 - **Unauthorized identity claims**: an extension attempts to claim a resource name without authorization.
 - **Multiple identity binding**: an extension resource attempts to bind to multiple platform identities.
 
@@ -255,13 +250,11 @@ Conflicts arise from:
 
 The platform resource tracks its representations. Each representation's roles come from the extension resource **type definition**, which declares independent capability axes. Management and inventory compose: a type may declare either, both, or (with target) any combination the addon needs. "Managed-only" and "inventory-only" are useful names for common combinations, not separate resource kinds.
 
-
-| Role        | Description                                                         | Composition                                              |
-| ----------- | ------------------------------------------------------------------- | -------------------------------------------------------- |
-| `managed`   | The extension resource has a writable spec driving a fulfillment    | Composes with `inventory` and/or `target`                |
-| `inventory` | The extension resource reports observed state                       | Composes with `managed` and/or `target`                  |
-| `target`    | The extension resource provides delivery connectivity configuration | Composes with `managed` and/or `inventory`               |
-
+| Role        | Description                                                         | Composition                                |
+| ----------- | ------------------------------------------------------------------- | ------------------------------------------ |
+| `managed`   | The extension resource has a writable spec driving a fulfillment    | Composes with `inventory` and/or `target`  |
+| `inventory` | The extension resource reports observed state                       | Composes with `managed` and/or `target`    |
+| `target`    | The extension resource provides delivery connectivity configuration | Composes with `managed` and/or `inventory` |
 
 For example, `//kubernetes.open-cluster-management.io/clusters/foo` might declare roles: `target`, `inventory`. A provisioning addon might declare `managed` and `inventory` on the same type so one extension resource carries both intent and observed state.
 
@@ -398,5 +391,3 @@ No implicit synthetic rollup condition is generated. Source conditions remain au
 3. **Extension API versioning mechanics**: service name is stable; proto package and URL version evolve independently. The exact mechanics of multi-version coexistence need specification.
 4. **Short-form HTTP path aliases**: whether `/v1alpha/clusters/foo` serves as an alias for `/apis/open-cluster-management.io/v1alpha/clusters/foo`.
 5. **Pre-created identity persistence**: whether platform resources that were pre-created (before any extension resource existed) have stronger persistence guarantees against extension-initiated deletion.
-
-

@@ -91,7 +91,7 @@ func (s *DeliveryReportService) ReportEvent(ctx context.Context, deliveryID doma
 		probe.Error(err)
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	d, err := tx.Deliveries().Get(ctx, deliveryID)
 	if err != nil {
@@ -155,7 +155,7 @@ func (s *DeliveryReportService) ReportResult(ctx context.Context, deliveryID dom
 		probe.Error(err)
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	d, err := tx.Deliveries().Get(ctx, deliveryID)
 	if err != nil {
@@ -225,7 +225,7 @@ func (s *DeliveryReportService) ListActiveDeliveries(ctx context.Context, target
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	deliveries, err := tx.Deliveries().ListActive(ctx, targetIDs)
 	if err != nil {

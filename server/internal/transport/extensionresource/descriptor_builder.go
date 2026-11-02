@@ -14,7 +14,6 @@ import (
 	// protoregistry.GlobalFiles so the dynamic descriptor builder
 	// can resolve the Provenance message type.
 	_ "github.com/stolostron/ocm-fleet/server/gen/ocm/v1alpha"
-
 	"github.com/stolostron/ocm-fleet/server/internal/transport/dynamicapi"
 )
 

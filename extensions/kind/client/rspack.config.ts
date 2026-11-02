@@ -1,3 +1,4 @@
+import { ModuleFederationPlugin as BaseMFPlugin } from "@module-federation/enhanced/rspack";
 import {
   createClusterProvider,
   createCommonModuleReplacementPlugin,
@@ -9,7 +10,6 @@ import {
   getCommonDynamicModules,
   getDynamicModules,
 } from "@ocm-fleet/build-utils";
-import { ModuleFederationPlugin as BaseMFPlugin } from "@module-federation/enhanced/rspack";
 import type { Configuration } from "@rspack/core";
 import rspack from "@rspack/core";
 import path from "path";
@@ -124,7 +124,9 @@ const configs: Configuration[] = pluginConfigs.map(({ plugin, key }) => ({
     assetModuleFilename: `plugins/${key}/assets/[hash][ext]`,
     uniqueName: key,
   },
-  mode: (process.env.NODE_ENV === "development" ? "development" : "production") as Configuration["mode"],
+  mode: (process.env.NODE_ENV === "development"
+    ? "development"
+    : "production") as Configuration["mode"],
   ignoreWarnings: [/Plugin base URL/, /Plugin has no extensions/],
   stats: {
     preset: "normal",

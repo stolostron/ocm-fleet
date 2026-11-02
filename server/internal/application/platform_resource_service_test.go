@@ -86,12 +86,12 @@ func TestPlatformResourceService_GetReturnsRepresentations(t *testing.T) {
 	rt := domain.ResourceType("kind.open-cluster-management.io/Cluster")
 	typeDef := domain.NewExtensionResourceType(rt, "v1alpha1", "clusters", now)
 	if err := tx.ExtensionResources().CreateType(ctx, typeDef); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("CreateType: %v", err)
 	}
 	er := domain.NewExtensionResource(domain.NewExtensionResourceUID(), rt, pr.Name(), now)
 	if err := tx.ExtensionResources().Create(ctx, er); err != nil {
-		tx.Rollback()
+		tx.RollbackOnExit()
 		t.Fatalf("Create extension resource: %v", err)
 	}
 	if err := tx.Commit(); err != nil {

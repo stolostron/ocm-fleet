@@ -93,7 +93,7 @@ func seedManagedPlusInventoryTypeForDelete(t *testing.T, store domain.Store, now
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	typeDef := domain.NewExtensionResourceType(
 		deletePreflightResourceType, "v1", "widgets", now,

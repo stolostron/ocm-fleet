@@ -128,7 +128,7 @@ func seedIntent(t *testing.T, store domain.Store, rt domain.ResourceType, name d
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	relation := domain.NewRegisteredSelfTarget("addon-target", "managed-resource")
 	ert := domain.NewExtensionResourceType(

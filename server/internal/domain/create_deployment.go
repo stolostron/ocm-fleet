@@ -50,7 +50,7 @@ func (s *CreateDeploymentWorkflowSpec) PersistDeployment() Activity[CreateDeploy
 		if err != nil {
 			return DeploymentView{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		now := s.now()
 		uid := NewDeploymentUID()

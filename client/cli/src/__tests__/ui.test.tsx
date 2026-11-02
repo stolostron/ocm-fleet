@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect */
 import { cleanup, render } from "ink-testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 

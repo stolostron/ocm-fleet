@@ -51,7 +51,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("BeginReadOnly: %v", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		got, err := tx.SignerEnrollments().Get(ctx, "se-1")
 		if err != nil {
@@ -86,7 +86,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("BeginReadOnly: %v", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		_, err = tx.SignerEnrollments().Get(ctx, "nonexistent")
 		if !errors.Is(err, domain.ErrNotFound) {
@@ -126,7 +126,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		err = tx.SignerEnrollments().Create(ctx, enrollment)
 		if !errors.Is(err, domain.ErrAlreadyExists) {
@@ -198,7 +198,7 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("BeginReadOnly: %v", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		got, err := tx.SignerEnrollments().ListBySubject(ctx, domain.FederatedIdentity{
 			Subject: "user-1",

@@ -3,7 +3,10 @@ import {
   Button,
   Form,
   FormGroup,
+  FormHelperText,
   FormSection,
+  HelperText,
+  HelperTextItem,
   TextInput,
   Title,
 } from "@patternfly/react-core";
@@ -88,17 +91,19 @@ export function KindOnboardingForm({
                   placeholder="kindest/node:v1.31.0"
                 />
               </FormGroup>
-              <FormGroup
-                label="API server port"
-                fieldId="kind-api-port"
-                helperText="Leave 0 for auto-assign"
-              >
+              <FormGroup label="API server port" fieldId="kind-api-port">
                 <TextInput
                   id="kind-api-port"
+                  aria-describedby="kind-api-port-help"
                   type="number"
                   value={form.apiServerPort}
                   onChange={(_e, v) => update("apiServerPort", v)}
                 />
+                <FormHelperText>
+                  <HelperText id="kind-api-port-help">
+                    <HelperTextItem>Leave 0 for auto-assign</HelperTextItem>
+                  </HelperText>
+                </FormHelperText>
               </FormGroup>
             </FormSection>
           </Form>

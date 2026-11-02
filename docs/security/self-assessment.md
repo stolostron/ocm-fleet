@@ -6,13 +6,13 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Software | [OCM Fleet repository](https://github.com/stolostron/ocm-fleet) |
+| Field             | Value                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| Software          | [OCM Fleet repository](https://github.com/stolostron/ocm-fleet)                        |
 | Security provider | No. OCM Fleet is intended manage fleets. It, however, aims to do that in a secure way. |
-| Languages | Go, TypeScript, JavaScript, Protocol Buffers |
-| SBOM | Not published for this draft |
-| Compliance | No compliance certification claimed |
+| Languages         | Go, TypeScript, JavaScript, Protocol Buffers                                           |
+| SBOM              | Not published for this draft                                                           |
+| Compliance        | No compliance certification claimed                                                    |
 
 ## Security links
 
@@ -23,6 +23,7 @@
 - [Trust model v3](../design/trust_model_v3.md)
 
 References:
+
 - [OpenSSF self-assessment guide](https://security-assessments.openssf.org/self-assessment/getting-started-self-assessment/)
 - [CNSC catalog](https://grc.store/cncf-tag-sc/cnsc)
 
@@ -32,17 +33,17 @@ OCM Fleet is a multi-tenant management plane for declaring, delivering, and obse
 
 ## Actors
 
-| Actor | Role and boundary |
-| --- | --- |
-| User or automation | Creates requests and may sign intent. It is outside the platform process. |
-| Identity/provenance authority | Authenticates principals and issues or validates evidence. It is an external trust root. |
-| Resource manager | Stores state, authorizes API requests, orchestrates work, and transports evidence. It is the primary platform authority, but not the sole provenance authority. |
-| Extension | Provides strategy, API, UI, inventory, or delivery capabilities. It is a separate trust boundary. |
-| Fleetlet/transport | Routes channels between the platform and local agents. It carries privileged delivery and proxy traffic. |
-| Delivery agent/verifier | Validates credentials, provenance, scope, ordering, and generation before applying work. |
-| Target | Kubernetes, cloud, platform, or extension-defined infrastructure where effects occur. |
-| Browser shell/UI plugin | Presents data and actions to users. A plugin is not trusted with signing keys or unrestricted shell authority. |
-| Operator/trust administrator | Bootstraps and changes provider, tenant, extension, and trust configuration. |
+| Actor                         | Role and boundary                                                                                                                                               |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| User or automation            | Creates requests and may sign intent. It is outside the platform process.                                                                                       |
+| Identity/provenance authority | Authenticates principals and issues or validates evidence. It is an external trust root.                                                                        |
+| Resource manager              | Stores state, authorizes API requests, orchestrates work, and transports evidence. It is the primary platform authority, but not the sole provenance authority. |
+| Extension                     | Provides strategy, API, UI, inventory, or delivery capabilities. It is a separate trust boundary.                                                               |
+| Fleetlet/transport            | Routes channels between the platform and local agents. It carries privileged delivery and proxy traffic.                                                        |
+| Delivery agent/verifier       | Validates credentials, provenance, scope, ordering, and generation before applying work.                                                                        |
+| Target                        | Kubernetes, cloud, platform, or extension-defined infrastructure where effects occur.                                                                           |
+| Browser shell/UI plugin       | Presents data and actions to users. A plugin is not trusted with signing keys or unrestricted shell authority.                                                  |
+| Operator/trust administrator  | Bootstraps and changes provider, tenant, extension, and trust configuration.                                                                                    |
 
 Isolation is provided by authentication, tenant/workspace authorization, process boundaries, target-local credentials, authenticated provenance, channel profiles, and target-side verification. Exact non-authorization isolation between tenants remains unresolved.
 
@@ -57,7 +58,7 @@ Isolation is provided by authentication, tenant/workspace authorization, process
 7. Rotate, revoke, recover, or update credentials and trust configuration.
 8. Install extensions, activate dynamic APIs, and load UI assets.
 9. Provision child platforms and factory infrastructure.
-~~10. Provide approved break-glass access where a target profile permits it.~~
+   ~~10. Provide approved break-glass access where a target profile permits it.~~
 
 ## Security goals
 
@@ -92,7 +93,6 @@ Isolation is provided by authentication, tenant/workspace authorization, process
 - Provenance data parses well and is verified at deserialization.
 - CEL search criteria are verified and valid before being used.
 - ID/Access token spoofing, SVID spoofing can only punctually harm the system.
-
 
 ## Critical security components
 

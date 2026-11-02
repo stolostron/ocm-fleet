@@ -54,7 +54,7 @@ func raceTestOrchestration(t *testing.T) (domain.OrchestrationWorkflow, domain.F
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if err := tx.Targets().Create(ctx, domain.TargetInfoFromSnapshot(domain.TargetInfoSnapshot{
 		ID: "t1", Type: "test", Name: "cluster-t1",
 	})); err != nil {
@@ -86,7 +86,7 @@ func raceTestOrchestration(t *testing.T) (domain.OrchestrationWorkflow, domain.F
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx2.Rollback()
+	defer tx2.RollbackOnExit()
 	if err := tx2.Fulfillments().Create(ctx, f); err != nil {
 		t.Fatal(err)
 	}

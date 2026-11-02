@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"os"
@@ -22,6 +23,13 @@ import (
 )
 
 const corpusSize = 100_000
+
+func rollbackTest(testingT *testing.T, tx *sql.Tx) {
+	testingT.Helper()
+	if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+		testingT.Errorf("rollback: %v", err)
+	}
+}
 
 func isPodmanAvailable() bool {
 	_, err := exec.LookPath("podman")
@@ -484,7 +492,7 @@ func runProductionReplacePlanStability(ctx context.Context, t *testing.T, db *sq
 			if err != nil {
 				t.Fatalf("begin tx: %v", err)
 			}
-			defer tx.Rollback()
+			defer rollbackTest(t, tx)
 
 			if _, err := tx.ExecContext(ctx, "SET LOCAL plan_cache_mode = "+mode); err != nil {
 				t.Fatalf("set plan_cache_mode: %v", err)
@@ -628,7 +636,7 @@ func runOptimisticReplaceShapeComparison(ctx context.Context, t *testing.T, db *
 			if err != nil {
 				t.Fatalf("begin tx: %v", err)
 			}
-			defer tx.Rollback()
+			defer rollbackTest(t, tx)
 
 			if _, err := tx.ExecContext(ctx, "SET LOCAL plan_cache_mode = force_generic_plan"); err != nil {
 				t.Fatalf("set plan_cache_mode: %v", err)
@@ -675,7 +683,7 @@ func runOptimisticReplaceShapeComparison(ctx context.Context, t *testing.T, db *
 			if err != nil {
 				t.Fatalf("begin tx: %v", err)
 			}
-			defer tx.Rollback()
+			defer rollbackTest(t, tx)
 
 			if _, err := tx.ExecContext(ctx, "SET LOCAL plan_cache_mode = force_generic_plan"); err != nil {
 				t.Fatalf("set plan_cache_mode: %v", err)
@@ -718,7 +726,7 @@ func runOptimisticReplaceShapeComparison(ctx context.Context, t *testing.T, db *
 		if err != nil {
 			t.Fatalf("begin tx: %v", err)
 		}
-		defer tx.Rollback()
+		defer rollbackTest(t, tx)
 
 		if _, err := tx.ExecContext(ctx, "SET LOCAL plan_cache_mode = force_generic_plan"); err != nil {
 			t.Fatalf("set plan_cache_mode: %v", err)

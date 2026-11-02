@@ -48,7 +48,7 @@ func enrollSigner(t *testing.T, store domain.Store, fakeReg *keyregistry.Fake, s
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	if err := tx.SignerEnrollments().Create(ctx, enrollment); err != nil {
 		t.Fatalf("create signer enrollment: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestRepoRoundTrip_ProvenanceOnFulfillment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin read: %v", err)
 	}
-	defer tx2.Rollback()
+	defer tx2.RollbackOnExit()
 
 	got, err := tx2.Deployments().GetView(ctx, "deployments/prov-rt")
 	if err != nil {

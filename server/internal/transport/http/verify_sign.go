@@ -82,7 +82,7 @@ func (h *VerifySignHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, verifySignResponse{Error: "store error"})
 		return
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	err = h.ProvenanceSvc.VerifySignature(
 		r.Context(),

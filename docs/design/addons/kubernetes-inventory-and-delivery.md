@@ -82,13 +82,13 @@ When a producer (or startup replay) successfully ensures an indexer, the host ru
 
 A kubernetes target provides its connection details through properties:
 
-| Property | Required | Description |
-| --- | --- | --- |
-| `api_server` | yes | Kubernetes API server URL |
-| `ca_cert` | no | PEM-encoded CA certificate for TLS verification |
-| `service_account_token` | no | Direct bearer token for authentication |
-| `service_account_token_ref` | no | Vault secret reference resolved at connect / indexer start / unexpected-exit restart |
-| `cluster_resource_name` | yes (for indexing) | Managed cluster resource name (e.g. `clusters/c1`) whose ID is the inventory object-name parent segment |
+| Property                    | Required           | Description                                                                                             |
+| --------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `api_server`                | yes                | Kubernetes API server URL                                                                               |
+| `ca_cert`                   | no                 | PEM-encoded CA certificate for TLS verification                                                         |
+| `service_account_token`     | no                 | Direct bearer token for authentication                                                                  |
+| `service_account_token_ref` | no                 | Vault secret reference resolved at connect / indexer start / unexpected-exit restart                    |
+| `cluster_resource_name`     | yes (for indexing) | Managed cluster resource name (e.g. `clusters/c1`) whose ID is the inventory object-name parent segment |
 
 For indexing, one of `service_account_token` or `service_account_token_ref` must resolve to a non-empty credential. Direct tokens take precedence. `cluster_resource_name` is distinct from the kubernetes target ID when the target is prefixed (e.g. target `k8s-c1` with cluster resource `clusters/c1`). In the external agent model, the agent runs as a pod on the target cluster and can use in-cluster credentials, making some of these properties unnecessary.
 
@@ -122,13 +122,13 @@ In the external model, the indexer runs as an agent pod on the Kubernetes target
 
 The inventory reporter is the key modularity boundary for inventory. In-process, a direct adapter writes through the platform inventory report service. In the external model, a fleetlet/channel or HTTP/gRPC adapter would implement the same report shape. The discovery/filter/informer/extraction/writer core is identical — only the reporter transport and process lifecycle change.
 
-| Concern | In-process | External agent |
-| --- | --- | --- |
-| Indexer creation | Producers + startup replay ensure indexers on the in-process host | Agent pod on the target cluster, in-cluster credentials |
-| Delivery requests | Direct calls from delivery router to the delivery agent | Fleetlet delivery channel (future) |
-| Inventory writes | Direct adapter to the platform inventory report path | Transport inventory reporter |
-| Delivery reporting | Direct delivery reporter | Fleetlet delivery channel adapter |
-| Lifecycle | Producer start/stop; one-shot startup replay; stop-all on shutdown | Agent pod lifecycle IS the indexing lifecycle |
+| Concern            | In-process                                                         | External agent                                          |
+| ------------------ | ------------------------------------------------------------------ | ------------------------------------------------------- |
+| Indexer creation   | Producers + startup replay ensure indexers on the in-process host  | Agent pod on the target cluster, in-cluster credentials |
+| Delivery requests  | Direct calls from delivery router to the delivery agent            | Fleetlet delivery channel (future)                      |
+| Inventory writes   | Direct adapter to the platform inventory report path               | Transport inventory reporter                            |
+| Delivery reporting | Direct delivery reporter                                           | Fleetlet delivery channel adapter                       |
+| Lifecycle          | Producer start/stop; one-shot startup replay; stop-all on shutdown | Agent pod lifecycle IS the indexing lifecycle           |
 
 The actual fleetlet channel integration is not yet built, but no structural changes to the indexing core should be required beyond a transport reporter.
 
@@ -170,18 +170,18 @@ Resource filtering controls which Kubernetes resources the indexer watches. Thre
 
 The following resources are excluded by default. They are either too high-volume, sensitive, or problematic for indexing:
 
-| Resource | Group | Reason |
-| --- | --- | --- |
-| `events` | `""` | Transient status messages, thousands per minute on busy clusters |
-| `events` | `events.k8s.io` | Newer Event API, same volume problem |
-| `leases` | `coordination.k8s.io` | Node heartbeats, update every ~10 seconds per node |
-| `endpoints` | `""` | Derived from Services, changes with every pod scale event |
-| `endpointslices` | `discovery.k8s.io` | Same as endpoints, newer API |
-| `componentstatuses` | `""` | Deprecated in modern Kubernetes |
-| `oauthaccesstokens` | `oauth.openshift.io` | Sensitive + high volume |
-| `oauthauthorizetokens` | `oauth.openshift.io` | Sensitive |
-| `projects` | `project.openshift.io` | Same UID as namespaces, creates duplicate inventory |
-| `packagemanifests` | `packages.operators.coreos.com` | OLM catalog metadata, read-only, very large |
+| Resource               | Group                           | Reason                                                           |
+| ---------------------- | ------------------------------- | ---------------------------------------------------------------- |
+| `events`               | `""`                            | Transient status messages, thousands per minute on busy clusters |
+| `events`               | `events.k8s.io`                 | Newer Event API, same volume problem                             |
+| `leases`               | `coordination.k8s.io`           | Node heartbeats, update every ~10 seconds per node               |
+| `endpoints`            | `""`                            | Derived from Services, changes with every pod scale event        |
+| `endpointslices`       | `discovery.k8s.io`              | Same as endpoints, newer API                                     |
+| `componentstatuses`    | `""`                            | Deprecated in modern Kubernetes                                  |
+| `oauthaccesstokens`    | `oauth.openshift.io`            | Sensitive + high volume                                          |
+| `oauthauthorizetokens` | `oauth.openshift.io`            | Sensitive                                                        |
+| `projects`             | `project.openshift.io`          | Same UID as namespaces, creates duplicate inventory              |
+| `packagemanifests`     | `packages.operators.coreos.com` | OLM catalog metadata, read-only, very large                      |
 
 Non-OpenShift clusters will not have the OpenShift GVRs — they are silently skipped during discovery.
 
@@ -232,13 +232,13 @@ The indexing pipeline produces inventory object reports and, in memory, topology
 
 Core edge types shipped with the kubernetes addon:
 
-| Edge Type | Source | Destination | Discovery |
-| --- | --- | --- | --- |
-| `ownedBy` | any resource | its controlling owner | controlling `ownerReference`, walked recursively up the controller chain |
-| `runsOn` | Pod | Node | `spec.nodeName` |
-| `attachedTo` | Pod | Secret, ConfigMap, PVC | scanning `spec.volumes` and `spec.containers[].env` valueFrom refs |
-| `attachedTo` | PVC | PV | `spec.volumeName` |
-| `selects` | Service | Pod | label selector matching against known Pods |
+| Edge Type    | Source       | Destination            | Discovery                                                                |
+| ------------ | ------------ | ---------------------- | ------------------------------------------------------------------------ |
+| `ownedBy`    | any resource | its controlling owner  | controlling `ownerReference`, walked recursively up the controller chain |
+| `runsOn`     | Pod          | Node                   | `spec.nodeName`                                                          |
+| `attachedTo` | Pod          | Secret, ConfigMap, PVC | scanning `spec.volumes` and `spec.containers[].env` valueFrom refs       |
+| `attachedTo` | PVC          | PV                     | `spec.volumeName`                                                        |
+| `selects`    | Service      | Pod                    | label selector matching against known Pods                               |
 
 ### Recursive owner traversal
 
@@ -392,16 +392,16 @@ The indexer extracts inventory object reports in two tiers. The base tier runs f
 
 Every watched resource gets the following projected into the inventory report, with no enriched schema fields required:
 
-| Projection | Source |
-| --- | --- |
-| Resource name | namespaced: `clusters/{cluster}/namespaces/{ns}/apiResources/{groupResourceKey}/objects/{uid}`; cluster-scoped omits `namespaces/{ns}` |
-| Labels | Kubernetes `metadata.labels` (complete latest set; empty map clears) |
-| Conditions | Kubernetes `status.conditions` projected to platform conditions (True/False/Unknown only; empty type dropped; missing transition time falls back to observed-at) |
-| Observation GVR | group, version, resource, scope |
-| Observation apiVersion / kind | from the object |
-| Observation metadata | uid, namespace, name, resourceVersion, generation, creationTimestamp, deletionTimestamp, annotations, ownerReferences |
-| Observation extracted | empty object unless enriched tier fills it |
-| Controlling owner UID (in-memory) | controlling `metadata.ownerReferences` entry (used for recursive edge building) |
+| Projection                        | Source                                                                                                                                                           |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resource name                     | namespaced: `clusters/{cluster}/namespaces/{ns}/apiResources/{groupResourceKey}/objects/{uid}`; cluster-scoped omits `namespaces/{ns}`                           |
+| Labels                            | Kubernetes `metadata.labels` (complete latest set; empty map clears)                                                                                             |
+| Conditions                        | Kubernetes `status.conditions` projected to platform conditions (True/False/Unknown only; empty type dropped; missing transition time falls back to observed-at) |
+| Observation GVR                   | group, version, resource, scope                                                                                                                                  |
+| Observation apiVersion / kind     | from the object                                                                                                                                                  |
+| Observation metadata              | uid, namespace, name, resourceVersion, generation, creationTimestamp, deletionTimestamp, annotations, ownerReferences                                            |
+| Observation extracted             | empty object unless enriched tier fills it                                                                                                                       |
+| Controlling owner UID (in-memory) | controlling `metadata.ownerReferences` entry (used for recursive edge building)                                                                                  |
 
 Secret `data` is not stored in observation — only metadata/identity and safe extracted fields.
 
@@ -426,13 +426,13 @@ The indexing schema defines how to enrich extraction beyond the base tier. It do
 
 ### Data types
 
-| Type | Coercion |
-| --- | --- |
-| `string` | Default. Value returned as-is. |
-| `number` | Coerced to a floating-point number. Accepts int, float, and string. |
-| `bytes` | Parsed as a Kubernetes quantity (e.g. `1Gi`) and converted to bytes as a number. |
-| `slice` | All JSONPath results collected into a flat list. |
-| `mapString` | Map values coerced to strings. |
+| Type        | Coercion                                                                         |
+| ----------- | -------------------------------------------------------------------------------- |
+| `string`    | Default. Value returned as-is.                                                   |
+| `number`    | Coerced to a floating-point number. Accepts int, float, and string.              |
+| `bytes`     | Parsed as a Kubernetes quantity (e.g. `1Gi`) and converted to bytes as a number. |
+| `slice`     | All JSONPath results collected into a flat list.                                 |
+| `mapString` | Map values coerced to strings.                                                   |
 
 ### Extraction
 
@@ -440,11 +440,11 @@ Two-tier extraction converts an unstructured Kubernetes resource into an invento
 
 1. Build the resource name from cluster resource ID, GVR key, and UID
 2. Project conditions from `status.conditions` when present
-3. *(enriched)* Evaluate JSONPath expressions for each schema field, coercing by data type into `extracted`
-4. *(enriched)* Extract annotations if enabled, with size cap and noise stripping
-5. *(enriched)* Run the compute-extra hook if present (e.g., pod status computation, node roles)
+3. _(enriched)_ Evaluate JSONPath expressions for each schema field, coercing by data type into `extracted`
+4. _(enriched)_ Extract annotations if enabled, with size cap and noise stripping
+5. _(enriched)_ Run the compute-extra hook if present (e.g., pod status computation, node roles)
 6. Build observation (`gvr`, `apiVersion`, `kind`, `metadata`, `extracted`) and labels from Kubernetes labels
-7. *(enriched)* Store the build-edges closure for edge computation when a real sink is active
+7. _(enriched)_ Store the build-edges closure for edge computation when a real sink is active
 
 ### Default schema
 

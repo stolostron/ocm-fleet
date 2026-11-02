@@ -1,4 +1,3 @@
-/* eslint playwright/no-standalone-expect: "off" -- Vitest uses it/it.each. */
 import { describe, expect, it } from "vitest";
 
 import {

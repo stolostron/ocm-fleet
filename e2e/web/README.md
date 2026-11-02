@@ -30,4 +30,3 @@ OCM_FLEET_E2E_AIO_PULL=1 npx nx test:e2e e2e-web -- --project=chromium-sanity
 The runner sets `BASE_URL` to the branded HTTPS origin. Playwright uses
 `ignoreHTTPSErrors` for the sandbox private CA; do not `update-ca-trust` on
 the host. CI asserts Dex port 5556 is not published.
-

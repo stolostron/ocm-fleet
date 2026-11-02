@@ -4,7 +4,8 @@
     "declaration": false,
     "declarationMap": false,
     "noEmit": true,
+    "jsx": "react-jsx",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["./**/*.ts", "../shared/**/*.ts"]
+  "include": ["**/*.ts", "**/*.tsx", "../shared/**/*.ts"]
 }

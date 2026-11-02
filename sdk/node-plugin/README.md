@@ -6,11 +6,11 @@ A private workspace package for producing Node.js Module Federation remotes with
 
 Use this package through the repository's npm workspaces. The consuming build must provide these peer dependencies:
 
-| Package | Required version |
-| --- | --- |
-| `@module-federation/enhanced` | `^2.9.0` |
-| `@module-federation/node` | `^2.7.52` |
-| `@rspack/core` | `>=2.0.8` |
+| Package                       | Required version |
+| ----------------------------- | ---------------- |
+| `@module-federation/enhanced` | `^2.9.0`         |
+| `@module-federation/node`     | `^2.7.52`        |
+| `@rspack/core`                | `>=2.0.8`        |
 
 After building the package, use an ESM Rspack configuration such as `rspack.config.mjs`:
 
@@ -58,15 +58,15 @@ The caller owns TypeScript/JSX transforms, loaders, externals, and shared depend
 
 `NodeRemotePlugin` accepts `NodeRemotePluginOptions`, exported from the package:
 
-| Option | Default and behavior |
-| --- | --- |
-| `pluginMetadata.name` | Required nonempty string; the federation container and manifest name. |
-| `pluginMetadata.version` | Required nonempty string; the manifest version. |
-| `pluginMetadata.exposedModules` | Map of public lookup names to source paths. At least one entry is required. |
-| `extensions` | Required array of generic values, preserved in the manifest; `[]` is valid. |
-| `sharedModules` | Optional; passed to Enhanced's `shared` option without a preset. |
-| `entryScriptFilename` | `"remoteEntry.cjs"`; must be a nonempty static `.cjs` filename without Rspack placeholders. |
-| `pluginManifestFilename` | `"<name>-manifest.json"`. |
+| Option                          | Default and behavior                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------------------- |
+| `pluginMetadata.name`           | Required nonempty string; the federation container and manifest name.                       |
+| `pluginMetadata.version`        | Required nonempty string; the manifest version.                                             |
+| `pluginMetadata.exposedModules` | Map of public lookup names to source paths. At least one entry is required.                 |
+| `extensions`                    | Required array of generic values, preserved in the manifest; `[]` is valid.                 |
+| `sharedModules`                 | Optional; passed to Enhanced's `shared` option without a preset.                            |
+| `entryScriptFilename`           | `"remoteEntry.cjs"`; must be a nonempty static `.cjs` filename without Rspack placeholders. |
+| `pluginManifestFilename`        | `"<name>-manifest.json"`.                                                                   |
 
 Expose names and paths must be nonempty. `command` becomes federation key `./command`; an existing `./` prefix is preserved. Names that normalize to the same key are rejected. Public SDK lookup names do not gain the prefix.
 

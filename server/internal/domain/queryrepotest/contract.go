@@ -26,7 +26,7 @@ type Factory func(t *testing.T) domain.Tx
 func RunUnimplemented(t *testing.T, factory Factory) {
 	t.Run("QueryResourcesReturnsErrUnimplemented", func(t *testing.T) {
 		tx := factory(t)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		_, err := tx.Queries().QueryResources(context.Background(), domain.QueryResourcesRequest{})
 		if !errors.Is(err, domain.ErrUnimplemented) {
@@ -59,7 +59,7 @@ func Run(t *testing.T, factory Factory) {
 }
 
 // newFixtureTx begins a fresh transaction via factory and seeds
-// [SeedCoreFixtures] into it. Callers must `defer tx.Rollback()`.
+// [SeedCoreFixtures] into it. Callers must defer [domain.Tx.RollbackOnExit].
 func newFixtureTx(t *testing.T, factory Factory) (domain.Tx, Fixture) {
 	t.Helper()
 	tx := factory(t)
@@ -110,7 +110,7 @@ func extensionEnvelopeName(rt domain.ResourceType, name domain.ResourceName) str
 func runEmptyFilterTests(t *testing.T, factory Factory) {
 	t.Run("ReturnsOnlyExtensionRows", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		results := queryAll(t, tx, "")
 		if len(results) != 2 {
@@ -140,7 +140,7 @@ func runEmptyFilterTests(t *testing.T, factory Factory) {
 
 	t.Run("IgnoresPlatformOnlyResources", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		// Platform-only fixtures remain seeded for other repositories,
 		// but QueryResources must not surface them.
@@ -155,7 +155,7 @@ func runEmptyFilterTests(t *testing.T, factory Factory) {
 func runHydrationEquivalenceTests(t *testing.T, factory Factory) {
 	t.Run("ExtensionProjectionEqualsGetView", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		want, err := tx.ExtensionResources().GetView(ctx, fx.ManagedType.FullName(fx.ManagedName))
@@ -177,7 +177,7 @@ func runHydrationEquivalenceTests(t *testing.T, factory Factory) {
 
 	t.Run("InventoryOnlyProjectionEqualsGetView", func(t *testing.T) {
 		tx, fx := newFixtureTx(t, factory)
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 		ctx := context.Background()
 
 		want, err := tx.ExtensionResources().GetView(ctx, fx.InventoryType.FullName(fx.InventoryName))

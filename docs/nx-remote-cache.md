@@ -18,6 +18,7 @@ Remote cache for Nx task outputs backed by MinIO and a lightweight Go proxy (`nx
 The proxy enforces **immutable cache entries**: `PUT` returns `409 Conflict` if a hash already exists and hasn't expired. This prevents cache poisoning via modified CI workflows — a key vector in the CREEP vulnerability that affected `@nx/s3-cache`.
 
 Two bearer tokens control access:
+
 - **Read token** — can only `GET`. Intended for CI and container builds.
 - **Write token** — can `GET` and `PUT`. Intended for developers.
 
@@ -144,27 +145,45 @@ To retrieve credentials later (e.g., on a new machine), log in to the cluster an
 
 ## Configuration reference
 
+### GitHub Actions
+
+The quality workflow can read this cache when the repository has the
+`NX_SELF_HOSTED_REMOTE_CACHE_SERVER` Actions variable and `NX_CACHE_READ_TOKEN`
+Actions secret. Use an HTTPS endpoint reachable by GitHub-hosted runners and
+the proxy's read-only token. Without both settings, including on fork pull
+requests without secrets, CI runs with local Nx caching. These settings are
+optional and are not provisioned by the workflow.
+
+The proxy returns 403 for writes with a read-only token; Nx treats that as a
+read-only cache. CI cannot populate it, so hits depend on compatible entries
+published by trusted Linux builds. Keep write credentials out of PR jobs.
+
+Do not archive `.nx/cache` alone with `actions/cache`: Nx 23 also requires
+machine-specific database metadata. Use its HTTP cache for task results. The
+workflow separately persists Go's module/build cache and golangci-lint's native
+analysis cache, which remain useful when no shared Nx cache is configured.
+
 ### nx-cache-proxy environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `MINIO_ENDPOINT` | *(required)* | MinIO S3 endpoint (e.g., `minio:9000`) |
-| `MINIO_ACCESS_KEY` | *(required)* | MinIO access key |
-| `MINIO_SECRET_KEY` | *(required)* | MinIO secret key |
-| `MINIO_BUCKET` | `nx-cache` | Bucket name |
-| `MINIO_SECURE` | `false` | Use TLS for MinIO connection |
-| `NX_CACHE_READ_TOKEN` | *(required)* | Bearer token for read access |
-| `NX_CACHE_WRITE_TOKEN` | *(required)* | Bearer token for read+write access |
-| `CACHE_TTL` | `24h` | Cache entry time-to-live |
-| `PORT` | `8080` | HTTP listen port |
-| `LOG_LEVEL` | `info` | `info` or `debug` |
+| Variable               | Default      | Description                            |
+| ---------------------- | ------------ | -------------------------------------- |
+| `MINIO_ENDPOINT`       | _(required)_ | MinIO S3 endpoint (e.g., `minio:9000`) |
+| `MINIO_ACCESS_KEY`     | _(required)_ | MinIO access key                       |
+| `MINIO_SECRET_KEY`     | _(required)_ | MinIO secret key                       |
+| `MINIO_BUCKET`         | `nx-cache`   | Bucket name                            |
+| `MINIO_SECURE`         | `false`      | Use TLS for MinIO connection           |
+| `NX_CACHE_READ_TOKEN`  | _(required)_ | Bearer token for read access           |
+| `NX_CACHE_WRITE_TOKEN` | _(required)_ | Bearer token for read+write access     |
+| `CACHE_TTL`            | `24h`        | Cache entry time-to-live               |
+| `PORT`                 | `8080`       | HTTP listen port                       |
+| `LOG_LEVEL`            | `info`       | `info` or `debug`                      |
 
 ### Nx client environment variables
 
-| Variable | Description |
-|---|---|
-| `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` | Proxy URL (e.g., `http://localhost:8420`) |
-| `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` | Bearer token (read or write) |
+| Variable                                   | Description                               |
+| ------------------------------------------ | ----------------------------------------- |
+| `NX_SELF_HOSTED_REMOTE_CACHE_SERVER`       | Proxy URL (e.g., `http://localhost:8420`) |
+| `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` | Bearer token (read or write)              |
 
 Nx loads these from `.env` automatically.
 

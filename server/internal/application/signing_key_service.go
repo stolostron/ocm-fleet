@@ -104,7 +104,7 @@ func (s *SignerEnrollmentService) Create(ctx context.Context, in CreateSignerEnr
 	if err != nil {
 		return domain.SignerEnrollment{}, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 
 	if err := tx.SignerEnrollments().Create(ctx, enrollment); err != nil {
 		return domain.SignerEnrollment{}, fmt.Errorf("persist signer enrollment: %w", err)

@@ -1,4 +1,3 @@
-/* eslint playwright/no-standalone-expect: "off" -- Vitest uses it/it.each. */
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { useAuth } from "react-oidc-context";

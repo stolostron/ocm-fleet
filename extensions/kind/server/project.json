@@ -1,7 +1,10 @@
 {
   "name": "@ocm-fleet/kind-server",
   "metadata": {
-    "description": "Placeholder for the Kind cluster provider backend extension."
+    "description": "Placeholder for the Kind cluster provider backend extension.",
+    "quality": {
+      "exemption": "Backend implementation is deferred; this project currently has no source or Go module."
+    }
   },
   "root": "extensions/kind/server",
   "projectType": "library",

@@ -82,24 +82,18 @@ Consequences:
 
 ## Deferred
 
-
-| Item                                     | Notes                                                                                                                           |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Item                                     | Notes                                                                                                                                                                        |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Local-socket / CLI bootstrap             | Useful for production when IdP is not trivially known at start, and later for out-of-band recovery; not required to ship config-based bootstrap. Likely its own control API. |
-| IdP update / replace after Day One       | Needed eventually; singular model, not sandbox-specific. Authenticated API first; local control channel when that is unavailable. |
-| Multi-tenant IdP discovery / login page  | Needed for multiple issuers; single-tenant can keep a static redirect.                                                          |
-| Pivot from sandbox Dex to another issuer | Same as IdP update once that path exists                                                                                        |
-
-
-
+| IdP update / replace after Day One       | Needed eventually; singular model, not sandbox-specific. Authenticated API first; local control channel when that is unavailable.                                            |
+| Multi-tenant IdP discovery / login page  | Needed for multiple issuers; single-tenant can keep a static redirect.                                                                                                       |
+| Pivot from sandbox Dex to another issuer | Same as IdP update once that path exists                                                                                                                                     |
 
 ## Open questions
 
 - How initial configuration should include trust-signature policy and compose with later authenticated updates.
 - Shape of the eventual recovery channel when the configured IdP is wrong or unavailable (ties to the "root user / out-of-band trust" note in [authentication.md](authentication.md#idp-bootstrap-and-recovery)).
 - How provider-tenant bootstrap composes with later consumer-tenant IdPs under multitenancy (OME-53).
-
-
 
 ## Related
 

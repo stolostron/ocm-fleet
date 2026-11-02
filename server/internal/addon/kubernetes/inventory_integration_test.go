@@ -772,7 +772,7 @@ func (l storeTargetLister) ListTargets(ctx context.Context) ([]domain.TargetInfo
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	return tx.Targets().List(ctx)
 }
 
@@ -814,7 +814,7 @@ func seedKubernetesObjectType(t *testing.T, store domain.Store) {
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	sch := kubeaddon.InventorySchema()
 	def := domain.NewExtensionResourceType(sch.ResourceType, domain.APIVersion(sch.Version), domain.CollectionID(sch.CollectionID), time.Now(), domain.WithInventory())
 	if err := tx.ExtensionResources().CreateType(ctx, def); err != nil {
@@ -1339,7 +1339,7 @@ func listInventory(t *testing.T, store domain.Store) []*domain.ExtensionResource
 	if err != nil {
 		t.Fatalf("BeginReadOnly: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.RollbackOnExit()
 	objs, err := tx.ExtensionResources().ListByResourceType(context.Background(), kubeaddon.ObjectResourceType)
 	if err != nil {
 		t.Fatalf("ListByResourceType: %v", err)

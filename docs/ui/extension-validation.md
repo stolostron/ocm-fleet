@@ -8,15 +8,15 @@ See [Feature Contracts](feature-contracts.md) for declarations and the [feature-
 
 `FleetPlugin` calls `validateExtensionSet` in its constructor before delegating to the Dynamic Plugin SDK. Typed builders also validate their inputs. Invalid metadata fails construction rather than silently passing through the wrapper.
 
-| Check | Current coverage |
-|-------|------------------|
-| Base identity | Required nonempty `id` and `label`; ID pattern `/^[a-z][a-z0-9-]*$/` |
-| CodeRef syntax | Checked for required known fields and selected optional fields |
-| Exposed module references | Direct property CodeRefs must reference keys in the same plugin's `exposedModules` |
-| Duplicate IDs | Rejected within the extension set, with grouped route IDs keyed by group plus ID |
-| Route groups | String-valued route group references must exist in the same extension set; duplicate route IDs within a group rejected |
-| Type-specific metadata | Known builders validate their required fields |
-| Custom extension types | Default validator applies shared base-property checks |
+| Check                     | Current coverage                                                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Base identity             | Required nonempty `id` and `label`; ID pattern `/^[a-z][a-z0-9-]*$/`                                                   |
+| CodeRef syntax            | Checked for required known fields and selected optional fields                                                         |
+| Exposed module references | Direct property CodeRefs must reference keys in the same plugin's `exposedModules`                                     |
+| Duplicate IDs             | Rejected within the extension set, with grouped route IDs keyed by group plus ID                                       |
+| Route groups              | String-valued route group references must exist in the same extension set; duplicate route IDs within a group rejected |
+| Type-specific metadata    | Known builders validate their required fields                                                                          |
+| Custom extension types    | Default validator applies shared base-property checks                                                                  |
 
 Examples of type-specific requirements:
 
@@ -76,13 +76,13 @@ Sources: [route guard](../../client/web/src/extensions/isRouteExtension.ts), [pr
 
 ## Consumer-specific safeguards
 
-| Consumer | Current behavior |
-|----------|------------------|
-| Plugin page | Checks scope availability and browser-local enablement; shows loading, unavailable, state-error, or load-error UI |
-| Setup routing | Excludes missing/cyclic dependency chains; warns about duplicate IDs and keeps the first dependency-map definition |
-| Inventory search | Catches resolver-call exceptions and uses a disabled fallback result |
-| Plugin loader | Attempts all configured plugin loads; catches aggregate load failure before ending initial loading |
-| Search index | Resolves routes/providers through the SDK; has no additional universal readiness gate |
+| Consumer         | Current behavior                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Plugin page      | Checks scope availability and browser-local enablement; shows loading, unavailable, state-error, or load-error UI  |
+| Setup routing    | Excludes missing/cyclic dependency chains; warns about duplicate IDs and keeps the first dependency-map definition |
+| Inventory search | Catches resolver-call exceptions and uses a disabled fallback result                                               |
+| Plugin loader    | Attempts all configured plugin loads; catches aggregate load failure before ending initial loading                 |
+| Search index     | Resolves routes/providers through the SDK; has no additional universal readiness gate                              |
 
 These checks are scoped to their call sites. For example, a successful resolver call does not protect later rendering of its description or icon, and page availability does not imply permission to perform an operation.
 
@@ -187,7 +187,8 @@ const clustersRoute: FleetExtension<"ocm-fleet.route", RouteExtras> = {
 };
 
 const exampleProvider: FleetExtension<
-  "ocm-fleet.cluster-provider", ClusterProviderExtras
+  "ocm-fleet.cluster-provider",
+  ClusterProviderExtras
 > = {
   type: "ocm-fleet.cluster-provider",
   properties: {
@@ -252,10 +253,14 @@ Retain the original tuple-style hook and automatic owner-validator lookup. Add a
 
 ```typescript
 import type {
-  CodeRef, Extension, ExtensionPredicate, LoadedAndResolvedExtension,
+  CodeRef,
+  Extension,
+  ExtensionPredicate,
+  LoadedAndResolvedExtension,
 } from "@openshift/dynamic-plugin-sdk";
 import type {
-  ClusterProviderCardProps, ClusterProviderWizardProps,
+  ClusterProviderCardProps,
+  ClusterProviderWizardProps,
 } from "@ocm-fleet/common";
 import type { ComponentType } from "react";
 
@@ -273,18 +278,22 @@ declare function useValidatedExtensions<T extends Extension>(
   rejections: ValidationRejection[],
 ];
 
-type ClusterProviderExtension = Extension<"ocm-fleet.cluster-provider", {
-  id: string;
-  label: string;
-  description: string;
-  icon: CodeRef<ComponentType>;
-  card: CodeRef<ComponentType<ClusterProviderCardProps>>;
-  wizard: CodeRef<ComponentType<ClusterProviderWizardProps>>;
-  isValidExtension?: CodeRef<SelfValidation>;
-}>;
-const isClusterProviderExtension: ExtensionPredicate<ClusterProviderExtension> =
-  (extension): extension is ClusterProviderExtension =>
-    extension.type === "ocm-fleet.cluster-provider";
+type ClusterProviderExtension = Extension<
+  "ocm-fleet.cluster-provider",
+  {
+    id: string;
+    label: string;
+    description: string;
+    icon: CodeRef<ComponentType>;
+    card: CodeRef<ComponentType<ClusterProviderCardProps>>;
+    wizard: CodeRef<ComponentType<ClusterProviderWizardProps>>;
+    isValidExtension?: CodeRef<SelfValidation>;
+  }
+>;
+const isClusterProviderExtension: ExtensionPredicate<
+  ClusterProviderExtension
+> = (extension): extension is ClusterProviderExtension =>
+  extension.type === "ocm-fleet.cluster-provider";
 
 // Called inside a future React consumer hook or component.
 function useClusterProviders() {

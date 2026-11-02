@@ -78,7 +78,10 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
       // Backward compatibility: older backends serve everything from
       // /api/ui/user-config. When /api/ui/config lacks scalprumConfig
       // we fall back to user-config for global fields too.
-      const [configData, userConfigData] = await Promise.all([
+      const [configData, userConfigData]: [
+        Partial<AppConfigContextValue>,
+        Partial<AppConfigContextValue>,
+      ] = await Promise.all([
         fetch("/api/ui/config")
           .then((res) => (res.ok ? res.json() : {}))
           .catch(() => ({})),

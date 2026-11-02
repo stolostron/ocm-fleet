@@ -21,12 +21,12 @@ type Store interface {
 // Tx is a transaction that provides access to all repositories.
 // All repository operations performed through a single Tx share the
 // same underlying transaction. Call [Tx.Commit] to persist changes
-// or [Tx.Rollback] to discard them. Rollback is safe to call after
-// Commit (it becomes a no-op), so it can be unconditionally deferred:
+// or [Tx.Rollback] to discard them. Use [Tx.RollbackOnExit] to attempt
+// cleanup and report unexpected failures, including when the operation panics:
 //
 //	tx, err := store.Begin(ctx)
 //	if err != nil { return err }
-//	defer tx.Rollback()
+//	defer tx.RollbackOnExit()
 //	// ... use tx ...
 //	return tx.Commit()
 type Tx interface {
@@ -43,6 +43,21 @@ type Tx interface {
 	// grouped with the aggregate repositories above, and for the
 	// deferred status of platform aggregate search.
 	Queries() QueryRepository
+	// Commit returns an error if the transaction has already ended.
 	Commit() error
+	// Rollback returns an error if rollback fails. It is a no-op after a
+	// previous explicit rollback or commit attempt.
 	Rollback() error
+	// RollbackOnExit rolls back if needed and observes unexpected errors.
+	RollbackOnExit()
 }
+
+// StoreObserver observes failures during transaction cleanup.
+type StoreObserver interface {
+	RollbackFailed(ctx context.Context, err error)
+}
+
+// NoOpStoreObserver ignores transaction cleanup failures.
+type NoOpStoreObserver struct{}
+
+func (NoOpStoreObserver) RollbackFailed(context.Context, error) {}

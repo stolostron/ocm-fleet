@@ -73,15 +73,15 @@ the command finishes. Authentication is attached as per-RPC metadata.
 
 Global flags:
 
-| Flag | Default | Purpose |
-| --- | --- | --- |
-| `--server`, `-s` | `localhost:50051` | gRPC server address |
-| `--output`, `-o` | `table` | `table` or `json` output |
-| `--server-tls` | disabled | Enable TLS for gRPC |
-| `--server-ca-file` | empty | Add PEM CA bundle for server certificate |
-| `--server-insecure` | disabled | Skip TLS certificate verification; debugging only |
-| `--config-dir` | `~/.config/ocm-fleet` | Directory containing `auth.json` |
-| `--insecure-storage` | disabled | Use plaintext files instead of OS keyring |
+| Flag                 | Default               | Purpose                                           |
+| -------------------- | --------------------- | ------------------------------------------------- |
+| `--server`, `-s`     | `localhost:50051`     | gRPC server address                               |
+| `--output`, `-o`     | `table`               | `table` or `json` output                          |
+| `--server-tls`       | disabled              | Enable TLS for gRPC                               |
+| `--server-ca-file`   | empty                 | Add PEM CA bundle for server certificate          |
+| `--server-insecure`  | disabled              | Skip TLS certificate verification; debugging only |
+| `--config-dir`       | `~/.config/ocm-fleet` | Directory containing `auth.json`                  |
+| `--insecure-storage` | disabled              | Use plaintext files instead of OS keyring         |
 
 `--server-ca-file` and `--server-insecure` require `--server-tls`.
 `--config-dir` must be absolute. `--insecure-storage` requires
@@ -353,10 +353,10 @@ provides HTTP/JSON access in two ways:
 
 Therefore, CLI and Web UI use different transports today:
 
-| Client | Current transport | Typical representation |
-| --- | --- | --- |
-| CLI | Direct gRPC with generated and reflection-based clients | Commands, flags, stdin/stdout, table/JSON |
-| Web UI | HTTP requests through browser `fetch` | Pages, forms, navigation, client state |
+| Client | Current transport                                       | Typical representation                    |
+| ------ | ------------------------------------------------------- | ----------------------------------------- |
+| CLI    | Direct gRPC with generated and reflection-based clients | Commands, flags, stdin/stdout, table/JSON |
+| Web UI | HTTP requests through browser `fetch`                   | Pages, forms, navigation, client state    |
 
 This is a transport difference, not necessarily a feature difference. Shared
 client architecture should define feature-level operations and data contracts
@@ -655,11 +655,11 @@ generation when an addon publishes a supported client API.
 
 Static services:
 
-| Feature | Service |
-| --- | --- |
-| Deployment lifecycle | `ocm.v1alpha.DeploymentService` |
-| Cross-resource query | `ocm.v1alpha.ResourceQueryService` |
-| Signing enrollment | `ocm.v1alpha.SignerEnrollmentService` |
+| Feature                            | Service                               |
+| ---------------------------------- | ------------------------------------- |
+| Deployment lifecycle               | `ocm.v1alpha.DeploymentService`       |
+| Cross-resource query               | `ocm.v1alpha.ResourceQueryService`    |
+| Signing enrollment                 | `ocm.v1alpha.SignerEnrollmentService` |
 | Resource discovery and descriptors | `grpc.reflection.v1.ServerReflection` |
 
 Addon-provided resources are currently invoked by the CLI through dynamically
@@ -677,17 +677,17 @@ The backend may expose more capability than the CLI currently surfaces. The
 dynamic client can discover method descriptors, but CLI commands currently
 implement only this resource operation set:
 
-| Feature | Current CLI surface | Shared feature candidate |
-| --- | --- | --- |
-| Authentication | OIDC setup/login/logout/token inspection | Client authentication and session |
-| Signing identity | Signer enrollment and deployment signing | Delegated authorization |
-| Type discovery | gRPC reflection | Capability/resource discovery |
-| Schema inspection | Recursive protobuf spec description | Resource type metadata |
-| Resource read | Get, list, cross-type CEL query | Resource observation and search |
-| Resource mutation | Create and delete | Resource lifecycle management |
-| Deployment lifecycle | Create, get, list, resume, delete | Deployment orchestration |
-| Output | Table, JSON, stdin/stdout | Input/output adapter |
-| Extensions | Reflection-based resource services only | Runtime module and extension system |
+| Feature              | Current CLI surface                      | Shared feature candidate            |
+| -------------------- | ---------------------------------------- | ----------------------------------- |
+| Authentication       | OIDC setup/login/logout/token inspection | Client authentication and session   |
+| Signing identity     | Signer enrollment and deployment signing | Delegated authorization             |
+| Type discovery       | gRPC reflection                          | Capability/resource discovery       |
+| Schema inspection    | Recursive protobuf spec description      | Resource type metadata              |
+| Resource read        | Get, list, cross-type CEL query          | Resource observation and search     |
+| Resource mutation    | Create and delete                        | Resource lifecycle management       |
+| Deployment lifecycle | Create, get, list, resume, delete        | Deployment orchestration            |
+| Output               | Table, JSON, stdin/stdout                | Input/output adapter                |
+| Extensions           | Reflection-based resource services only  | Runtime module and extension system |
 
 The shared architecture should model these as features independent of command
 names or page routes. CLI flags, stdin, stdout, exit codes, and JSON are CLI
@@ -701,16 +701,16 @@ coverage in the client architecture proposals; planned coverage does not mean im
 
 ### Covered by planned architecture or existing tickets
 
-| Current gap | Planned coverage |
-| --- | --- |
-| JavaScript/TypeScript client runtime | `OME-306` Rewrite CLI client in TypeScript |
-| Shared Dynamic Plugin SDK with Web UI | `OME-305`, `OME-306`, and target SDK model in this document |
-| Module Federation loading for CLI | Explicit `plugin run` uses Scalprum's Node loader; automatic discovery remains open |
-| Server-driven plugin metadata and client-specific enablement | `OME-309`, `OME-313`, `OME-316` |
-| Typed plugin-provided CLI commands | `OME-319` and `OME-320`; implementation follows spike outcome |
-| Named profiles and shared client configuration | `OME-310` defines the model; implementation not yet created |
-| Live updates and shared extension subscriptions | `OME-322` defines protocol; `OME-325` implements shared client subscription path |
-| Interactive command discovery and command palette | `OME-320` defines behavior; implementation follows spike outcome |
+| Current gap                                                  | Planned coverage                                                                    |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| JavaScript/TypeScript client runtime                         | `OME-306` Rewrite CLI client in TypeScript                                          |
+| Shared Dynamic Plugin SDK with Web UI                        | `OME-305`, `OME-306`, and target SDK model in this document                         |
+| Module Federation loading for CLI                            | Explicit `plugin run` uses Scalprum's Node loader; automatic discovery remains open |
+| Server-driven plugin metadata and client-specific enablement | `OME-309`, `OME-313`, `OME-316`                                                     |
+| Typed plugin-provided CLI commands                           | `OME-319` and `OME-320`; implementation follows spike outcome                       |
+| Named profiles and shared client configuration               | `OME-310` defines the model; implementation not yet created                         |
+| Live updates and shared extension subscriptions              | `OME-322` defines protocol; `OME-325` implements shared client subscription path    |
+| Interactive command discovery and command palette            | `OME-320` defines behavior; implementation follows spike outcome                    |
 
 ### Partially addressed
 

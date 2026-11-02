@@ -282,7 +282,7 @@ func (s *OrchestrationWorkflowSpec) AcquireLockAndLoad() Activity[FulfillmentID,
 			probe.Error(err)
 			return ReconciliationSnapshot{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		f, err := tx.Fulfillments().Get(ctx, id)
 		if err != nil {
@@ -393,7 +393,7 @@ func (s *OrchestrationWorkflowSpec) DeliverToTarget() Activity[DeliverInput, str
 			probe.Error(err)
 			return struct{}{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		now := s.now()
 		existing, err := tx.Deliveries().GetByFulfillmentTarget(ctx, in.FulfillmentID, in.Target.ID())
@@ -481,7 +481,7 @@ func (s *OrchestrationWorkflowSpec) RemoveFromTarget() Activity[RemoveInput, Rem
 			probe.Error(err)
 			return RemoveOutput{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		delivery, err := tx.Deliveries().GetByFulfillmentTarget(ctx, in.FulfillmentID, in.Target.ID())
 		if errors.Is(err, ErrNotFound) {
@@ -540,7 +540,7 @@ func (s *OrchestrationWorkflowSpec) CleanupDeliveryData() Activity[FulfillmentID
 		if err != nil {
 			return struct{}{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer readTx.Rollback()
+		defer readTx.RollbackOnExit()
 
 		deliveries, err := readTx.Deliveries().ListByFulfillment(ctx, id)
 		if err != nil {
@@ -572,7 +572,7 @@ func (s *OrchestrationWorkflowSpec) CleanupDeliveryData() Activity[FulfillmentID
 		if err != nil {
 			return struct{}{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		for _, targetID := range plan.targetIDs {
 			if err := tx.Targets().Delete(ctx, targetID); err != nil && !errors.Is(err, ErrNotFound) {
@@ -620,7 +620,7 @@ func (s *OrchestrationWorkflowSpec) PersistAndCompleteReconciliation() Activity[
 			probe.Error(err)
 			return false, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		fresh, err := tx.Fulfillments().Get(ctx, in.Result.FulfillmentID)
 		if err != nil {
@@ -690,7 +690,7 @@ func (s *OrchestrationWorkflowSpec) ProcessDeliveryOutputs() Activity[DeliveryOu
 			probe.Error(err)
 			return struct{}{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		// TODO: revisit the "TargetRegistrar" thing – should we make that upsert instead? remove that?
 		now := s.now()
@@ -741,7 +741,7 @@ func (s *OrchestrationWorkflowSpec) ReleaseLock() Activity[FulfillmentID, struct
 		if err != nil {
 			return struct{}{}, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		f, err := tx.Fulfillments().Get(ctx, id)
 		if err != nil {
@@ -763,7 +763,7 @@ func (s *OrchestrationWorkflowSpec) CheckGeneration() Activity[FulfillmentID, Ge
 		if err != nil {
 			return 0, fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.RollbackOnExit()
 
 		f, err := tx.Fulfillments().Get(ctx, id)
 		if err != nil {

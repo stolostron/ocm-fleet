@@ -649,18 +649,19 @@ At session start:
 1. The client generates a session key.
 2. The user confirms through biometric or device authentication.
 3. The device key signs:
-  ```
-   SessionAuthorization {
-       tenant_id
-       identity_id
-       device_key_digest
-       session_key_digest
-       session_id
-       audience
-       permitted_actions
-       validity_constraints
-   }
-  ```
+
+```
+ SessionAuthorization {
+     tenant_id
+     identity_id
+     device_key_digest
+     session_key_digest
+     session_id
+     audience
+     permitted_actions
+     validity_constraints
+ }
+```
 
 The exact audience, action, and validity fields are profile-dependent rather than fundamental to trust distribution. If present, they are internal signature constraints, not custom OIDC claims or per-target OIDC audience mappings, and must be enforced by the verifier. Wall-clock validity has the limitations described in the timestamp-authority section; profiles that do not need it can use generation or log-position constraints instead.
 
@@ -721,15 +722,16 @@ Normal application retry and idempotency behavior may still be used.
 3. The resource manager computes a canonical delivery commitment and appends it to the tenant delivery log.
 4. The resource manager sends the complete delivery bundle only to the targeted delivery agent.
 5. It attaches:
-  - the delivery’s log index;
-  - a Merkle inclusion proof;
-  - the current delivery-log root and size;
-  - a consistency proof from the delivery agent’s prior log root;
-  - the chain of direct sparse-map leaf-update proofs from the agent's retained map root, when the map must advance;
-  - the identity's current key-history head and compressed authenticated-map membership proof;
-  - the signing event and its per-identity history membership proof;
-  - the immediate successor event and membership proof only when the signing event is not current; and
-  - inclusion evidence for the zero, one, or two rotation markers referenced by those adjacent events.
+
+- the delivery’s log index;
+- a Merkle inclusion proof;
+- the current delivery-log root and size;
+- a consistency proof from the delivery agent’s prior log root;
+- the chain of direct sparse-map leaf-update proofs from the agent's retained map root, when the map must advance;
+- the identity's current key-history head and compressed authenticated-map membership proof;
+- the signing event and its per-identity history membership proof;
+- the immediate successor event and membership proof only when the signing event is not current; and
+- inclusion evidence for the zero, one, or two rotation markers referenced by those adjacent events.
 
 The manager finds the signing event through a state-digest-to-sequence index, reads at most two event bodies, and constructs their proofs from retained history nodes. It reads one versioned sparse-map path for the agent's exact retained root. Neither operation scans all events for the identity or all identities in the tenant.
 
@@ -1193,23 +1195,23 @@ When this workload evidence enters the attestation graph under continuity/v3, th
 
 The system requires:
 
-* an initial tenant trust anchor and authenticated tenant trust manifest;
-* a trust-manifest update policy selected by the previously accepted manifest;
-* a defensible initial binding between an external user identity and a user-controlled continuity key;
-* cryptographic authorization for changes to trusted identity state;
-* proof of possession for newly introduced keys;
-* an authenticated history-head map for tenant identities and trust authorities;
-* append-only per-principal key-event histories, or an equivalent authenticated history commitment;
-* semantic validation of a user’s current or historical key events, state, and ordering boundaries before that state is used as authority;
-* an append-only ordered event log for durable deliveries and key-rotation markers;
-* inclusion of each newly accepted delivery commitment in that log;
-* inclusion of the exact marker referenced by every accepted ordering-sensitive key transition;
-* direct authenticated-map leaf-update proofs rooted in each delivery agent's previously accepted map root;
-* continuity from each bootstrapped delivery agent’s previously accepted delivery-log checkpoint;
-* delivery-agent local checkpoints that are protected from rollback by the resource manager;
-* cryptographic binding among the signed payload, tenant, target, fulfillment, delivery identity, and signing context;
-* sufficient keys, delegations, and authorization evidence to validate every current or retained delivery;
-* retention and compaction rules that do not remove evidence still required by a supported verifier or a deliverable fulfillment.
+- an initial tenant trust anchor and authenticated tenant trust manifest;
+- a trust-manifest update policy selected by the previously accepted manifest;
+- a defensible initial binding between an external user identity and a user-controlled continuity key;
+- cryptographic authorization for changes to trusted identity state;
+- proof of possession for newly introduced keys;
+- an authenticated history-head map for tenant identities and trust authorities;
+- append-only per-principal key-event histories, or an equivalent authenticated history commitment;
+- semantic validation of a user’s current or historical key events, state, and ordering boundaries before that state is used as authority;
+- an append-only ordered event log for durable deliveries and key-rotation markers;
+- inclusion of each newly accepted delivery commitment in that log;
+- inclusion of the exact marker referenced by every accepted ordering-sensitive key transition;
+- direct authenticated-map leaf-update proofs rooted in each delivery agent's previously accepted map root;
+- continuity from each bootstrapped delivery agent’s previously accepted delivery-log checkpoint;
+- delivery-agent local checkpoints that are protected from rollback by the resource manager;
+- cryptographic binding among the signed payload, tenant, target, fulfillment, delivery identity, and signing context;
+- sufficient keys, delegations, and authorization evidence to validate every current or retained delivery;
+- retention and compaction rules that do not remove evidence still required by a supported verifier or a deliverable fulfillment.
 
 The delivery log itself does not require semantic authorization for every
 appended leaf. It establishes ordering and append-only continuity. A rotation
@@ -1222,32 +1224,32 @@ semantics defined in [provenance.md](architecture/provenance.md).
 
 Historical public keys and authorization objects are therefore not retained merely because they once existed. They remain available only while referenced by:
 
-* current committed identity history and state;
-* a live fulfillment;
-* a delivery version retained by product policy;
-* a durable semantic anchor;
-* or a trust transition that has not yet been replaced by an independently usable anchor.
+- current committed identity history and state;
+- a live fulfillment;
+- a delivery version retained by product policy;
+- a durable semantic anchor;
+- or a trust transition that has not yet been replaced by an independently usable anchor.
 
 ### Flexible
 
 The system can vary:
 
-* two-level versus three-level user key hierarchy;
-* exact recovery policy;
-* the trust-manifest update policy, from a dedicated threshold authority to any currently verifiable tenant signer;
-* whether continuity rotation receives a fresh OIDC identity binding as an additional factor;
-* whether cold verifiers require a retained transition chain or durable semantic anchor, or may use an explicitly weaker fresh per-user OIDC reanchor;
-* whether trust-map changes are validated eagerly or lazily per identity;
-* whether marker inclusion is validated with the map update or deferred until a delivery depends on it;
-* how eagerly delivery agents receive authenticated-map updates;
-* the verifier-support or lease policy that determines the delivery-log compaction watermark;
-* delivery and query-history retention periods;
-* physical storage and tiling layout for Merkle structures;
-* tenant-global delivery logs versus project logs anchored into a tenant-global ordering structure;
-* whether the trust map and delivery log share one storage service;
-* whether checkpoint gossip or external witnesses are later added;
-* which workload identity adapters are supported;
-* whether a timestamp authority is enabled for user or workload evidence that needs trusted wall-clock ordering.
+- two-level versus three-level user key hierarchy;
+- exact recovery policy;
+- the trust-manifest update policy, from a dedicated threshold authority to any currently verifiable tenant signer;
+- whether continuity rotation receives a fresh OIDC identity binding as an additional factor;
+- whether cold verifiers require a retained transition chain or durable semantic anchor, or may use an explicitly weaker fresh per-user OIDC reanchor;
+- whether trust-map changes are validated eagerly or lazily per identity;
+- whether marker inclusion is validated with the map update or deferred until a delivery depends on it;
+- how eagerly delivery agents receive authenticated-map updates;
+- the verifier-support or lease policy that determines the delivery-log compaction watermark;
+- delivery and query-history retention periods;
+- physical storage and tiling layout for Merkle structures;
+- tenant-global delivery logs versus project logs anchored into a tenant-global ordering structure;
+- whether the trust map and delivery log share one storage service;
+- whether checkpoint gossip or external witnesses are later added;
+- which workload identity adapters are supported;
+- whether a timestamp authority is enabled for user or workload evidence that needs trusted wall-clock ordering.
 
 ## 22. Current recommended profile
 
