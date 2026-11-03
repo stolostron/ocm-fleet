@@ -313,6 +313,23 @@ and `playwright-report/`. `.auth/` is gitignored.
 
 ## GitHub Actions
 
+Workflow commands use [`tools/ci-output.sh`](../../tools/ci-output.sh) as their
+shell. Successful commands produce no tool output. A failed command creates an
+error annotation and a job summary entry; expand **Complete failure output** in
+the failed step to read its full stdout and stderr. The `ci-logs-*` artifacts
+retain the original logs for seven days, including partial logs left by interrupted
+commands when the runner can still upload them. Playwright reports and traces
+remain in the existing test-results artifacts. GitHub-managed action setup and
+artifact messages remain visible.
+
+Nx uses `static-failures-only` output inside this shell, including nested
+invocations: failed tasks include their full diagnostics, and successful tasks
+collapse to one line. Failure logs do not point to temporary Nx cache files.
+Logs stream to disk while commands run; successful logs are discarded.
+New command steps inherit the workflow shell after checkout; composite actions
+must select it explicitly. Steps without a checkout (the final CI gate) use Bash
+and emit their own failure annotations.
+
 Two workflows run against an AIO. They are not interchangeable: one runs the
 full UI/CLI e2e on **this checkout's** image; the other runs a **sanity** on
 the **already published** Quay AIO that end users `podman run`.

@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Keep successful commands silent; replay complete diagnostics on failure.
+defaults:
+  run:
+    shell: bash tools/ci-output.sh {0}
+
 jobs:
   # Single cache writer. Test jobs restore the same multi-image tar and do
   # not race this key. Kind host setup (user podman.socket, kind network) lives
@@ -26,6 +31,15 @@ jobs:
         uses: ./.github/actions/setup-e2e
         with:
           role: cache
+
+      - name: Upload failure logs
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-logs-${{ github.job }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/ci-logs/
+          if-no-files-found: ignore
+          retention-days: 7
 
   e2e-playwright:
     name: E2E (${{ matrix.name }})
@@ -75,4 +89,13 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_paths }}
           if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload failure logs
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-logs-${{ github.job }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/ci-logs/
+          if-no-files-found: ignore
           retention-days: 7
