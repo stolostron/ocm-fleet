@@ -281,7 +281,10 @@ Container-based tests need Podman and its compatible socket; see the
 [E2E prerequisites](docs/testing/end-to-end.md). `deploy-aio:test` also fetches
 the destination's live CI configuration from `openshift/release` to check the
 AIO image graph and generated Prow jobs. The published Quay sanity job tests
-`quay.io/stolostron/ocm-fleet:latest`; see
+`quay.io/stolostron/ocm-fleet:latest` nightly and on demand. Every PR runs full UI
+and CLI E2E against its own image. Prow adds multi-architecture build checks for
+build-sensitive changes; PR image publishing is available through explicit
+`/test pr-image-mirror-*` commands. Main publishes all architectures automatically. See
 [GitHub Actions](docs/testing/end-to-end.md#github-actions) for its scope.
 
 Frontend e2e expects the sandbox origin
