@@ -1,4 +1,7 @@
 {
+    "files.associations": {
+        "nx.json": "jsonc"
+    },
     "python.testing.pytestArgs": [
         "attestation-poc"
     ],

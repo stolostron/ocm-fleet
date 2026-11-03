@@ -1,3 +1,4 @@
+import { parseJson } from "@nx/devkit";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
@@ -333,7 +334,7 @@ async function fixture(t, { serverTestPolicy = false } = {}) {
     );
   }
   await cp(join(repository, ".golangci.yaml"), join(root, ".golangci.yaml"));
-  const { targetDefaults, namedInputs } = JSON.parse(
+  const { targetDefaults, namedInputs } = parseJson(
     await readFile(join(repository, "nx.json"), "utf8"),
   );
   await writeJSON(join(root, "nx.json"), {

@@ -89,6 +89,11 @@ npm ci                      # install locked workspace dependencies (from repo r
 All UI packages are npm workspaces declared at the root. A single `npm ci`
 at the repo root handles everything — no separate install needed per package.
 
+`npm ci` also installs the pre-commit hook. It checks staged contents through Nx,
+automatically formats and stages fully staged files when safe, and preserves
+unstaged/untracked work. See [staged verification](docs/precommit.md) for behavior,
+cache reuse, and bypassing the hook.
+
 Before opening a pull request, run the relevant build and test targets below
 and update affected tests and documentation. Follow the
 [API conventions](docs/api-design.md) for API changes.

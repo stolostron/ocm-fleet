@@ -1,3 +1,4 @@
+import { parseJson } from "@nx/devkit";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
@@ -669,7 +670,7 @@ await appendFile(process.argv[2], "passed");
 }
 
 async function json(path) {
-  return JSON.parse(await readFile(join(repository, path), "utf8"));
+  return parseJson(await readFile(join(repository, path), "utf8"));
 }
 
 async function writeJSON(root, path, value) {

@@ -1,0 +1,2 @@
+# Git invokes these with sh, including on Windows.
+.husky/* text eol=lf

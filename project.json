@@ -90,6 +90,7 @@
         "test:generate-agents",
         "test:eslint-config",
         "test:workspace-quality",
+        "test:verify-commit",
         "lint:nx-projects",
         "test:nx-projects",
         {
@@ -210,6 +211,24 @@
       ],
       "outputs": []
     },
+    "test:verify-commit": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test tools/verify-commit.test.mjs",
+        "env": { "NX_DAEMON": "false" }
+      },
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/tools/verify-commit*.mjs",
+        "{workspaceRoot}/nx.json",
+        "{workspaceRoot}/project.json",
+        "{workspaceRoot}/.prettierignore",
+        "eslintConfig",
+        "jsRuntime",
+        { "runtime": "git --version" }
+      ],
+      "outputs": []
+    },
     "test:nx-projects": {
       "executor": "nx:run-commands",
       "options": {
@@ -320,6 +339,7 @@
       "inputs": [
         "goLintTool",
         "{workspaceRoot}/tools/golangci-lint.test.mjs",
+        "{workspaceRoot}/nx.json",
         "{workspaceRoot}/server/go.mod",
         "jsRuntime"
       ],

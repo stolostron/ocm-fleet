@@ -1,5 +1,6 @@
+import { parseJson } from "@nx/devkit";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,31 @@ import {
   toolEnvironment,
   updateGolangciLint,
 } from "./golangci-lint.mjs";
+
+test("the Nx toolchain fingerprint is stable under nested Nx color settings", async () => {
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  const config = parseJson(await readFile(join(root, "nx.json"), "utf8"));
+  const command = config.namedInputs.goLintToolchain.find(
+    (input) => input.runtime,
+  ).runtime;
+  const run = () =>
+    spawnSync(command, {
+      shell: true,
+      cwd: root,
+      env: { ...process.env, FORCE_COLOR: "true", NO_COLOR: "1" },
+      encoding: "utf8",
+    });
+  const first = run();
+  const second = run();
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(second.status, 0, second.stderr);
+  // Nx includes stderr in runtime hashes. A Node warning contains a PID and
+  // would invalidate otherwise identical checks each time verify invokes Nx.
+  assert.equal(first.stderr, "");
+  assert.equal(second.stderr, "");
+  assert.equal(first.stdout, second.stdout);
+  assert.equal(JSON.parse(first.stdout).GOVERSION, "go1.26.6");
+});
 
 test("CodeQL's application compiler can load the linter module", async () => {
   const env = await toolEnvironment(

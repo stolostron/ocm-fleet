@@ -66,6 +66,7 @@ deploy/podman/.certs/
 
 # Nx
 .nx/
+.husky/_/
 
 # Claude Code
 .claude/worktrees

@@ -73,6 +73,9 @@ provide Buf `fmt`/`lint` commands and a no-op `fix:lint`, as in the example.
 
 Leave common commands and ordering in `nx.json`. Source-rewriting targets and
 `verify` must not be cached. Custom rewrites must also refresh the file hashes.
+The [pre-commit hook](precommit.md) uses workspace `lint`, `fmt`, and `check` in a
+staged snapshot, so projects following this lifecycle participate automatically.
+Keep `check` read-only and declare generated/build outputs for cache restoration.
 
 ## Declare the project's capabilities
 
