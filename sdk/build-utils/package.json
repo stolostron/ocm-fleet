@@ -13,7 +13,7 @@
   "scripts": {},
   "dependencies": {
     "chalk": "^4.1.2",
-    "glob": "^13.0.6"
+    "glob": "^14.0.3"
   },
   "peerDependencies": {
     "@openshift/dynamic-plugin-sdk-webpack": ">=4.0.0",
