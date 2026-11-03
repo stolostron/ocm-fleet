@@ -88,6 +88,7 @@
         "lint:workspace",
         "lint:format",
         "test:generate-agents",
+        "test:ci-output",
         "test:eslint-config",
         "test:workspace-quality",
         "test:verify-commit",
@@ -170,6 +171,20 @@
       "outputs": []
     },
     "refresh:inputs": {},
+    "test:ci-output": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test tools/ci-output.test.mjs"
+      },
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/tools/ci-output*",
+        "{workspaceRoot}/.github/workflows/*",
+        "{workspaceRoot}/.github/actions/setup-e2e/action.yml",
+        "jsRuntime"
+      ],
+      "outputs": []
+    },
     "test:eslint-config": {
       "executor": "nx:run-commands",
       "options": {

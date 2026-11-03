@@ -22,6 +22,11 @@ env:
   NX_DAEMON: "false"
   GOTESTSUM_FORMAT: github-actions
 
+# Keep successful commands silent; replay complete diagnostics on failure.
+defaults:
+  run:
+    shell: bash tools/ci-output.sh {0}
+
 jobs:
   quality:
     name: Workspace checks
@@ -78,14 +83,24 @@ jobs:
 
       # One task graph shares setup and collects every project's supported
       # checks. CI checks source as submitted; local verify/fix handle rewrites.
+      # run-many also collapses passing tasks owned by the root project.
       - name: Check workspace
         env:
           GOLANGCI_LINT_CACHE: ${{ runner.temp }}/golangci-lint-cache
-        run: npx nx run ocm-fleet:check --parallel=3 --nxBail=false
+        run: npx nx run-many --targets=check --projects=ocm-fleet --parallel=3 --nxBail=false
 
       - name: Check repository files stayed unchanged
         if: ${{ !cancelled() }}
         run: git diff --exit-code
+
+      - name: Upload failure logs
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-logs-${{ github.job }}
+          path: ${{ runner.temp }}/ci-logs/
+          if-no-files-found: ignore
+          retention-days: 7
 
   integration:
     name: Backend integration tests
@@ -118,6 +133,15 @@ jobs:
       - name: Run integration tests
         run: npx nx run server:test-integration
 
+      - name: Upload failure logs
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-logs-${{ github.job }}
+          path: ${{ runner.temp }}/ci-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
   # Require this stable check in branch protection. Explicit result checks keep
   # a skipped or failed dependency from becoming a successful merge gate.
   ci:
@@ -128,6 +152,13 @@ jobs:
     timeout-minutes: 1
     steps:
       - name: Require all checks to pass
+        shell: bash
         run: |
-          test "${{ needs.quality.result }}" = success
-          test "${{ needs.integration.result }}" = success
+          status=0
+          for result in 'Workspace checks: ${{ needs.quality.result }}' 'Backend integration tests: ${{ needs.integration.result }}'; do
+            if [[ "$result" != *': success' ]]; then
+              echo "::error::$result. Open the corresponding job for diagnostics."
+              status=1
+            fi
+          done
+          exit "$status"
