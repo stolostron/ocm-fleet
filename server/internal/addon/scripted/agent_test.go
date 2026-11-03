@@ -26,6 +26,8 @@ type channelReporter struct {
 	events []domain.DeliveryEvent
 	ackCh  chan domain.DeliveryEvent
 	done   chan domain.DeliveryResult
+	// resultGates can hold a report open after its result becomes visible.
+	resultGates map[domain.DeliveryID]<-chan struct{}
 }
 
 func newChannelReporter() *channelReporter {
@@ -43,8 +45,11 @@ func (r *channelReporter) ReportEvent(_ context.Context, _ domain.DeliveryID, _ 
 	return nil
 }
 
-func (r *channelReporter) ReportResult(_ context.Context, _ domain.DeliveryID, _ domain.Generation, result domain.DeliveryResult) error {
+func (r *channelReporter) ReportResult(_ context.Context, id domain.DeliveryID, _ domain.Generation, result domain.DeliveryResult) error {
 	r.done <- result
+	if gate := r.resultGates[id]; gate != nil {
+		<-gate
+	}
 	return nil
 }
 
