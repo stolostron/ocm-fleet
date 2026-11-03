@@ -273,7 +273,11 @@ func (a *Agent) runAckAndCompletion(
 	key slotKey,
 ) {
 	defer a.wg.Done()
-	defer a.releaseSlot(key)
+	// Terminal reports can trigger the next attempt before ReportResult returns.
+	// Release before publishing a result, and on early exits. Once prevents the
+	// deferred cleanup from removing a newer attempt's slot.
+	releaseSlot := sync.OnceFunc(func() { a.releaseSlot(key) })
+	defer releaseSlot()
 
 	ctx := a.appCtx
 
@@ -289,6 +293,7 @@ func (a *Agent) runAckAndCompletion(
 		// Ack failed -- report failure without proceeding to completion.
 		// Return nil to allow the orchestration to retry with a fresh attempt.
 		failMsg := fmt.Sprintf("scripted %s acknowledgement failed", operation)
+		releaseSlot()
 		if err := a.reporter.ReportResult(ctx, deliveryID, generation, domain.DeliveryResult{
 			State:   domain.DeliveryStateFailed,
 			Message: failMsg,
@@ -316,6 +321,7 @@ func (a *Agent) runAckAndCompletion(
 
 	if compDecision.Outcome == OutcomeFailure {
 		failMsg := fmt.Sprintf("scripted %s completion failed", operation)
+		releaseSlot()
 		if err := a.reporter.ReportResult(ctx, deliveryID, generation, domain.DeliveryResult{
 			State:   domain.DeliveryStateFailed,
 			Message: failMsg,
@@ -339,6 +345,7 @@ func (a *Agent) runAckAndCompletion(
 		a.planner.Reset(managedResourceInstanceKey(uid))
 	}
 
+	releaseSlot()
 	if err := a.reporter.ReportResult(ctx, deliveryID, generation, domain.DeliveryResult{
 		State: domain.DeliveryStateDelivered,
 	}); err != nil {
