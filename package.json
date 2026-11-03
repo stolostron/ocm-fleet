@@ -52,6 +52,7 @@
     "adm-zip": "0.6.1",
     "colord": "2.9.4",
     "dompurify": "$dompurify",
+    "minimatch": "11.0.1",
     "smol-toml": "1.9.1",
     "undici": "7.30.1"
   }
