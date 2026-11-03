@@ -45,10 +45,14 @@ func (r *channelReporter) ReportEvent(_ context.Context, _ domain.DeliveryID, _ 
 	return nil
 }
 
-func (r *channelReporter) ReportResult(_ context.Context, id domain.DeliveryID, _ domain.Generation, result domain.DeliveryResult) error {
+func (r *channelReporter) ReportResult(ctx context.Context, id domain.DeliveryID, _ domain.Generation, result domain.DeliveryResult) error {
 	r.done <- result
 	if gate := r.resultGates[id]; gate != nil {
-		<-gate
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	return nil
 }
@@ -101,7 +105,7 @@ func wrapSpec(t *testing.T, spec json.RawMessage) (domain.ExtensionResourceUID, 
 	return uid, raw
 }
 
-func newTestAgent(t *testing.T, reporter domain.DeliveryReporter, inventory domain.InventoryReporter) *scripted.Agent {
+func newTestAgent(t *testing.T, reporter domain.DeliveryReporter, inventory domain.InventoryReporter, opts ...scripted.AgentOption) *scripted.Agent {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -110,7 +114,7 @@ func newTestAgent(t *testing.T, reporter domain.DeliveryReporter, inventory doma
 	if err != nil {
 		t.Fatalf("NewCodec: %v", err)
 	}
-	return scripted.NewAgent(reporter, inventory, codec, scripted.NewPlanner(), ctx, testLogger)
+	return scripted.NewAgent(reporter, inventory, codec, scripted.NewPlanner(), ctx, testLogger, opts...)
 }
 
 // --- tests ---
