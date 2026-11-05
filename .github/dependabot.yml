@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - "/"
+      # Composite actions are separate manifests from the root workflow scan.
+      - "/.github/actions/setup-e2e"
+    schedule:
+      interval: weekly

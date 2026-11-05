@@ -1,12 +1,72 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { globSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { dirname } from "node:path";
 import test from "node:test";
 
-const { parse } = createRequire(import.meta.resolve("nx/package.json"))("yaml");
+const { parse, parseDocument, visit } = createRequire(
+  import.meta.resolve("nx/package.json"),
+)("yaml");
 const workflow = (name) =>
   parse(readFileSync(`.github/workflows/${name}.yml`, "utf8"));
+const actionFiles = globSync([
+  ".github/workflows/*.{yml,yaml}",
+  ".github/actions/**/action.{yml,yaml}",
+  "action.{yml,yaml}",
+]);
+
+test("external actions use full commit SHAs with readable release versions", () => {
+  assert.ok(actionFiles.length > 0);
+  for (const file of actionFiles) {
+    const document = parseDocument(readFileSync(file, "utf8"));
+    assert.deepEqual(document.errors, [], file);
+    visit(document, {
+      Pair(_, { key, value }) {
+        if (key.value !== "uses") return;
+        const reference = value.value;
+        if (reference.startsWith("./")) return;
+        assert.match(
+          reference,
+          /^[\w.-]+\/[\w.-]+(?:\/[\w./-]+)?@[a-f\d]{40}$/,
+          `${file}: ${reference} must pin an upstream commit`,
+        );
+        assert.match(
+          value.comment ?? "",
+          /^\s*v\d+\.\d+\.\d+(?:[-+][\w.-]+)?\s*$/,
+          `${file}: ${reference} needs a release version comment`,
+        );
+      },
+    });
+  }
+});
+
+test("Dependabot maintains workflow and local composite action pins", () => {
+  const config = parse(readFileSync(".github/dependabot.yml", "utf8"));
+  assert.equal(config.version, 2);
+  const updates = config.updates.filter(
+    (update) => update["package-ecosystem"] === "github-actions",
+  );
+  const directories = new Set(
+    updates.flatMap((update) => {
+      assert.ok(
+        ["daily", "weekly", "monthly"].includes(update.schedule.interval),
+      );
+      assert.ok((update["open-pull-requests-limit"] ?? 5) > 0);
+      return update.directories ?? [update.directory];
+    }),
+  );
+  assert.ok(directories.has("/"), "workflows need automated updates");
+  for (const file of actionFiles.filter(
+    (file) => !file.startsWith(".github/workflows/"),
+  )) {
+    const directory = dirname(file);
+    assert.ok(
+      directories.has(directory === "." ? "/" : `/${directory}`),
+      `${file} needs automated updates`,
+    );
+  }
+});
 
 test("every PR runs the full UI and CLI suites against its AIO image", () => {
   const e2e = workflow("e2e");

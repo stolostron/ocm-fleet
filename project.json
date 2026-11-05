@@ -195,6 +195,9 @@
       "inputs": [
         "{workspaceRoot}/tools/ci-policy.test.mjs",
         "{workspaceRoot}/.github/workflows/*",
+        "{workspaceRoot}/.github/actions/**/action.{yml,yaml}",
+        "{workspaceRoot}/action.{yml,yaml}",
+        "{workspaceRoot}/.github/dependabot.yml",
         "jsRuntime"
       ],
       "outputs": []
