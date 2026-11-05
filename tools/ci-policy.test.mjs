@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { dirname, normalize } from "node:path";
 import test from "node:test";
 
-const { parse, parseDocument, visit } = createRequire(
+const { parse, parseDocument } = createRequire(
   import.meta.resolve("nx/package.json"),
 )("yaml");
 const workflow = (name) =>
@@ -24,16 +24,65 @@ const localReferencePaths = new Set(
 test("external actions use full commit SHAs with readable release versions", () => {
   assert.ok(actionFiles.length > 0);
   for (const file of actionFiles) {
-    const document = parseDocument(readFileSync(file, "utf8"));
-    assert.deepEqual(document.errors, [], file);
-    visit(document, {
-      Pair(_, { key, value }) {
-        if (key.value !== "uses") return;
-        assertActionReference(value.value, value.comment, file);
-      },
-    });
+    assertPinnedActions(readFileSync(file, "utf8"), file);
   }
 });
+
+const stepWithUsesInput = `
+  - uses: ./.github/actions/setup-e2e
+    with:
+      uses: arbitrary-input
+    env:
+      uses: arbitrary-environment-value
+`;
+for (const [kind, source] of [
+  [
+    "reusable workflow",
+    "jobs:\n  call:\n    uses: ./.github/workflows/codeql.yml\n    with:\n      uses: arbitrary-input",
+  ],
+  [
+    "workflow",
+    `jobs:\n  check:\n    steps:\n${stepWithUsesInput.replaceAll(/^/gm, "    ")}`,
+  ],
+  [
+    "parallel step",
+    `jobs:\n  check:\n    steps:\n      - parallel:\n${stepWithUsesInput.replaceAll(/^/gm, "        ")}`,
+  ],
+  [
+    "composite action",
+    `runs:\n  using: composite\n  steps:\n${stepWithUsesInput}`,
+  ],
+]) {
+  test(`${kind} inputs named uses are not action references`, () => {
+    assert.doesNotThrow(() => assertPinnedActions(source));
+  });
+}
+
+for (const [kind, source] of [
+  [
+    "reusable workflow",
+    "jobs:\n  call:\n    uses: owner/repo/.github/workflows/reusable.yml@v1",
+  ],
+  [
+    "workflow step",
+    "jobs:\n  check:\n    steps:\n      - uses: owner/action@v1",
+  ],
+  [
+    "parallel step",
+    "jobs:\n  check:\n    steps:\n      - parallel:\n          - uses: owner/action@v1",
+  ],
+  [
+    "composite step",
+    "runs:\n  using: composite\n  steps:\n    - uses: owner/action@v1",
+  ],
+]) {
+  test(`${kind} references require commit pins`, () => {
+    assert.throws(
+      () => assertPinnedActions(source),
+      /must pin an upstream commit/,
+    );
+  });
+}
 
 for (const prefix of ["./", "$/"]) {
   test(`${prefix} references require a manifest covered by the action policy`, () => {
@@ -146,6 +195,27 @@ test("published-image sanity runs nightly or on demand, outside PR validation", 
   assert.equal(run.env.OCM_FLEET_E2E_AIO_PULL, "1");
   assert.match(run.run, /--project=chromium-sanity$/);
 });
+
+function assertPinnedActions(source, file = "fixture") {
+  const document = parseDocument(source);
+  assert.deepEqual(document.errors, [], file);
+  for (const { value: job } of document.get("jobs", true)?.items ?? []) {
+    assertReference(job.get("uses", true));
+    assertSteps(job.get("steps", true));
+  }
+  assertSteps(document.getIn(["runs", "steps"], true));
+
+  function assertSteps(steps) {
+    for (const step of steps?.items ?? []) {
+      assertReference(step.get("uses", true));
+      assertSteps(step.get("parallel", true));
+    }
+  }
+
+  function assertReference(node) {
+    if (node) assertActionReference(node.value, node.comment, file);
+  }
+}
 
 function assertActionReference(reference, comment, file = "fixture") {
   if (reference.startsWith("./") || reference.startsWith("$/")) {
