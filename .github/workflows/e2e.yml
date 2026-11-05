@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  merge_group:
 
 # Keep successful commands silent; replay complete diagnostics on failure.
 defaults:
@@ -40,6 +41,27 @@ jobs:
           path: ${{ runner.temp }}/ci-logs/
           if-no-files-found: ignore
           retention-days: 7
+
+  # Stable merge requirement: skipped/cancelled matrix jobs must not pass.
+  e2e:
+    name: E2E
+    if: ${{ always() }}
+    needs: [aio-image, e2e-playwright]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    permissions:
+      contents: read
+    steps:
+      - name: Require the image and both E2E suites
+        shell: bash
+        env:
+          IMAGE_RESULT: ${{ needs.aio-image.result }}
+          TEST_RESULT: ${{ needs.e2e-playwright.result }}
+        run: |
+          if [[ "$IMAGE_RESULT" != success || "$TEST_RESULT" != success ]]; then
+            echo "::error::E2E did not pass: image=$IMAGE_RESULT suites=$TEST_RESULT"
+            exit 1
+          fi
 
   e2e-playwright:
     name: E2E (${{ matrix.name }})

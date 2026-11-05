@@ -9,15 +9,11 @@ name: Published Quay AIO sanity
 # not mean the current PR/branch is broken. Investigate :latest immediately.
 #
 # OpenShift CI tags :latest on merge and republishes it at
-# 02:30/08:30/14:30/20:30 UTC; this schedule is 30 minutes after those.
+# 02:30/08:30/14:30/20:30 UTC; check nightly after the first republish.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   schedule:
-    - cron: "0 3,9,15,21 * * *"
+    - cron: "0 3 * * *"
   workflow_dispatch:
 
 # Keep successful commands silent; replay complete diagnostics on failure.

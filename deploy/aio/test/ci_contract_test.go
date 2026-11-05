@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -111,7 +112,8 @@ func TestOpenShiftReleaseAIOImageGraphContract(t *testing.T) {
 //     from Quay, no push to the wrong repo)
 //   - pr-merge-* are postsubmit; pr-image-mirror-* are not
 //   - generated presubmits ci/prow/images and ci/prow/pr-image-mirror-*
-//     always_run on every PR
+//     remain requestable with explicit /test commands; scheduling policy is
+//     checked alongside its source in openshift/release
 //   - generated postsubmits branch-ci-…-pr-merge-image-mirror-* always_run
 //     on every merge
 func assertAIOReleaseContract(t *testing.T, froms []string, cfg ciOperatorConfig, presubmits presubmitsFile, postsubmits postsubmitsFile) {
@@ -219,8 +221,12 @@ func assertAIOReleaseContract(t *testing.T, froms []string, cfg ciOperatorConfig
 				t.Errorf("presubmits: missing %s", ctx)
 				return
 			}
-			if !job.AlwaysRun {
-				t.Errorf("%s always_run=false; AIO/product images must build on every PR", ctx)
+			command := "/test " + strings.TrimPrefix(ctx, "ci/prow/")
+			if job.RerunCommand != command {
+				t.Errorf("%s rerun_command=%q, want %q", ctx, job.RerunCommand, command)
+			}
+			if matches, err := regexp.MatchString(job.Trigger, command); job.Trigger == "" || err != nil || !matches {
+				t.Errorf("%s trigger=%q does not accept %q (error=%v)", ctx, job.Trigger, command, err)
 			}
 		})
 	}
@@ -386,9 +392,11 @@ type postsubmitsFile struct {
 	Postsubmits map[string][]prowJob `yaml:"postsubmits"`
 }
 
-// prowJob is always_run plus context (presubmits) or name (postsubmits).
+// prowJob holds scheduling, manual triggers, and job identity.
 type prowJob struct {
-	AlwaysRun bool   `yaml:"always_run"`
-	Context   string `yaml:"context"`
-	Name      string `yaml:"name"`
+	AlwaysRun    bool   `yaml:"always_run"`
+	RerunCommand string `yaml:"rerun_command"`
+	Trigger      string `yaml:"trigger"`
+	Context      string `yaml:"context"`
+	Name         string `yaml:"name"`
 }

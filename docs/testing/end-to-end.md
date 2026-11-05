@@ -327,7 +327,7 @@ invocations: failed tasks include their full diagnostics, and successful tasks
 collapse to one line. Failure logs do not point to temporary Nx cache files.
 Logs stream to disk while commands run; successful logs are discarded.
 New command steps inherit the workflow shell after checkout; composite actions
-must select it explicitly. Steps without a checkout (the final CI gate) use Bash
+must select it explicitly. Steps without a checkout (the final CI and E2E gates) use Bash
 and emit their own failure annotations.
 
 Two workflows run against an AIO. They are not interchangeable: one runs the
@@ -342,7 +342,34 @@ It requires network access to `raw.githubusercontent.com`.
 [`.github/workflows/e2e.yml`](../../.github/workflows/e2e.yml) plus
 [`.github/actions/setup-e2e`](../../.github/actions/setup-e2e/) test **this
 checkout's** AIO image (Nx `image:aio`). A failure there is a problem with
-the current branch.
+the current branch. Every PR and push to `main` runs the full Chromium UI and
+CLI suites. The stable `E2E` check passes only when the image job and both suites
+succeed. Failed, cancelled, or skipped dependencies fail the gate.
+
+Branch protection requires `CI` (quality, unit/component tests, and backend
+integration) and `E2E`. Prow adds multi-architecture image builds for changes to
+Dockerfiles, container ignore files, package/Go dependency manifests, Nx and
+TypeScript/build configuration, build tools, AIO packaging, CI workflows/actions,
+and architecture-specific Go/assembly files. Ordinary application source and
+documentation changes use GitHub Actions validation. The file filter is maintained
+in [openshift/release's ci-operator configuration](https://github.com/openshift/release/blob/main/ci-operator/config/stolostron/ocm-fleet/stolostron-ocm-fleet-main.yaml).
+Tide requires `ci/prow/images` when the filter matches; `/test images` requests
+the build explicitly for other changes. Building images does not publish PR tags.
+
+PR image publication is optional and runs only when explicitly requested in a
+PR comment. Each command publishes its named image for amd64 and arm64:
+
+```text
+/test pr-image-mirror-server
+/test pr-image-mirror-local
+/test pr-image-mirror-web
+/test pr-image-mirror-aio
+```
+
+The tags are `PR<number>-<head-SHA>` in the corresponding
+`quay.io/stolostron/ocm-fleet[-server|-server-local|-web]` repository. Publication
+does not block merging. Main still automatically publishes all four images for
+both architectures with commit-SHA and `latest` tags, plus scheduled republishing.
 
 [`.github/workflows/e2e-published.yml`](../../.github/workflows/e2e-published.yml)
 pulls **`quay.io/stolostron/ocm-fleet:latest`** from Quay and runs a UI
@@ -364,6 +391,7 @@ run these suites.
 ```
 aio-image          # role: cache — build or restore this-checkout AIO tar
  └── e2e-playwright # role: e2e — UI and CLI matrix, one runner each
+      └── E2E      # required result for the image and both suites
 
 e2e-published      # role: published — pull quay:latest, UI sanity only
 ```
@@ -373,11 +401,9 @@ e2e-published      # role: published — pull quay:latest, UI sanity only
 | `e2e.yml`           | This checkout, built by Nx                            | Full UI + CLI e2e (including Kind)     | The current branch's AIO is broken                                   |
 | `e2e-published.yml` | `quay.io/stolostron/ocm-fleet:latest` already on Quay | Sanity only: start, Dex login, console | The live published AIO failed basic function; users are affected now |
 
-`e2e-published.yml` runs on pull requests, pushes to `main`, a cron 30 minutes
-after OpenShift CI republishes `:latest` (03:00/09:00/15:00/21:00 UTC), and
-`workflow_dispatch`. On a PR the red check is still about Quay `:latest`, not
-the PR's Dockerfiles. Do not "fix" it by changing unrelated PR code; fix or
-republish the published image.
+`e2e-published.yml` runs nightly at 03:00 UTC, 30 minutes after OpenShift CI's
+first scheduled republish, and through `workflow_dispatch`. Its result is about
+Quay `:latest`. Fix or republish that image when it fails.
 
 The Playwright matrix entries restore the same tree-keyed tar and run in
 parallel. They do not share a running container.
