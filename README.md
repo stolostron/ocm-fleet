@@ -194,6 +194,8 @@ PRs. Review each proposed commit in the intended upstream repository and its
 release changes before merging. The `ocm-fleet:test:ci-policy` check enforces pins,
 version comments, and update coverage for local actions. When adding a local
 action, include its directory in [the Dependabot configuration](.github/dependabot.yml).
+Keep local action manifests under `.github/actions/` or at the repository root;
+the policy rejects local references whose manifests it does not check.
 After the initial pins merge and quality, CodeQL, and E2E runs pass, enable
 **Require actions to be pinned to a full-length commit SHA** under repository
 **Settings → Actions → General → Actions permissions**. Keep that policy enabled

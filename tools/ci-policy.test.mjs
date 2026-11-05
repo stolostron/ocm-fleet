@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { globSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname } from "node:path";
+import { dirname, normalize } from "node:path";
 import test from "node:test";
 
 const { parse, parseDocument, visit } = createRequire(
@@ -15,6 +15,11 @@ const actionFiles = globSync([
   ".github/actions/**/action.{yml,yaml}",
   "action.{yml,yaml}",
 ]);
+const localReferencePaths = new Set(
+  actionFiles.map((file) =>
+    file.startsWith(".github/workflows/") ? file : dirname(file),
+  ),
+);
 
 test("external actions use full commit SHAs with readable release versions", () => {
   assert.ok(actionFiles.length > 0);
@@ -24,22 +29,26 @@ test("external actions use full commit SHAs with readable release versions", () 
     visit(document, {
       Pair(_, { key, value }) {
         if (key.value !== "uses") return;
-        const reference = value.value;
-        if (reference.startsWith("./")) return;
-        assert.match(
-          reference,
-          /^[\w.-]+\/[\w.-]+(?:\/[\w./-]+)?@[a-f\d]{40}$/,
-          `${file}: ${reference} must pin an upstream commit`,
-        );
-        assert.match(
-          value.comment ?? "",
-          /^\s*v\d+\.\d+\.\d+(?:[-+][\w.-]+)?\s*$/,
-          `${file}: ${reference} needs a release version comment`,
-        );
+        assertActionReference(value.value, value.comment, file);
       },
     });
   }
 });
+
+for (const prefix of ["./", "$/"]) {
+  test(`${prefix} references require a manifest covered by the action policy`, () => {
+    assert.doesNotThrow(() =>
+      assertActionReference(`${prefix}.github/actions/setup-e2e`),
+    );
+    assert.doesNotThrow(() =>
+      assertActionReference(`${prefix}.github/workflows/codeql.yml`),
+    );
+    assert.throws(
+      () => assertActionReference(`${prefix}tools/uncovered-action`),
+      /manifest covered by the action policy/,
+    );
+  });
+}
 
 test("Dependabot maintains workflow and local composite action pins", () => {
   const config = parse(readFileSync(".github/dependabot.yml", "utf8"));
@@ -137,3 +146,23 @@ test("published-image sanity runs nightly or on demand, outside PR validation", 
   assert.equal(run.env.OCM_FLEET_E2E_AIO_PULL, "1");
   assert.match(run.run, /--project=chromium-sanity$/);
 });
+
+function assertActionReference(reference, comment, file = "fixture") {
+  if (reference.startsWith("./") || reference.startsWith("$/")) {
+    assert.ok(
+      localReferencePaths.has(normalize(reference.slice(2) || ".")),
+      `${file}: ${reference} needs a manifest covered by the action policy; keep local actions in .github/actions/ or the repository root`,
+    );
+    return;
+  }
+  assert.match(
+    reference,
+    /^[\w.-]+\/[\w.-]+(?:\/[\w./-]+)?@[a-f\d]{40}$/,
+    `${file}: ${reference} must pin an upstream commit`,
+  );
+  assert.match(
+    comment ?? "",
+    /^\s*v\d+\.\d+\.\d+(?:[-+][\w.-]+)?\s*$/,
+    `${file}: ${reference} needs a release version comment`,
+  );
+}
