@@ -10,13 +10,10 @@ import {
   createResourceApi,
   extractClusterId,
   PluginLink,
+  useDynamicExtension,
   usePluginNavigate,
 } from "@ocm-fleet/common";
 import type { Extension } from "@openshift/dynamic-plugin-sdk";
-import {
-  useExtensions,
-  useResolvedExtensions,
-} from "@openshift/dynamic-plugin-sdk";
 import { PageHeader } from "@patternfly/react-component-groups/dist/dynamic/PageHeader";
 import {
   Breadcrumb,
@@ -268,8 +265,8 @@ export default function ClusterDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const requestIdRef = useRef(0);
 
-  const tabExtensionCandidates = useExtensions(isClusterDetailTabExtension);
-  const [tabExtensions] = useResolvedExtensions(tabExtensionCandidates);
+  const [tabExtensions] = useDynamicExtension(isClusterDetailTabExtension);
+  useDynamicExtension(isClusterDetailTabExtension);
   const resolvedTabs = useMemo<ResolvedTab[]>(() => {
     const tabs: ResolvedTab[] = [];
     for (const ext of tabExtensions) {

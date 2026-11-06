@@ -406,12 +406,14 @@ export default function ClustersPage() {
         </ModalFooter>
       </Modal>
 
-      <CreateClusterModal
-        isOpen={wizardOpen}
-        preselectedProvider={preselectedProvider}
-        onClose={closeCreateWizard}
-        onProviderSelect={selectProvider}
-      />
+      {wizardOpen ? (
+        <CreateClusterModal
+          isOpen={wizardOpen}
+          preselectedProvider={preselectedProvider}
+          onClose={closeCreateWizard}
+          onProviderSelect={selectProvider}
+        />
+      ) : null}
     </Stack>
   );
 }

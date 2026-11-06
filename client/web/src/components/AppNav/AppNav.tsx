@@ -3,12 +3,9 @@ import {
   CORE_EXTENSION_META,
   mergeLayout,
   orderByIds,
+  useDynamicExtension,
   useNavLayout,
 } from "@ocm-fleet/common";
-import {
-  useExtensions,
-  useResolvedExtensions,
-} from "@openshift/dynamic-plugin-sdk";
 import { Divider, Nav, NavList } from "@patternfly/react-core";
 import type { ComponentType } from "react";
 import { useMemo } from "react";
@@ -74,16 +71,15 @@ function tagEntries(
 const AppNav = () => {
   const { pluginPages, navLayout } = useAppConfig();
   const { override, legacyOrder, loaded } = useNavLayout();
-  const allRouteExtensions = useExtensions(isRouteExtension);
-  const [routeExtensions] = useResolvedExtensions(allRouteExtensions);
+  const [allRouteExtensions] = useDynamicExtension(isRouteExtension);
 
   const iconMap = useMemo(() => {
     const map = new Map<string, ComponentType>();
-    for (const ext of routeExtensions) {
+    for (const ext of allRouteExtensions) {
       map.set(ext.properties.label, ext.properties.icon);
     }
     return map;
-  }, [routeExtensions]);
+  }, [allRouteExtensions]);
 
   const pageMap = useMemo(() => {
     const map = new Map<string, PluginPage>();

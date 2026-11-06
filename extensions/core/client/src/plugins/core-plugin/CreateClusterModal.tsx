@@ -1,12 +1,9 @@
-import type {
-  ClusterProviderCardProps,
-  ClusterProviderWizardProps,
+import {
+  type ClusterProviderCardProps,
+  type ClusterProviderWizardProps,
+  useDynamicExtension,
 } from "@ocm-fleet/common";
 import type { CodeRef, Extension } from "@openshift/dynamic-plugin-sdk";
-import {
-  useExtensions,
-  useResolvedExtensions,
-} from "@openshift/dynamic-plugin-sdk";
 import {
   Bullseye,
   Button,
@@ -56,9 +53,8 @@ export default function CreateClusterModal({
   onClose,
   onProviderSelect,
 }: CreateClusterModalProps) {
-  const providerCandidates = useExtensions(isClusterProvider);
   const [providerExtensions, providersLoaded] =
-    useResolvedExtensions(providerCandidates);
+    useDynamicExtension(isClusterProvider);
   const sortedProviders = useMemo(() => {
     const cpy = [...providerExtensions];
     cpy.sort((a, b) => a.properties.label.localeCompare(b.properties.label));
