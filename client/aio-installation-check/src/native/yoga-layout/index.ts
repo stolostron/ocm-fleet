@@ -124,6 +124,7 @@ class YogaNode {
     availableWidth?: number,
     availableHeight?: number,
     stretch = false,
+    stretchHeight = false,
   ): void {
     if (this.display === 1) {
       this.computedWidth = 0;
@@ -144,7 +145,7 @@ class YogaNode {
         innerWidth,
         width === undefined ? 2 : 1,
         availableHeight ?? Number.MAX_SAFE_INTEGER,
-        2,
+        stretchHeight ? 1 : 2,
       );
       this.computedWidth = Math.max(
         this.minWidth,
@@ -152,7 +153,9 @@ class YogaNode {
       );
       this.computedHeight = Math.max(
         this.minHeight,
-        this.height ?? measured.height + vertical,
+        this.height ??
+          (stretchHeight ? availableHeight : undefined) ??
+          measured.height + vertical,
       );
       return;
     }
@@ -161,8 +164,14 @@ class YogaNode {
     for (const child of this.children) {
       child.layout(
         Math.max(0, innerWidth - child.margin[0] - child.margin[2]),
-        undefined,
+        row && this.height !== undefined
+          ? Math.max(
+              0,
+              this.height - vertical - child.margin[1] - child.margin[3],
+            )
+          : undefined,
         !row && this.align === 4,
+        row && this.align === 4 && this.height !== undefined,
       );
     }
     const mainSize = (child: YogaNode): number =>

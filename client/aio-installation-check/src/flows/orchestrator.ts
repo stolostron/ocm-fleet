@@ -286,7 +286,7 @@ async function configurePersistence(
       continue;
     }
     const validation = await services.validateDataPath(path);
-    if (validation.status === "usable") return path;
+    if (validation.status === "usable") return validation.path;
     terminal.write(validation.reason);
 
     if (validation.status === "missing") {
@@ -296,14 +296,16 @@ async function configurePersistence(
       ]);
       if (create === 0) {
         const approved = await terminal.choose(
-          `Create ${path}? This changes host filesystem state.`,
+          `Create ${validation.path}? This changes host filesystem state.`,
           ["Create", "No"],
         );
         if (approved === 0) {
           try {
-            await services.createDataDirectory(path);
-            const afterCreate = await services.validateDataPath(path);
-            if (afterCreate.status === "usable") return path;
+            await services.createDataDirectory(validation.path);
+            const afterCreate = await services.validateDataPath(
+              validation.path,
+            );
+            if (afterCreate.status === "usable") return afterCreate.path;
             terminal.write(afterCreate.reason);
           } catch (error) {
             terminal.write(

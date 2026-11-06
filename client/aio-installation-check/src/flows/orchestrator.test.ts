@@ -200,6 +200,67 @@ describe("installation orchestration", () => {
     );
   });
 
+  it("creates and mounts the normalized path returned by validation", async () => {
+    const terminal = new TestTerminal();
+    terminal.choices = [0, 0, 0, 0, 1, 1];
+    terminal.inputs = ["relative/data"];
+    const deps = services([runtime("podman", true)], () => [result()]);
+    const validated: string[] = [];
+    let created = "";
+    let launch: LaunchOptions | undefined;
+    deps.validateDataPath = async (path) => {
+      validated.push(path);
+      return {
+        status: validated.length === 1 ? "missing" : "usable",
+        path: "/absolute/data",
+        reason: "path",
+      };
+    };
+    deps.createDataDirectory = async (path) => {
+      created = path;
+    };
+    deps.buildLaunchPlan = (options) => {
+      launch = options;
+      return {
+        executable: "podman",
+        args: [],
+        environment: {},
+        displayCommand: "podman run",
+      };
+    };
+
+    await runInstallationCheck([], deps, terminal);
+
+    expect(validated).toEqual(["relative/data", "/absolute/data"]);
+    expect(created).toBe("/absolute/data");
+    expect(launch?.dataPath).toBe("/absolute/data");
+    expect(terminal.lines.join("\n")).toContain("Create /absolute/data?");
+  });
+
+  it("mounts the normalized path returned for an existing directory", async () => {
+    const terminal = new TestTerminal();
+    terminal.choices = [0, 0, 1, 1];
+    terminal.inputs = ["~/data"];
+    const deps = services([runtime("podman", true)], () => [result()]);
+    let launch: LaunchOptions | undefined;
+    deps.validateDataPath = async () => ({
+      status: "usable",
+      path: "/home/user/data",
+      reason: "usable",
+    });
+    deps.buildLaunchPlan = (options) => {
+      launch = options;
+      return {
+        executable: "podman",
+        args: [],
+        environment: {},
+        displayCommand: "podman run",
+      };
+    };
+    await runInstallationCheck([], deps, terminal);
+    expect(launch?.dataPath).toBe("/home/user/data");
+  });
+
   it("asks before manual fixes and polls affected check at fixed two-second intervals", async () => {
     const terminal = new TestTerminal();
     terminal.choices = [0, 1];

@@ -369,20 +369,95 @@ describe("Docker socket address spaces", () => {
       "error",
     );
   });
-  it("refuses remote Docker Desktop even when server reports Desktop", async () => {
-    expect(
-      await discoverRuntime(
-        "docker",
-        dockerFixture("Docker Desktop", "ssh://user@remote.example"),
-      ),
-    ).toMatchObject({ local: false });
-    expect(
-      (
-        await discoverRuntime(
-          "docker",
-          dockerFixture("Docker Desktop", "ssh://user@remote.example"),
-        )
-      ).engineSocketPath,
-    ).toBeUndefined();
+  it.each(["darwin", "linux"])(
+    "refuses remote Docker Desktop on %s even when server reports Desktop",
+    async (platform) => {
+      const dependencies = dockerFixture(
+        "Docker Desktop",
+        "ssh://user@remote.example",
+      );
+      dependencies.platform = platform;
+      const discovery = await discoverRuntime("docker", dependencies);
+      expect(discovery.local).toBe(false);
+      expect(discovery.hostSocketPath).toBeUndefined();
+      expect(discovery.engineSocketPath).toBeUndefined();
+      expect((await checkKindSocket(discovery, dependencies)).status).toBe(
+        "error",
+      );
+      expect(dependencies.probeUnixSocket).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["darwin", "linux"])(
+    "probes only the host socket for local Docker Desktop on %s",
+    async (platform) => {
+      const hostPath = "/home/test/.docker/desktop/docker.sock";
+      const dependencies = dockerFixture(
+        "Docker Desktop",
+        `unix://${hostPath}`,
+      );
+      dependencies.platform = platform;
+      const discovery = await discoverRuntime("docker", dependencies);
+      expect(discovery).toMatchObject({
+        local: true,
+        hostSocketPath: hostPath,
+        engineSocketPath: "/var/run/docker.sock",
+      });
+      expect((await checkKindSocket(discovery, dependencies)).status).toBe(
+        "pass",
+      );
+      expect(dependencies.probeUnixSocket).toHaveBeenCalledTimes(1);
+      expect(dependencies.probeUnixSocket).toHaveBeenCalledWith(hostPath);
+    },
+  );
+
+  it("gives Docker-appropriate remediation when a Linux socket is unknown", async () => {
+    const dependencies = dockerFixture("Ubuntu", "tcp://127.0.0.1:2375");
+    dependencies.platform = "linux";
+    const result = await checkKindSocket(
+      await discoverRuntime("docker", dependencies),
+      dependencies,
+    );
+    expect(result.status).toBe("error");
+    expect(result.remediation?.explanation).not.toContain("Docker Desktop");
+    expect(result.remediation?.explanation).not.toContain("PODMAN_SOCKET");
+  });
+
+  it("keeps a native Linux Docker socket as its bind source", async () => {
+    const dependencies = dockerFixture("Ubuntu", "unix:///run/docker.sock");
+    dependencies.platform = "linux";
+    expect(await discoverRuntime("docker", dependencies)).toMatchObject({
+      hostSocketPath: "/run/docker.sock",
+      engineSocketPath: "/run/docker.sock",
+    });
+  });
+
+  it("uses DOCKER_HOST over DOCKER_CONTEXT, including a remote host", async () => {
+    const dependencies = dockerFixture("Docker Desktop");
+    dependencies.env.DOCKER_HOST = "tcp://192.0.2.1:2375";
+    dependencies.env.DOCKER_CONTEXT = "desktop-linux";
+    const discovery = await discoverRuntime("docker", dependencies);
+    expect(discovery.local).toBe(false);
+    expect(discovery.hostSocketPath).toBeUndefined();
+    expect(discovery.engineSocketPath).toBeUndefined();
+    expect(dependencies.runCommand).not.toHaveBeenCalledWith("docker", [
+      "context",
+      "inspect",
+      "desktop-linux",
+    ]);
+  });
+
+  it("uses DOCKER_CONTEXT when DOCKER_HOST is empty", async () => {
+    const dependencies = dockerFixture("Docker Desktop");
+    dependencies.env.DOCKER_CONTEXT = "desktop-linux";
+    const discovery = await discoverRuntime("docker", dependencies);
+    expect(discovery.hostSocketPath).toBe(
+      "/Users/test/.docker/run/docker.sock",
+    );
+    expect(dependencies.runCommand).toHaveBeenCalledWith("docker", [
+      "context",
+      "inspect",
+      "desktop-linux",
+    ]);
   });
 });

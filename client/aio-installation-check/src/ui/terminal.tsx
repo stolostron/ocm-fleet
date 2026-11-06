@@ -181,7 +181,14 @@ function copyCommand(
   const child = spawn(executable, args, {
     stdio: ["pipe", "ignore", "ignore"],
   });
-  const finished = waitForCommand(child);
+  let inputFailed = false;
+  child.stdin.on("error", () => {
+    inputFailed = true;
+  });
+  const finished = new Promise<boolean>((resolve) => {
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0 && !inputFailed));
+  });
   child.stdin.write(text);
   child.stdin.end();
   return finished;

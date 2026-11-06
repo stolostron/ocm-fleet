@@ -340,9 +340,9 @@ async function discoverDocker(
   const ready = detected && !!asRecord(info);
   const contextName =
     dependencies.env.DOCKER_CONTEXT.trim() || contextResult.stdout.trim();
-  const hostOverride = dependencies.env.DOCKER_CONTEXT
-    ? ""
-    : dependencies.env.DOCKER_HOST;
+  // Docker CLI resolves a nonempty DOCKER_HOST before DOCKER_CONTEXT, despite
+  // the environment-variable reference documenting the opposite order.
+  const hostOverride = dependencies.env.DOCKER_HOST;
   const contextResultForTarget = hostOverride
     ? undefined
     : contextName
@@ -382,16 +382,17 @@ async function discoverDocker(
   if (versions.server) discovery.serverVersion = versions.server;
   if (location.socketPath) {
     discovery.hostSocketPath = location.socketPath;
-    if (dependencies.platform === "linux")
-      discovery.engineSocketPath = location.socketPath;
     // Docker Desktop's host Unix socket is forwarded into its Linux VM.
-    // Only recognized Desktop engines use the documented daemon-side socket;
+    // The contract uses the standard VM socket on both supported host OSes;
     // unknown macOS providers remain Kind-blocked rather than guessing.
     if (
-      dependencies.platform === "darwin" &&
+      (dependencies.platform === "darwin" ||
+        dependencies.platform === "linux") &&
       stringAt(info, "OperatingSystem") === "Docker Desktop"
     ) {
       discovery.engineSocketPath = "/var/run/docker.sock";
+    } else if (dependencies.platform === "linux") {
+      discovery.engineSocketPath = location.socketPath;
     }
   }
   return discovery;

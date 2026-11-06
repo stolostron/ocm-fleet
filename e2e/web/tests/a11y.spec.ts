@@ -31,7 +31,9 @@ test.describe("authenticated console", () => {
   test("exposes navigation and main landmarks", async ({ page }) => {
     await page.goto("/app/core/clusters");
 
-    await expect(page.getByRole("navigation")).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Global", exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole("main")).toBeVisible();
     await expect(
       page.getByRole("heading", { level: 1, name: "Clusters" }),

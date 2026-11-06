@@ -1,8 +1,93 @@
+import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
+
 import stringWidth from "string-width";
 import { expect, it, vi } from "vitest";
 
 import { TerminalCancelled } from "./keyboard-selection";
 import { createTerminal } from "./terminal";
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:child_process")>();
+  return { ...original, spawn: vi.fn(original.spawn) };
+});
+
+it("treats clipboard stdin errors as failure and falls back to the next command", async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { value: "linux" });
+  const mockedSpawn = vi.mocked(spawn);
+  const children: (EventEmitter & { stdin: EventEmitter })[] = [];
+  mockedSpawn.mockImplementation((() => {
+    const child = Object.assign(new EventEmitter(), {
+      stdin: Object.assign(new EventEmitter(), {
+        write: vi.fn(),
+        end: vi.fn(),
+      }),
+    });
+    children.push(child);
+    return child as unknown as ReturnType<typeof spawn>;
+  }) as typeof spawn);
+  try {
+    const copied = createTerminal().copy("test");
+    expect(children[0].stdin.listenerCount("error")).toBeGreaterThan(0);
+    children[0].stdin.emit(
+      "error",
+      Object.assign(new Error("broken pipe"), { code: "EPIPE" }),
+    );
+    children[0].emit("close", 0);
+    await Promise.resolve();
+    expect(mockedSpawn.mock.calls.map(([command]) => command)).toEqual([
+      "wl-copy",
+      "xclip",
+    ]);
+    children[1].emit("close", 0);
+    expect(await copied).toBe(true);
+  } finally {
+    mockedSpawn.mockReset();
+    Object.defineProperty(process, "platform", platform);
+  }
+});
+
+it("handles clipboard spawn failure followed by a late stdin error", async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { value: "darwin" });
+  const child = Object.assign(new EventEmitter(), {
+    stdin: Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn() }),
+  });
+  const mockedSpawn = vi.mocked(spawn);
+  mockedSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
+  try {
+    const copied = createTerminal().copy("test");
+    child.emit("error", new Error("spawn failed"));
+    expect(await copied).toBe(false);
+    expect(() =>
+      child.stdin.emit("error", new Error("broken pipe")),
+    ).not.toThrow();
+    child.emit("close", 1);
+  } finally {
+    mockedSpawn.mockReset();
+    Object.defineProperty(process, "platform", platform);
+  }
+});
+
+it("reports clipboard failure when stdin errors despite exit code zero", async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { value: "darwin" });
+  const child = Object.assign(new EventEmitter(), {
+    stdin: Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn() }),
+  });
+  const mockedSpawn = vi.mocked(spawn);
+  mockedSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
+  try {
+    const copied = createTerminal().copy("test");
+    child.stdin.emit("error", new Error("broken pipe"));
+    child.emit("close", 0);
+    expect(await copied).toBe(false);
+  } finally {
+    mockedSpawn.mockReset();
+    Object.defineProperty(process, "platform", platform);
+  }
+});
 
 it("renders terminal lines through Ink without alternate-screen controls", () => {
   const writeSpy = vi.spyOn(process.stdout, "write");
