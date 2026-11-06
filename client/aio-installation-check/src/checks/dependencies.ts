@@ -31,13 +31,32 @@ export interface CheckDependencies {
 
 const runCommand: CheckDependencies["runCommand"] = (command, args) =>
   new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 15_000,
+      killSignal: "SIGKILL",
+    });
     const stdout: string[] = [];
     const stderr: string[] = [];
+    // Resolve even if a descendant keeps the inherited pipes open after the
+    // child is killed and the close event therefore never arrives.
+    const deadline = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // The child may already have exited.
+      }
+      resolve({
+        exitCode: 1,
+        stdout: stdout.join(""),
+        stderr: `${stderr.join("")}\nCommand timed out after 15 seconds`,
+      });
+    }, 15_000);
 
     child.stdout.on("data", (chunk: Buffer) => stdout.push(String(chunk)));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(String(chunk)));
     child.on("error", (error: Error) => {
+      clearTimeout(deadline);
       resolve({
         exitCode: 127,
         stdout: stdout.join(""),
@@ -45,6 +64,7 @@ const runCommand: CheckDependencies["runCommand"] = (command, args) =>
       });
     });
     child.on("close", (code: number | null) => {
+      clearTimeout(deadline);
       resolve({
         exitCode: code ?? 1,
         stdout: stdout.join(""),

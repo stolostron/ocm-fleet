@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 
-import { test } from "vitest";
+import { test, vi } from "vitest";
 
 import type { LaunchPlan } from "../contracts";
 import {
@@ -156,6 +157,101 @@ test("basic mode omits persistence when skipped", () => {
 
   assert.ok(!plan.args.some((arg) => arg.endsWith(":/data")));
   assert.ok(!plan.displayCommand.includes("/data"));
+});
+
+test("persistence paths are normalized identically for validation, creation, and mount", async () => {
+  const seen: string[] = [];
+  const service = createLaunchService({
+    stat: async (path) => {
+      seen.push(path);
+      return directoryStats(true);
+    },
+    checkPathAccess: async (path) => {
+      seen.push(path);
+      return true;
+    },
+    mkdir: async (path) => {
+      seen.push(path);
+    },
+  });
+  vi.stubEnv("HOME", "/home/test-user");
+  try {
+    for (const input of ["relative/data", "~/fleet-data", "~"]) {
+      const expected = input.startsWith("~")
+        ? resolve("/home/test-user", input.slice(2))
+        : resolve(input);
+      const validation = await service.validateDataPath(input);
+      assert.equal(validation.path, expected);
+      assert.equal(validation.status, "usable");
+      await service.createDataDirectory(input);
+      const plan = service.buildLaunchPlan({
+        runtime: "podman",
+        mode: "basic",
+        dataPath: input,
+      });
+      assert.ok(plan.args.includes(`${expected}:/data`));
+      assert.deepEqual(seen.splice(0), [expected, expected, expected]);
+    }
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+test("invalid persistence paths never reach filesystem or mount planning", async () => {
+  let touched = false;
+  const service = createLaunchService({
+    stat: async () => {
+      touched = true;
+      return directoryStats(true);
+    },
+    mkdir: async () => {
+      touched = true;
+    },
+  });
+  for (const path of [
+    "relative:options",
+    "/tmp/fleet:data",
+    "/tmp/bad:dir/../data",
+    "~someone/data",
+  ]) {
+    const validation = await service.validateDataPath(path);
+    assert.notEqual(validation.status, "usable");
+    assert.match(validation.reason, /colon|~username/i);
+    await assert.rejects(service.createDataDirectory(path));
+    assert.throws(() =>
+      service.buildLaunchPlan({
+        runtime: "docker",
+        mode: "basic",
+        dataPath: path,
+      }),
+    );
+  }
+  assert.equal(touched, false);
+});
+
+test("home expansion rejects missing, relative, or colon-containing HOME", async () => {
+  const service = createLaunchService({
+    stat: async () => {
+      throw new Error("unexpected filesystem access");
+    },
+  });
+  try {
+    for (const home of [undefined, "relative", "/home/bad:name"]) {
+      vi.stubEnv("HOME", home);
+      const validation = await service.validateDataPath("~/data");
+      assert.notEqual(validation.status, "usable");
+      assert.match(validation.reason, /HOME|colon/);
+      assert.throws(() =>
+        service.buildLaunchPlan({
+          runtime: "podman",
+          mode: "basic",
+          dataPath: "~/data",
+        }),
+      );
+    }
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 
 test("validateDataPath differentiates missing, non-directory and permission failures", async () => {

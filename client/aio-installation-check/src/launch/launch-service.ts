@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdir, stat } from "node:fs/promises";
+import * as path from "node:path";
 
 import type {
   DataPathValidation,
@@ -10,6 +11,31 @@ import type {
 
 const AIO_IMAGE = "quay.io/stolostron/ocm-fleet:latest";
 const CONTAINER_SOCKET_PATH = "/var/run/docker.sock";
+
+function normalizeDataPath(input: string): string {
+  if (!input) throw new TypeError("Enter a directory path.");
+  if (input.startsWith("~") && input !== "~" && !input.startsWith("~/")) {
+    throw new TypeError(
+      "~username paths are not supported; use an explicit path.",
+    );
+  }
+  let expanded = input;
+  if (input === "~" || input.startsWith("~/")) {
+    const home = process.env.HOME;
+    if (!home?.startsWith("/")) {
+      throw new TypeError("HOME must be an absolute path to expand ~.");
+    }
+    expanded = `${home}${input.slice(1)}`;
+  }
+  if (expanded.includes(":")) {
+    throw new TypeError("Directory path must not contain a colon.");
+  }
+  const normalized = path.resolve(expanded);
+  if (!normalized.startsWith("/") || normalized.includes(":")) {
+    throw new TypeError("Absolute directory path must not contain a colon.");
+  }
+  return normalized;
+}
 
 interface CommandResult {
   code: number | null;
@@ -135,19 +161,13 @@ export function createLaunchService(
 
   return {
     buildLaunchPlan(options) {
-      if (options.dataPath === "") {
-        throw new TypeError(
-          "dataPath must be omitted or contain a directory path",
-        );
-      }
-
       const executable = options.runtime;
       const args = ["run", "--pull=always"];
 
       args.push("-p", "127.0.0.1:8085:8085", "-p", "127.0.0.1:50051:50051");
 
       if (options.dataPath !== undefined) {
-        args.push("-v", `${options.dataPath}:/data`);
+        args.push("-v", `${normalizeDataPath(options.dataPath)}:/data`);
       }
 
       if (options.mode === "kind") {
@@ -192,6 +212,16 @@ export function createLaunchService(
         return { status: "missing", path, reason: "Enter a directory path." };
       }
 
+      try {
+        path = normalizeDataPath(path);
+      } catch (error) {
+        return {
+          status: "not-directory",
+          path,
+          reason: error instanceof Error ? error.message : String(error),
+        };
+      }
+
       let pathStats: Awaited<ReturnType<LaunchDependencies["stat"]>>;
       try {
         pathStats = await dependencies.stat(path);
@@ -229,12 +259,8 @@ export function createLaunchService(
     },
 
     async createDataDirectory(path) {
-      if (path.length === 0) {
-        throw new TypeError("path must contain a directory path");
-      }
-
       // Caller must obtain explicit user consent before invoking this helper.
-      await dependencies.mkdir(path, { recursive: true });
+      await dependencies.mkdir(normalizeDataPath(path), { recursive: true });
     },
 
     async executeLaunch(plan) {

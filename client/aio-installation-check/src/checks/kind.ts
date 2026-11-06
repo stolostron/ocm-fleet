@@ -58,7 +58,9 @@ export async function checkKindSocket(
       "Kind API socket",
       "error",
       `Both a host API probe socket and an engine-side mount socket must be identified for the selected local ${runtimeName} target.`,
-      "Configure the selected local engine API socket. On macOS Podman, use a matching managed machine; PODMAN_SOCKET overrides only the engine-side bind source.",
+      discovery.runtime === "podman"
+        ? "Configure the selected local engine API socket. On macOS Podman, use a matching managed machine; PODMAN_SOCKET overrides only the engine-side bind source."
+        : "Configure a local Docker engine with an identifiable Unix API socket and engine-side bind source.",
       rootlessSocketCommand,
     );
   }
@@ -121,6 +123,7 @@ export async function checkKindSocket(
         "Start or configure the selected machine API socket, then rerun the Kind checks.",
       );
   } else if (
+    discovery.runtime === "podman" &&
     discovery.engineSocketPath !== discovery.hostSocketPath &&
     dependencies.platform === "linux"
   ) {

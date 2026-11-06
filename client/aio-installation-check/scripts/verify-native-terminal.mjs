@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { Terminal } from "@xterm/headless";
+import xterm from "@xterm/headless";
 import pty from "node-pty";
 import { $ } from "zx";
 
 $.verbose = false;
+const { Terminal } = xterm;
 
 const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -20,6 +21,13 @@ const output = path.join(projectRoot, "dist/native-terminal-evidence");
 const sleep = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 const stripAnsi = (text) => text.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "");
+
+export function terminalEnvironment(noColor, inherited = process.env) {
+  const env = { ...inherited, TERM: "xterm-256color", FORCE_COLOR: "1" };
+  if (noColor) env.NO_COLOR = "1";
+  else delete env.NO_COLOR;
+  return env;
+}
 
 class TerminalSession {
   constructor(name, columns, rows, noColor = false) {
@@ -36,12 +44,7 @@ class TerminalSession {
       cols: columns,
       rows,
       cwd: projectRoot,
-      env: {
-        ...process.env,
-        TERM: "xterm-256color",
-        FORCE_COLOR: "1",
-        ...(noColor ? { NO_COLOR: "1" } : {}),
-      },
+      env: terminalEnvironment(noColor),
     });
     this.exit = new Promise((resolve) => {
       this.process.onExit((event) => {
@@ -366,25 +369,34 @@ async function podmanInventory() {
   return result.stdout.trim();
 }
 
-await mkdir(output, { recursive: true });
-const before = await podmanInventory();
-const results = [
-  await fullFlow(80, 24),
-  await fullFlow(48, 18),
-  await fullFlow(80, 24, { noColor: true }),
-  await cancelFlow(),
-  await cancelFlow(true),
-  pipeFlows(),
-];
-assert.equal(
-  await podmanInventory(),
-  before,
-  "container inventory changed during verification",
-);
-results.push({ containerInventoryUnchanged: true });
-await writeFile(
-  path.join(output, "results.json"),
-  `${JSON.stringify(results, null, 2)}\n`,
-);
-console.log(JSON.stringify(results, null, 2));
-console.log(`Evidence: ${output}`);
+async function main() {
+  await mkdir(output, { recursive: true });
+  const before = await podmanInventory();
+  const results = [
+    await fullFlow(80, 24),
+    await fullFlow(48, 18),
+    await fullFlow(80, 24, { noColor: true }),
+    await cancelFlow(),
+    await cancelFlow(true),
+    pipeFlows(),
+  ];
+  assert.equal(
+    await podmanInventory(),
+    before,
+    "container inventory changed during verification",
+  );
+  results.push({ containerInventoryUnchanged: true });
+  await writeFile(
+    path.join(output, "results.json"),
+    `${JSON.stringify(results, null, 2)}\n`,
+  );
+  console.log(JSON.stringify(results, null, 2));
+  console.log(`Evidence: ${output}`);
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  await main();
+}

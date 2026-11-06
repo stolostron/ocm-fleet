@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import Upstream from "yoga-layout";
 
-import Local from "./index";
+import Local from "./yoga-layout/index";
 
 type Node = ReturnType<typeof Local.Node.create>;
 
@@ -51,6 +51,10 @@ function geometry(nodes: Node[]): number[][] {
 }
 
 describe("private layout parity with upstream Yoga", () => {
+  it("compares distinct upstream and local implementations", () => {
+    expect(Upstream).not.toBe(Local);
+    expect(Upstream.Node.create).not.toBe(Local.Node.create);
+  });
   it.each([32, 47, 76, 79, 159, 239])(
     "matches bordered, padded, wrapped panels at %i columns",
     (width) => {
