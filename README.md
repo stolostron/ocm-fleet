@@ -188,6 +188,19 @@ parallel job; end-to-end tests retain their separate workflow. The final `CI`
 check fails if either quality job fails or is skipped. After the workflow's first
 run, add `CI` to main's required status checks alongside the existing image checks.
 
+External GitHub Actions in workflows and local composite actions use full commit
+SHAs with release version comments. Dependabot checks both weekly and opens update
+PRs. Review each proposed commit in the intended upstream repository and its
+release changes before merging. The `ocm-fleet:test:ci-policy` check enforces pins,
+version comments, and update coverage for local actions. When adding a local
+action, include its directory in [the Dependabot configuration](.github/dependabot.yml).
+Keep local action manifests under `.github/actions/` or at the repository root;
+the policy rejects local references whose manifests it does not check.
+After the initial pins merge and quality, CodeQL, and E2E runs pass, enable
+**Require actions to be pinned to a full-length commit SHA** under repository
+**Settings → Actions → General → Actions permissions**. Keep that policy enabled
+for subsequent changes. See [GitHub's action security guidance](https://docs.github.com/en/actions/reference/security/secure-use#using-third-party-actions).
+
 Go compilation/modules, npm downloads, and golangci-lint analysis are cached across
 CI runs. Nx shares setup within the job; optional HTTP caching can also reuse
 task results across runners (see [cache setup](docs/nx-remote-cache.md#github-actions)).
