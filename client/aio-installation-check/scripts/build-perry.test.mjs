@@ -18,7 +18,6 @@ import {
   perryCompilerInvocation,
 } from "./build-perry.mjs";
 
-// eslint-disable-next-line playwright/expect-expect -- node:test assertions use node:assert.
 test("Linux runs prepared source compiler; macOS runs npm Node wrapper", () => {
   const require = { resolve: () => "/npm/perry.js" };
   assert.deepEqual(
@@ -39,7 +38,6 @@ test("Linux runs prepared source compiler; macOS runs npm Node wrapper", () => {
   );
 });
 
-// eslint-disable-next-line playwright/expect-expect -- This node:test uses node:assert.
 test("Perry environment isolates Rust homes and required compiler flags", () => {
   const env = createPerryBuildEnvironment(
     {
@@ -75,7 +73,6 @@ test("Perry environment isolates Rust homes and required compiler flags", () => 
   );
 });
 
-// eslint-disable-next-line playwright/expect-expect -- This node:test uses node:assert.
 test("staged Ink resolves local Yoga while hoisted Ink keeps upstream Yoga", async () => {
   const workspace = await realpath(
     await mkdtemp(path.join(os.tmpdir(), "aio-perry-resolution-")),

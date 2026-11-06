@@ -1,4 +1,3 @@
-/* eslint playwright/expect-expect: off, playwright/no-conditional-in-test: off -- These are Vitest unit tests, not Playwright e2e tests. */
 import assert from "node:assert/strict";
 
 import { test } from "vitest";

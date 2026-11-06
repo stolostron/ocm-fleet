@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect */
 import { expect, it, vi } from "vitest";
 
 import { inputWake } from "./input-wake";

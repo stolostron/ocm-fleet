@@ -1,5 +1,3 @@
-/* eslint-disable playwright/expect-expect -- node:test assertions use node:assert. */
-/* eslint-disable playwright/no-conditional-in-test -- injected process mocks dispatch command responses. */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
