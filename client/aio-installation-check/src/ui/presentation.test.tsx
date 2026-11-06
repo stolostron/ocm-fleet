@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect */
 import { renderToString } from "ink";
 import { describe, expect, it } from "vitest";
 

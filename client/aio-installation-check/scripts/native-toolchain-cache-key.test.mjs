@@ -1,4 +1,3 @@
-/* eslint-disable playwright/expect-expect -- node:test assertions use node:assert. */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";

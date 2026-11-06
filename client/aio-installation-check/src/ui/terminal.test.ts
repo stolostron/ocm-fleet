@@ -1,4 +1,3 @@
-/* eslint playwright/no-standalone-expect: off -- Vitest assertions run inside this test callback. */
 import stringWidth from "string-width";
 import { expect, it, vi } from "vitest";
 

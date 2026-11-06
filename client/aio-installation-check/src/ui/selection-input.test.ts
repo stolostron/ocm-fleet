@@ -1,4 +1,3 @@
-/* eslint-disable playwright/no-standalone-expect */
 import { expect, it } from "vitest";
 
 import { SelectionInput } from "./selection-input";

@@ -1,4 +1,3 @@
-/* eslint playwright/no-standalone-expect: off -- Vitest unit tests. */
 import { describe, expect, it, vi } from "vitest";
 
 import type { CheckDependencies } from "./dependencies.js";

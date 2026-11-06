@@ -1,4 +1,3 @@
-/* eslint-disable playwright/expect-expect -- node:test assertions use node:assert. */
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";

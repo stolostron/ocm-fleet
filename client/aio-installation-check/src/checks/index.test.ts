@@ -1,4 +1,3 @@
-/* eslint playwright/no-standalone-expect: off -- Vitest suites are not Playwright tests. */
 import { describe, expect, it, vi } from "vitest";
 
 import type { CheckDependencies, CommandResult } from "./dependencies.js";
