@@ -18,6 +18,7 @@ import (
 type Agent struct {
 	reporter  domain.DeliveryReporter
 	inventory domain.InventoryReporter
+	observer  domain.DeliveryAgentObserver
 	codec     *Codec
 	planner   *Planner
 	appCtx    context.Context
@@ -53,6 +54,16 @@ type dispatchSlot struct {
 // AgentOption is a functional option for NewAgent.
 type AgentOption func(*Agent)
 
+// WithObserver sets the observer for asynchronous delivery and removal attempts.
+// A nil observer leaves the default [domain.NoOpDeliveryAgentObserver] in place.
+func WithObserver(observer domain.DeliveryAgentObserver) AgentOption {
+	return func(a *Agent) {
+		if observer != nil {
+			a.observer = observer
+		}
+	}
+}
+
 // WithSleep injects a custom sleep function for testing. The default is sleepCancellable.
 func WithSleep(fn func(context.Context, time.Duration) error) AgentOption {
 	return func(a *Agent) { a.sleep = fn }
@@ -83,6 +94,7 @@ func NewAgent(
 	a := &Agent{
 		reporter:      reporter,
 		inventory:     inventory,
+		observer:      domain.NoOpDeliveryAgentObserver{},
 		codec:         codec,
 		planner:       planner,
 		appCtx:        appCtx,
@@ -273,14 +285,26 @@ func (a *Agent) runAckAndCompletion(
 	key slotKey,
 ) {
 	defer a.wg.Done()
-	defer a.releaseSlot(key)
-
 	ctx := a.appCtx
+	var probe domain.DeliveryAttemptProbe
+	if operation == OperationRemove {
+		ctx, probe = a.observer.RemoveStarted(ctx, deliveryID, generation)
+	} else {
+		ctx, probe = a.observer.DeliverStarted(ctx, deliveryID, generation)
+	}
+	defer probe.End()
+
+	// Terminal reports can trigger the next attempt before ReportResult returns.
+	// Release before publishing a result, and on early exits. Once prevents the
+	// deferred cleanup from removing a newer attempt's slot.
+	releaseSlot := sync.OnceFunc(func() { a.releaseSlot(key) })
+	defer releaseSlot()
 
 	// Phase 1: Acknowledge -- sleep for ack latency, then report ack event.
 	// This runs asynchronously so Deliver() returns immediately to the caller,
 	// matching the DeliveryAgent interface contract.
 	if err := a.sleepCancellable(ctx, ackDecision.Latency); err != nil {
+		probe.Error(err)
 		return // cancelled -- agent is shutting down
 	}
 
@@ -289,10 +313,12 @@ func (a *Agent) runAckAndCompletion(
 		// Ack failed -- report failure without proceeding to completion.
 		// Return nil to allow the orchestration to retry with a fresh attempt.
 		failMsg := fmt.Sprintf("scripted %s acknowledgement failed", operation)
+		releaseSlot()
 		if err := a.reporter.ReportResult(ctx, deliveryID, generation, domain.DeliveryResult{
 			State:   domain.DeliveryStateFailed,
 			Message: failMsg,
 		}); err != nil {
+			probe.Error(err)
 			a.log.Warn("scripted: report ack failure", "deliveryID", deliveryID, "error", err)
 		}
 		return
@@ -305,21 +331,26 @@ func (a *Agent) runAckAndCompletion(
 		Kind:      domain.DeliveryEventProgress,
 		Message:   ackMsg,
 	}); err != nil {
+		probe.Error(err)
 		a.log.Warn("scripted: report ack event", "deliveryID", deliveryID, "error", err)
 		return
 	}
+	probe.Acknowledged()
 
 	// Phase 2: Completion -- sleep for completion latency, then report result.
 	if err := a.sleepCancellable(ctx, compDecision.Latency); err != nil {
+		probe.Error(err)
 		return // cancelled -- agent is shutting down
 	}
 
 	if compDecision.Outcome == OutcomeFailure {
 		failMsg := fmt.Sprintf("scripted %s completion failed", operation)
+		releaseSlot()
 		if err := a.reporter.ReportResult(ctx, deliveryID, generation, domain.DeliveryResult{
 			State:   domain.DeliveryStateFailed,
 			Message: failMsg,
 		}); err != nil {
+			probe.Error(err)
 			a.log.Warn("scripted: report completion failure", "deliveryID", deliveryID, "error", err)
 		}
 		return
@@ -329,6 +360,7 @@ func (a *Agent) runAckAndCompletion(
 	// delivered state (with retries on transient errors).
 	if operation == OperationDeliver {
 		if err := a.projectInventoryWithRetry(ctx, name, inv); err != nil {
+			probe.Error(err)
 			a.log.Warn("scripted: inventory projection failed after retries", "name", name, "error", err)
 		}
 	}
@@ -339,9 +371,11 @@ func (a *Agent) runAckAndCompletion(
 		a.planner.Reset(managedResourceInstanceKey(uid))
 	}
 
+	releaseSlot()
 	if err := a.reporter.ReportResult(ctx, deliveryID, generation, domain.DeliveryResult{
 		State: domain.DeliveryStateDelivered,
 	}); err != nil {
+		probe.Error(err)
 		a.log.Warn("scripted: report completion success", "deliveryID", deliveryID, "error", err)
 	}
 }
