@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "client/cli",
+    "client/aio-installation-check",
     "client/web",
     "sdk/common",
     "sdk/build-utils",

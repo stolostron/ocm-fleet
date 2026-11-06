@@ -1,0 +1,8 @@
+{
+  "name": "yoga-layout",
+  "version": "0.0.0-perry-aio",
+  "private": true,
+  "type": "module",
+  "main": "./index.ts",
+  "exports": "./index.ts"
+}
