@@ -14,6 +14,7 @@
     },
     "go.lintOnSave": "package",
     "go.lintFlags": [
-        "--config=${workspaceFolder}/.golangci.yaml"
+        "--config=${workspaceFolder}/.golangci.yaml",
+        "--build-tags=integration,e2e"
     ]
 }
