@@ -47,6 +47,7 @@ export async function buildGoTools({
   output = outputDirectory,
   programs = {
     "golangci-lint": ".",
+    "golangci-lint-editor": "./cmd/lint-editor",
     goimports: "golang.org/x/tools/cmd/goimports",
     "format-go": "./cmd/format-go",
   },
