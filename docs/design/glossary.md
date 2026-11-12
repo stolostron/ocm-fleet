@@ -44,13 +44,13 @@ flowchart LR
         Handler[Addon Delivery Handler]
         Indexer[Addon Indexer]
     end
-    Target
+    Target[Backing system - e.g. cluster management API, kube cluster, ...]
 
     RM <--> Fleetlet
     Fleetlet <--> Handler
     Fleetlet <--> Indexer
-    Indexer --> Backing system (e.g. kube cluster)
-    Handler --> Backing system (e.g. cluster management API, kube cluster, ...)
+    Indexer --> Target
+    Handler --> Target
 ```
 
 ### Attestation
