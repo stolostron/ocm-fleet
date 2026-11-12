@@ -66,4 +66,5 @@ Regenerate: `npx nx run ocm-fleet:generate-agents`.
 - plugins (extensions/core/client) - Core web console plugins for managing OCM Fleet resources.
 - proto (proto) - OCM Fleet API protocol definitions and code generation.
 - server (server) - OCM Fleet resource manager and API server. Currently contains some embedded addons, which is an artifact of prototype code, not a desired end state. See server/AGENTS.md for agent instructions.
+- shell (sdk/shell) - Portable, UI-framework-neutral shell SDK scaffold.
 - web (client/web) - OCM Fleet web console with navigation, authentication, and plugin hosting. See docs/ui/AGENTS.md for agent instructions.
