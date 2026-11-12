@@ -5,6 +5,40 @@ for domain and architecture rules later. Only stock linters are enabled now;
 the domain field-access analyzer is deferred to follow-up work in the contributor
 effectiveness epic.
 
+## VS Code diagnostics
+
+The workspace settings configure the Go extension to invoke our
+`golangci-lint-editor` companion on save. Build both executables with
+`npx nx run ocm-fleet:setup:golangci-lint`. After changing the alternate tool path,
+reload the VS Code window so the extension uses it.
+
+Saving a Go file checks its containing module, including tests and dependent
+packages within that module. Golangci-lint reuses cached package findings when
+source and dependencies are unchanged; package loading and formatting checks
+still have overhead. The first run needs to warm the analysis cache. Nx manages
+the tool build, while the linter's package cache handles incremental analysis.
+
+The adapter retains the last complete report for each checked module and returns
+the combined findings to the Go extension. This compensates for the extension
+clearing its lint diagnostics after every invocation. Findings disappear when
+their module is checked successfully after a fix, or their source file is
+deleted. A build or tool failure preserves the previous complete findings and
+adds a diagnostic on the module's `go.mod`; package-loading errors also appear at
+their source locations. Retained positions are bounded by the saved file's
+current length if edits removed their original lines.
+
+Use **Go: Lint Workspace** to check all registered Go modules and populate the
+complete workspace report. On-save checks update only the containing module;
+other modules retain their last checked findings until checked again. This also
+means changes to dependencies shared across modules need a workspace check.
+Standalone `poc/` experiments are excluded from workspace checks.
+
+Reports live under `.nx/workspace-data/go-lint-editor/`, separately for each
+VS Code process. Changes to the linter binary, configuration, flags, or analysis
+environment invalidate the retained reports. Canceled runs leave the stored
+reports unchanged, and OS file locks serialize concurrent report updates. To
+discard retained diagnostics, remove that directory and run **Go: Lint Workspace**.
+
 ## Why a dedicated module
 
 This keeps the complete linter dependency graph and source checksums reviewable

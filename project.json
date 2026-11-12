@@ -351,6 +351,7 @@
       "inputs": ["goLintToolBuild"],
       "outputs": [
         "{workspaceRoot}/bin/tools/golangci-lint",
+        "{workspaceRoot}/bin/tools/golangci-lint-editor",
         "{workspaceRoot}/bin/tools/goimports",
         "{workspaceRoot}/bin/tools/format-go"
       ]
@@ -410,6 +411,7 @@
     },
     "test:golangci-lint-module": {
       "executor": "nx:run-commands",
+      "dependsOn": ["setup:golangci-lint"],
       "options": {
         "command": "node tools/golangci-lint.mjs test"
       },

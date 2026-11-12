@@ -7,5 +7,14 @@
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
-    "go.buildTags": "integration,e2e"
+    "go.buildTags": "integration,e2e",
+    "go.lintTool": "golangci-lint-v2",
+    "go.alternateTools": {
+        "golangci-lint-v2": "${workspaceFolder}/bin/tools/golangci-lint-editor"
+    },
+    "go.lintOnSave": "package",
+    "go.lintFlags": [
+        "--config=${workspaceFolder}/.golangci.yaml",
+        "--build-tags=integration,e2e"
+    ]
 }
