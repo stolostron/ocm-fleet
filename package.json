@@ -5,6 +5,7 @@
     "client/cli",
     "client/web",
     "sdk/common",
+    "sdk/shell",
     "sdk/build-utils",
     "sdk/node-plugin",
     "extensions/core/client",
