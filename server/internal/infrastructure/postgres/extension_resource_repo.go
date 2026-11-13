@@ -22,6 +22,7 @@ type ExtensionResourceRepo struct {
 		QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 		QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	}
+	forUpdate bool
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +177,49 @@ func (r *ExtensionResourceRepo) Create(ctx context.Context, er *domain.Extension
 	return nil
 }
 
+// Update persists only fields owned by the managed-resource API. Inventory
+// reporters can continue updating their independent state without losing it.
+func (r *ExtensionResourceRepo) Update(ctx context.Context, er *domain.ExtensionResource) error {
+	s := er.Snapshot()
+	labels, err := json.Marshal(nonNilLabels(s.Labels))
+	if err != nil {
+		return err
+	}
+	res, err := r.DB.ExecContext(ctx, `UPDATE extension_resources SET labels = $1, updated_at = $2 WHERE uid = $3`,
+		string(labels), s.UpdatedAt.UTC(), s.UID.String())
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	if s.Managed != nil {
+		res, err := r.DB.ExecContext(ctx, `UPDATE extension_resource_managed SET current_version = $1 WHERE extension_resource_uid = $2 AND current_version = $3`,
+			s.Managed.CurrentVersion, s.UID.String(), int64(s.Managed.CurrentVersion)-int64(len(s.PendingIntents)))
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return domain.ErrStaleGeneration
+		}
+	}
+	for _, intent := range s.PendingIntents {
+		if _, err := r.DB.ExecContext(ctx, `INSERT INTO resource_intents (extension_resource_uid, version, spec, created_at) VALUES ($1, $2, $3, $4)`,
+			intent.ExtensionResourceUID.String(), intent.Version, string(intent.Spec), intent.CreatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // erInstanceFromClause is the shared FROM + JOINs for instance
 // aggregate reads. Callers prepend erSelectColumns and append WHERE.
 const erInstanceFromClause = `
@@ -186,6 +230,16 @@ LEFT JOIN extension_resource_inventory inv ON inv.extension_resource_uid = er.ui
 
 func (r *ExtensionResourceRepo) Get(ctx context.Context, name domain.FullResourceName) (*domain.ExtensionResource, error) {
 	rn := name.ResourceName()
+	if r.forUpdate {
+		var locked string
+		if err := r.DB.QueryRowContext(ctx, `SELECT uid FROM extension_resources WHERE service_name = $1 AND collection_name = $2 AND resource_id = $3 FOR UPDATE`,
+			string(name.ServiceName()), string(rn.Collection()), string(rn.ID())).Scan(&locked); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, domain.ErrNotFound
+			}
+			return nil, err
+		}
+	}
 	row := r.DB.QueryRowContext(ctx,
 		erSelectColumns+erInstanceFromClause+`WHERE er.service_name = $1 AND er.collection_name = $2 AND er.resource_id = $3`,
 		string(name.ServiceName()), string(rn.Collection()), string(rn.ID()))

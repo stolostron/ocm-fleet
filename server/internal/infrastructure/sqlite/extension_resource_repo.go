@@ -204,6 +204,49 @@ func (r *ExtensionResourceRepo) Create(ctx context.Context, er *domain.Extension
 	return nil
 }
 
+// Update persists only fields owned by the managed-resource API. Inventory
+// reporters can continue updating their independent state without losing it.
+func (r *ExtensionResourceRepo) Update(ctx context.Context, er *domain.ExtensionResource) error {
+	s := er.Snapshot()
+	labels, err := json.Marshal(nonNilLabels(s.Labels))
+	if err != nil {
+		return err
+	}
+	res, err := r.DB.ExecContext(ctx, `UPDATE extension_resources SET labels = ?, updated_at = ? WHERE uid = ?`,
+		string(labels), s.UpdatedAt.UTC().Format(time.RFC3339Nano), s.UID.String())
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	if s.Managed != nil {
+		res, err := r.DB.ExecContext(ctx, `UPDATE extension_resource_managed SET current_version = ? WHERE extension_resource_uid = ? AND current_version = ?`,
+			s.Managed.CurrentVersion, s.UID.String(), int64(s.Managed.CurrentVersion)-int64(len(s.PendingIntents)))
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return domain.ErrStaleGeneration
+		}
+	}
+	for _, intent := range s.PendingIntents {
+		if _, err := r.DB.ExecContext(ctx, `INSERT INTO resource_intents (extension_resource_uid, version, spec, created_at) VALUES (?, ?, ?, ?)`,
+			intent.ExtensionResourceUID.String(), intent.Version, string(intent.Spec), intent.CreatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // erInstanceQuerySQLite is the shared SELECT + FROM + JOINs for
 // instance aggregate reads. Callers append a WHERE clause.
 //

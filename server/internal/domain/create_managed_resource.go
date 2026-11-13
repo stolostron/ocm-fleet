@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,8 +12,9 @@ import (
 
 // CreateManagedResourceInput carries all the fields needed to create a
 // managed resource instance. The application service pre-validates the
-// spec against the registered JSON Schema before starting this workflow.
+// spec against the registered protobuf schema before starting this workflow.
 type CreateManagedResourceInput struct {
+	RequestID    string
 	ResourceType ResourceType
 	Name         ResourceName
 	Spec         json.RawMessage
@@ -50,6 +52,40 @@ func (s *CreateManagedResourceWorkflowSpec) PersistManagedResource() Activity[Cr
 			return ExtensionResourceView{}, fmt.Errorf("begin tx: %w", err)
 		}
 		defer tx.RollbackOnExit()
+
+		fingerprint, err := mutationFingerprint(struct {
+			Operation  string
+			Type       ResourceType
+			Name       ResourceName
+			Spec       json.RawMessage
+			Labels     map[string]string
+			Provenance *Provenance
+			Actor      *FederatedIdentity
+		}{"create", in.ResourceType, in.Name, in.Spec, in.Labels, in.Provenance, mutationActor(in.Auth)})
+		if err != nil {
+			return ExtensionResourceView{}, TerminalError(err)
+		}
+		receipt, err := loadMutationReceipt(ctx, tx, in.RequestID, fingerprint)
+		if err != nil {
+			return ExtensionResourceView{}, err
+		}
+		if receipt != nil {
+			return receipt.result()
+		}
+		if existing, err := tx.ExtensionResources().GetView(ctx, in.ResourceType.FullName(in.Name)); err == nil {
+			// Remember even an AlreadyExists response. A delayed retry of this
+			// same request must not recreate the name after its owner deletes it.
+			receipt := ManagedResourceMutationReceipt{RequestID: in.RequestID, Fingerprint: fingerprint, View: existing, AlreadyExists: true}
+			if err := tx.ManagedResourceMutations().Create(ctx, receipt); err != nil {
+				return ExtensionResourceView{}, err
+			}
+			if err := tx.Commit(); err != nil {
+				return ExtensionResourceView{}, err
+			}
+			return receipt.result()
+		} else if !errors.Is(err, ErrNotFound) {
+			return ExtensionResourceView{}, err
+		}
 
 		mgmt := in.TypeDef.Management()
 		if mgmt == nil {
@@ -97,15 +133,17 @@ func (s *CreateManagedResourceWorkflowSpec) PersistManagedResource() Activity[Cr
 			return ExtensionResourceView{}, fmt.Errorf("create extension resource: %w", err)
 		}
 
+		view := ExtensionResourceView{Resource: *er, Intent: &intent, Fulfillment: f}
+		if err := tx.ManagedResourceMutations().Create(ctx, ManagedResourceMutationReceipt{
+			RequestID: in.RequestID, Fingerprint: fingerprint, View: view,
+		}); err != nil {
+			return ExtensionResourceView{}, err
+		}
 		if err := tx.Commit(); err != nil {
 			return ExtensionResourceView{}, fmt.Errorf("commit: %w", err)
 		}
 
-		return ExtensionResourceView{
-			Resource:    *er,
-			Intent:      &intent,
-			Fulfillment: f,
-		}, nil
+		return view, nil
 	})
 }
 
@@ -113,13 +151,32 @@ func (s *CreateManagedResourceWorkflowSpec) PersistManagedResource() Activity[Cr
 // fulfillment.
 func (s *CreateManagedResourceWorkflowSpec) StartOrchestration() Activity[FulfillmentID, struct{}] {
 	return NewActivity("start-mr-orchestration", func(ctx context.Context, id FulfillmentID) (struct{}, error) {
-		_, err := s.Orchestration.Start(ctx, id)
+		tx, err := s.Store.BeginReadOnly(ctx)
+		if err != nil {
+			return struct{}{}, err
+		}
+		defer tx.RollbackOnExit()
+		_, err = tx.Fulfillments().Get(ctx, id)
+		if errors.Is(err, ErrNotFound) {
+			return struct{}{}, nil // a completed Create replayed after deletion
+		}
+		if err != nil {
+			return struct{}{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return struct{}{}, err
+		}
+		_, err = s.Orchestration.Start(ctx, id)
+		if errors.Is(err, ErrAlreadyRunning) {
+			return struct{}{}, nil
+		}
 		return struct{}{}, err
 	})
 }
 
 // Run is the workflow body: persist everything, then start orchestration.
 func (s *CreateManagedResourceWorkflowSpec) Run(record Record, input CreateManagedResourceInput) (ExtensionResourceView, error) {
+	input.RequestID = mutationRequestID(record, input.RequestID)
 	view, err := RunActivity(record, s.PersistManagedResource(), input)
 	if err != nil {
 		return ExtensionResourceView{}, fmt.Errorf("persist managed resource: %w", err)

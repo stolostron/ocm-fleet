@@ -44,8 +44,16 @@ func (s *DeleteManagedResourceCleanupWorkflowSpec) DeleteManagedResourceAndFulfi
 		defer tx.RollbackOnExit()
 
 		fullName := input.ResourceType.FullName(input.Name)
-		if err := tx.ExtensionResources().Delete(ctx, fullName); err != nil && !errors.Is(err, ErrNotFound) {
-			return struct{}{}, fmt.Errorf("delete extension resource row: %w", err)
+		er, err := tx.ExtensionResources().Get(ctx, fullName)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return struct{}{}, err
+		}
+		// A delayed cleanup belongs to its fulfillment, never to a later
+		// resource that happens to reuse the same human-readable name.
+		if err == nil && er.Managed() != nil && er.Managed().FulfillmentID() == input.FulfillmentID {
+			if err := tx.ExtensionResources().Delete(ctx, fullName); err != nil && !errors.Is(err, ErrNotFound) {
+				return struct{}{}, fmt.Errorf("delete extension resource row: %w", err)
+			}
 		}
 		if err := tx.Fulfillments().Delete(ctx, input.FulfillmentID); err != nil && !errors.Is(err, ErrNotFound) {
 			return struct{}{}, fmt.Errorf("delete fulfillment row: %w", err)

@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleet-record-controller
+  namespace: fleet-record-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fleet-record-controller
+  template:
+    metadata:
+      labels:
+        app: fleet-record-controller
+    spec:
+      serviceAccountName: fleet-record-controller
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: controller
+          image: localhost/ocm-fleet-record-controller:dev
+          args:
+            - --namespace=fleet-record-demo
+            - --source-cluster-id=local-kind
+            - --fleet-url=https://fleet.example.test
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          ports:
+            - name: health
+              containerPort: 8081
+          readinessProbe:
+            httpGet: { path: /readyz, port: health }
+          livenessProbe:
+            httpGet: { path: /healthz, port: health }
+          volumeMounts:
+            - name: fleet-token
+              mountPath: /var/run/secrets/fleet
+              readOnly: true
+      volumes:
+        - name: fleet-token
+          secret:
+            secretName: fleet-record-credentials
+            defaultMode: 0440

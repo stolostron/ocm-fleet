@@ -900,6 +900,10 @@ func (r *trackingRegistry) RegisterCreateManagedResource(spec *domain.CreateMana
 	r.note()
 	return r.inner.RegisterCreateManagedResource(spec)
 }
+func (r *trackingRegistry) RegisterUpdateManagedResource(spec *domain.UpdateManagedResourceWorkflowSpec) (domain.UpdateManagedResourceWorkflow, error) {
+	r.note()
+	return r.inner.RegisterUpdateManagedResource(spec)
+}
 func (r *trackingRegistry) RegisterDeleteManagedResource(spec *domain.DeleteManagedResourceWorkflowSpec) (domain.DeleteManagedResourceWorkflow, error) {
 	r.note()
 	return r.inner.RegisterDeleteManagedResource(spec)

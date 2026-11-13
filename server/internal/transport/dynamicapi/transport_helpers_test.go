@@ -2,6 +2,7 @@ package dynamicapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -32,6 +33,9 @@ func TestHTTPError_AllCodes(t *testing.T) {
 		{codes.NotFound, http.StatusNotFound},
 		{codes.AlreadyExists, http.StatusConflict},
 		{codes.Aborted, http.StatusConflict},
+		{codes.Unauthenticated, http.StatusUnauthorized},
+		{codes.Unavailable, http.StatusServiceUnavailable},
+		{codes.DeadlineExceeded, http.StatusGatewayTimeout},
 		// codes.OK is not a real error path; asserts the defensive default for unhandled codes.
 		{codes.OK, http.StatusInternalServerError},
 		{codes.PermissionDenied, http.StatusForbidden},
@@ -43,6 +47,13 @@ func TestHTTPError_AllCodes(t *testing.T) {
 			HTTPError(w, tt.code, "msg")
 			if w.Code != tt.wantHTTP {
 				t.Errorf("got %d, want %d", w.Code, tt.wantHTTP)
+			}
+			var body struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Code != int(tt.code) || body.Message != "msg" {
+				t.Fatalf("structured error: %s, %v", w.Body.String(), err)
 			}
 		})
 	}

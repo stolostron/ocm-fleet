@@ -65,6 +65,7 @@ Regenerate: `npx nx run ocm-fleet:generate-agents`.
 - ocm-fleet (.) - Workspace tasks for building, packaging, and deploying OCM Fleet.
 - plugins (extensions/core/client) - Core web console plugins for managing OCM Fleet resources.
 - proto (proto) - OCM Fleet API protocol definitions and code generation.
+- record-controller (controllers/record) - Kubernetes controller that mirrors FleetRecord intent into Fleet managed records.
 - server (server) - OCM Fleet resource manager and API server. Currently contains some embedded addons, which is an artifact of prototype code, not a desired end state. See server/AGENTS.md for agent instructions.
 - shell (sdk/shell) - Portable, UI-framework-neutral shell SDK scaffold.
 - web (client/web) - OCM Fleet web console with navigation, authentication, and plugin hosting. See docs/ui/AGENTS.md for agent instructions.

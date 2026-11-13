@@ -218,6 +218,9 @@ func (t *listFailTx) Inventory() domain.InventoryRepository    { panic("Inventor
 func (t *listFailTx) ExtensionResources() domain.ExtensionResourceRepository {
 	panic("ExtensionResources unused")
 }
+func (t *listFailTx) ManagedResourceMutations() domain.ManagedResourceMutationRepository {
+	panic("ManagedResourceMutations unused")
+}
 func (t *listFailTx) SignerEnrollments() domain.SignerEnrollmentRepository {
 	panic("SignerEnrollments unused")
 }

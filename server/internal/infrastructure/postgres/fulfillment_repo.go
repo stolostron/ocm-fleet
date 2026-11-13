@@ -14,6 +14,10 @@ import (
 // FulfillmentRepo implements [domain.FulfillmentRepository] backed by Postgres.
 type FulfillmentRepo struct {
 	DB *sql.Tx
+
+	// Write transactions lock the aggregate on load. Every mutation, including
+	// orchestration bookkeeping, then composes with the latest committed state.
+	forUpdate bool
 }
 
 func (r *FulfillmentRepo) Create(ctx context.Context, f *domain.Fulfillment) error {
@@ -78,11 +82,22 @@ func (r *FulfillmentRepo) Create(ctx context.Context, f *domain.Fulfillment) err
 }
 
 func (r *FulfillmentRepo) Get(ctx context.Context, id domain.FulfillmentID) (*domain.Fulfillment, error) {
+	if r.forUpdate {
+		// Lock before starting the joined read. If we wait for another
+		// transaction, a new statement must see its new strategy rows too.
+		var locked string
+		if err := r.DB.QueryRowContext(ctx, `SELECT id FROM fulfillments WHERE id = $1 FOR UPDATE`, string(id)).Scan(&locked); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, domain.ErrNotFound
+			}
+			return nil, err
+		}
+	}
 	row := r.DB.QueryRowContext(ctx,
 		`SELECT `+fulfillmentColumnsJoined("f")+`
 		 FROM fulfillments f
 		 `+strategyJoins("f")+`
-		 WHERE f.id = $1`,
+			 WHERE f.id = $1`,
 		string(id),
 	)
 	snap, err := scanFulfillmentSnapshot(row)

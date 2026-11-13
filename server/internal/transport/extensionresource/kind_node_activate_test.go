@@ -30,7 +30,7 @@ func TestActivate_KindClusterAndNode(t *testing.T) {
 		GRPCMux:      mux,
 		FileRegistry: files,
 		Deps: extensionresource.Deps{
-			Resources: application.NewExtensionResourceService(store, nil, nil, nil, nil),
+			Resources: application.NewExtensionResourceService(store, nil, nil, nil, nil, nil),
 			Validator: v,
 		},
 		PlatformDeps: platformresource.Deps{Resources: application.NewPlatformResourceService(store)},

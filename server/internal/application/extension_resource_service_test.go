@@ -81,7 +81,7 @@ func setupExtensionResourceService(t *testing.T) extensionResourceHarness {
 
 	return extensionResourceHarness{
 		store:     store,
-		svc:       application.NewExtensionResourceService(store, createMRWf, deleteMRWf, nil, nil),
+		svc:       application.NewExtensionResourceService(store, createMRWf, nil, deleteMRWf, nil, nil),
 		inventory: application.NewInventoryReportService(store),
 	}
 }
@@ -144,7 +144,7 @@ func TestDeleteExtensionResource_RejectsInventoryOnlyInstance(t *testing.T) {
 		t.Fatalf("ApplyDeltaBatch: %v", err)
 	}
 
-	_, err = h.svc.Delete(ctx, deletePreflightResourceType, name)
+	_, err = h.svc.Delete(ctx, application.DeleteExtensionResourceInput{ResourceType: deletePreflightResourceType, Name: name})
 	if !errors.Is(err, domain.ErrInvalidArgument) {
 		t.Fatalf("Delete err = %v, want ErrInvalidArgument", err)
 	}
@@ -171,7 +171,7 @@ func TestDeleteExtensionResource_StartsWorkflowWhenManaged(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	view, err := h.svc.Delete(ctx, deletePreflightResourceType, name)
+	view, err := h.svc.Delete(ctx, application.DeleteExtensionResourceInput{ResourceType: deletePreflightResourceType, Name: name})
 	if err != nil {
 		t.Fatalf("Delete: %v", err)
 	}

@@ -113,7 +113,7 @@ func buildFullClusterServiceN(t *testing.T, n int) *extensionresource.Registered
 	}
 
 	managedResourceSvc := application.NewExtensionResourceService(
-		store, createMRWf, deleteMRWf, resumeMRWf, nil,
+		store, createMRWf, nil, deleteMRWf, resumeMRWf, nil,
 	)
 
 	targetSvc := &application.TargetService{Store: store}
@@ -296,8 +296,8 @@ func TestDynamicMux_ServiceInfo(t *testing.T) {
 	if !ok {
 		t.Fatal("ServiceInfo missing ocm.kind.v1alpha.ClusterService")
 	}
-	if len(si.Methods) != 5 {
-		t.Errorf("method count = %d, want 5", len(si.Methods))
+	if len(si.Methods) != 6 {
+		t.Errorf("method count = %d, want 6", len(si.Methods))
 	}
 
 	methodNames := make(map[string]bool)

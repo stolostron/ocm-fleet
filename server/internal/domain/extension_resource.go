@@ -603,6 +603,7 @@ func (r *ExtensionResource) RecordIntent(spec json.RawMessage, now time.Time) (R
 		CreatedAt:            now,
 	}
 	r.pendingIntents = append(r.pendingIntents, intent)
+	r.updatedAt = now
 	return intent, nil
 }
 

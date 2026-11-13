@@ -251,7 +251,7 @@ func Start(ctx context.Context, cfg Config, logger *slog.Logger, opts ...Option)
 		Store: p.store, Verifier: oidcDeps.Verifier, AuthMethods: p.authMethodRepo,
 	}
 	extensionResourceSvc := application.NewExtensionResourceService(
-		p.store, wfs.createMRWf, wfs.deleteMRWf, wfs.resumeMRWf, wfs.provenanceSvc,
+		p.store, wfs.createMRWf, wfs.updateMRWf, wfs.deleteMRWf, wfs.resumeMRWf, wfs.provenanceSvc,
 	)
 
 	// --- transport ---

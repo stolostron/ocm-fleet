@@ -85,6 +85,9 @@ type ExtensionResourceRepository interface {
 
 	// Instance aggregate
 	Create(ctx context.Context, r *ExtensionResource) error
+	// Update persists managed intent/HEAD, user labels, and update time. It
+	// preserves independently reported inventory and identity information.
+	Update(ctx context.Context, r *ExtensionResource) error
 	Get(ctx context.Context, name FullResourceName) (*ExtensionResource, error)
 	GetByUID(ctx context.Context, uid ExtensionResourceUID) (*ExtensionResource, error)
 	ListByResourceType(ctx context.Context, rt ResourceType) ([]*ExtensionResource, error)

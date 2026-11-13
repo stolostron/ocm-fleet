@@ -199,6 +199,7 @@ type Registry interface {
 	RegisterResumeDeployment(spec *ResumeDeploymentWorkflowSpec) (ResumeDeploymentWorkflow, error)
 	RegisterProvisionIdP(spec *ProvisionIdPWorkflowSpec) (ProvisionIdPWorkflow, error)
 	RegisterCreateManagedResource(spec *CreateManagedResourceWorkflowSpec) (CreateManagedResourceWorkflow, error)
+	RegisterUpdateManagedResource(spec *UpdateManagedResourceWorkflowSpec) (UpdateManagedResourceWorkflow, error)
 	RegisterDeleteManagedResource(spec *DeleteManagedResourceWorkflowSpec) (DeleteManagedResourceWorkflow, error)
 	RegisterDeleteManagedResourceCleanup(spec *DeleteManagedResourceCleanupWorkflowSpec) (DeleteManagedResourceCleanupWorkflow, error)
 	RegisterResumeManagedResource(spec *ResumeManagedResourceWorkflowSpec) (ResumeManagedResourceWorkflow, error)
@@ -265,6 +266,11 @@ type ResumeDeploymentWorkflow interface {
 // workflow. Returned by [Registry.RegisterCreateManagedResource].
 type CreateManagedResourceWorkflow interface {
 	Start(ctx context.Context, input CreateManagedResourceInput) (Execution[ExtensionResourceView], error)
+}
+
+// UpdateManagedResourceWorkflow is a registered conditional-update workflow.
+type UpdateManagedResourceWorkflow interface {
+	Start(ctx context.Context, input UpdateManagedResourceInput) (Execution[ExtensionResourceView], error)
 }
 
 // DeleteManagedResourceWorkflow is a registered delete-managed-resource

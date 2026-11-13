@@ -2,6 +2,7 @@ package dynamicapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -25,6 +26,8 @@ func ToStatusError(err error) error {
 		return status.Error(codes.AlreadyExists, err.Error())
 	case errors.Is(err, domain.ErrStaleGeneration):
 		return status.Error(codes.Aborted, err.Error())
+	case errors.Is(err, domain.ErrAlreadyRunning):
+		return status.Error(codes.Unavailable, "request is still running; retry with the same request_id")
 	case errors.Is(err, domain.ErrInvalidArgument):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrUnimplemented):
@@ -77,8 +80,19 @@ func HTTPError(w http.ResponseWriter, code codes.Code, msg string) {
 		httpCode = http.StatusConflict
 	case codes.PermissionDenied:
 		httpCode = http.StatusForbidden
+	case codes.Unauthenticated:
+		httpCode = http.StatusUnauthorized
+	case codes.Unavailable:
+		httpCode = http.StatusServiceUnavailable
+	case codes.DeadlineExceeded:
+		httpCode = http.StatusGatewayTimeout
 	}
-	http.Error(w, msg, httpCode)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpCode)
+	_ = json.NewEncoder(w).Encode(struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}{int(code), msg})
 }
 
 // GRPCHTTPError extracts a gRPC status from err and writes the

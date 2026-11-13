@@ -33,7 +33,7 @@ func (s *Store) Begin(ctx context.Context) (domain.Tx, error) {
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	return &storeTx{Transaction: sqltx.New(ctx, tx, s.Observer), tx: tx, schemaProvider: s.SchemaProvider}, nil
+	return &storeTx{Transaction: sqltx.New(ctx, tx, s.Observer), tx: tx, schemaProvider: s.SchemaProvider, writable: true}, nil
 }
 
 func (s *Store) BeginReadOnly(ctx context.Context) (domain.Tx, error) {
@@ -48,17 +48,21 @@ type storeTx struct {
 	*sqltx.Transaction
 	tx             *sql.Tx
 	schemaProvider domain.QuerySchemaProvider
+	writable       bool
 }
 
 func (t *storeTx) Targets() domain.TargetRepository { return &TargetRepo{DB: t.tx} }
 func (t *storeTx) Fulfillments() domain.FulfillmentRepository {
-	return &FulfillmentRepo{DB: t.tx}
+	return &FulfillmentRepo{DB: t.tx, forUpdate: t.writable}
 }
 func (t *storeTx) Deployments() domain.DeploymentRepository { return &DeploymentRepo{DB: t.tx} }
 func (t *storeTx) Deliveries() domain.DeliveryRepository    { return &DeliveryRepo{DB: t.tx} }
 func (t *storeTx) Inventory() domain.InventoryRepository    { return &InventoryRepo{DB: t.tx} }
 func (t *storeTx) ExtensionResources() domain.ExtensionResourceRepository {
-	return &ExtensionResourceRepo{DB: t.tx}
+	return &ExtensionResourceRepo{DB: t.tx, forUpdate: t.writable}
+}
+func (t *storeTx) ManagedResourceMutations() domain.ManagedResourceMutationRepository {
+	return &ManagedResourceMutationRepo{DB: t.tx}
 }
 func (t *storeTx) SignerEnrollments() domain.SignerEnrollmentRepository {
 	return &SignerEnrollmentRepo{DB: t.tx}

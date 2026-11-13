@@ -1,0 +1,75 @@
+{
+  "name": "record-controller",
+  "metadata": {
+    "description": "Kubernetes controller that mirrors FleetRecord intent into Fleet managed records."
+  },
+  "root": "controllers/record",
+  "projectType": "application",
+  "tags": ["lang:go", "scope:controllers", "type:go-module"],
+  "targets": {
+    "fmt": {},
+    "verify": {},
+    "fix": {},
+    "fix:lint": {},
+    "refresh:inputs": {},
+    "check": {},
+    "lint": {
+      "inputs": ["goSource", "{workspaceRoot}/server/**/*", "goLintConfig"]
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go build -o ../../bin/fleet-record-controller ./cmd/fleet-record-controller",
+        "cwd": "controllers/record",
+        "env": { "GOWORK": "off" }
+      },
+      "inputs": [
+        "goSource",
+        "{workspaceRoot}/server/go.mod",
+        "{workspaceRoot}/server/go.sum",
+        "goRuntime"
+      ],
+      "outputs": ["{workspaceRoot}/bin/fleet-record-controller"]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go test -count=1 ./...",
+        "cwd": "controllers/record",
+        "env": { "GOWORK": "off" }
+      },
+      "inputs": ["goSource", "{workspaceRoot}/server/**/*", "goRuntime"],
+      "outputs": []
+    },
+    "test-integration": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go test -count=1 -tags integration -run TestIntegration -timeout 3m ./controller",
+        "cwd": "controllers/record",
+        "env": { "GOWORK": "off" }
+      },
+      "cache": false
+    },
+    "image": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "podman build --file controllers/record/Containerfile --tag localhost/ocm-fleet-record-controller:dev ."
+      },
+      "cache": false
+    },
+    "tidy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "go mod tidy",
+          "npx nx run record-controller:refresh:inputs"
+        ],
+        "parallel": false,
+        "forwardAllArgs": false,
+        "cwd": "controllers/record",
+        "env": { "GOWORK": "off" }
+      },
+      "cache": false
+    }
+  }
+}
