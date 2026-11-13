@@ -29,7 +29,7 @@ type Finding struct {
 	Operation  string
 	Value      string // Source expression, when known; never an SSA temporary name.
 	Type       string // Full Go type identity, including the package import path.
-	FieldPath  string // Affected field within the consumed value; empty at its root.
+	Path       string // Member path through struct fields and collection elements; empty at the root.
 	Reason     string // Source or contract behind the violation, independent of certainty.
 	Pos        token.Pos
 	Message    string
@@ -50,8 +50,8 @@ func (finding Finding) Diagnostic() analysis.Diagnostic {
 	var message strings.Builder
 	message.WriteString(finding.Message)
 	fmt.Fprintf(&message, "\n  | rule: %s; certainty: %s; reason: %s", finding.Rule, finding.Certainty, finding.Reason)
-	fmt.Fprintf(&message, "\n  | operation: %s; value: %s; type: %s; field-path: %s",
-		finding.Operation, quote(finding.Value), quote(finding.Type), quote(finding.FieldPath))
+	fmt.Fprintf(&message, "\n  | operation: %s; value: %s; type: %s; path: %s",
+		finding.Operation, quote(finding.Value), quote(finding.Type), quote(finding.Path))
 	result := analysis.Diagnostic{Pos: finding.Pos, Category: finding.Rule, Message: message.String()}
 	for _, step := range finding.Provenance {
 		result.Related = append(result.Related, analysis.RelatedInformation{
@@ -81,9 +81,12 @@ func WithRelatedLocations(fset *token.FileSet, finding analysis.Diagnostic) anal
 }
 
 func quote(value string) string {
-	encoded, _ := json.Marshal(value) // Encoding a string cannot fail.
+	var encoded strings.Builder
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(value) // Encoding a string to strings.Builder cannot fail.
 	// A pipe inside a quoted expression must not become a record delimiter.
-	return strings.ReplaceAll(string(encoded), "|", `\u007c`)
+	return strings.ReplaceAll(strings.TrimSuffix(encoded.String(), "\n"), "|", `\u007c`)
 }
 
 func escape(value string) string {

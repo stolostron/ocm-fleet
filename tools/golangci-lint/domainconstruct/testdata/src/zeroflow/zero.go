@@ -60,7 +60,7 @@ type OptionalRequest struct{ ID *ID }
 //
 //domain:constructors NewEnvelope
 //domain:zero-valid
-type Envelope struct { // want "valid zero.*required field ID.*zeroflow.ID"
+type Envelope struct { // want "valid zero.*required value at path ID.*zeroflow.ID"
 	ID ID
 }
 
@@ -242,7 +242,7 @@ func CompositeStorage() {
 }
 
 func OmittedRequiredField() {
-	AcceptRequest(Request{}) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\"; field-path: \"ID\""
+	AcceptRequest(Request{}) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\"; path: \"ID\""
 }
 
 func InitializedField(valid ID) {
@@ -258,7 +258,7 @@ func ConditionalField(condition bool, valid ID) {
 	if condition {
 		request.ID = valid
 	}
-	AcceptRequest(request) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\"; field-path: \"ID\""
+	AcceptRequest(request) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\"; path: \"ID\""
 }
 
 func UninitializedPointer() {
@@ -273,7 +273,7 @@ func InitializedPointer(valid ID) {
 }
 
 func OmittedOptionalField() {
-	AcceptOptional(OptionalRequest{ID: new(ID)}) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\"; field-path: \"ID\""
+	AcceptOptional(OptionalRequest{ID: new(ID)}) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\"; path: \"ID\""
 }
 
 type Recursive struct {
@@ -286,7 +286,7 @@ func AcceptRecursive(Recursive) {}
 func InvalidRecursiveChild(valid ID) {
 	child := &Recursive{}
 	parent := Recursive{Next: child, ID: valid}
-	AcceptRecursive(parent) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\"; field-path: \"Next[.]ID\""
+	AcceptRecursive(parent) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\"; path: \"Next[.]ID\""
 }
 
 func ValidRecursiveChildren(valid ID) {

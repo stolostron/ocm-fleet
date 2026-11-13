@@ -2,13 +2,13 @@ package zeroflow
 
 import "fmt"
 
-func acceptPositionArgument(string, ID) {}
-func acceptPositionPair(ID, error)     {}
-func acceptPositionRepeated(ID, ID)    {}
-func acceptPositionVariadic(string, ...ID) {}
+func acceptPositionArgument(string, ID)      {}
+func acceptPositionPair(ID, error)           {}
+func acceptPositionRepeated(ID, ID)          {}
+func acceptPositionVariadic(string, ...ID)   {}
 func acceptPositionGeneric[T any](string, T) {}
 
-func (r Ref) acceptPositionArgument(ID) {}
+func (r Ref) acceptPositionArgument(ID)            {}
 func (r Ref) acceptPositionVariadic(string, ...ID) {}
 
 type positionReader interface{ Key() string }
@@ -16,7 +16,7 @@ type positionConsumer interface{ Accept(ID) }
 
 func PositionArgument() {
 	var bad ID
-	acceptPositionArgument("ok", /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	acceptPositionArgument("ok" /* position */, bad) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionPointerArgument() {
@@ -54,7 +54,7 @@ func PositionMethodArgument(valid Ref) {
 
 func PositionMethodExpression(valid Ref) {
 	var bad ID
-	Ref.acceptPositionArgument(valid, /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	Ref.acceptPositionArgument(valid /* position */, bad) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionMethodExpressionReceiver() {
@@ -87,32 +87,32 @@ func PositionBoundMethodReceiver() {
 
 func PositionVariadicArgument(valid ID) {
 	var bad ID
-	acceptPositionVariadic("ok", valid, /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	acceptPositionVariadic("ok", valid /* position */, bad) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionEllipsisArgument(valid ID) {
 	bad := []ID{valid, ""}
-	acceptPositionVariadic("ok", /* position */ bad...) // want "rule: domainzero[.]invalid-zero"
+	acceptPositionVariadic("ok" /* position */, bad...) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionVariadicMethodArgument(receiver Ref, valid ID) {
 	var bad ID
-	receiver.acceptPositionVariadic("ok", valid, /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	receiver.acceptPositionVariadic("ok", valid /* position */, bad) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionVariadicMethodExpression(receiver Ref, valid ID) {
 	var bad ID
-	Ref.acceptPositionVariadic(receiver, "ok", valid, /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	Ref.acceptPositionVariadic(receiver, "ok", valid /* position */, bad) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionAppendArgument(destination []ID, valid ID) {
 	var bad ID
-	_ = append(destination, valid, /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	_ = append(destination, valid /* position */, bad) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionCopyArgument(destination []ID, valid ID) {
 	bad := []ID{valid, ""}
-	copy(destination, /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	copy(destination /* position */, bad) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionClearArgument(bad []ID) {
@@ -121,12 +121,12 @@ func PositionClearArgument(bad []ID) {
 
 func PositionPackageArgument() {
 	var bad ID
-	_ = fmt.Sprint("ok", /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	_ = fmt.Sprint("ok" /* position */, bad) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionGenericArgument() {
 	var bad ID
-	acceptPositionGeneric("ok", /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	acceptPositionGeneric("ok" /* position */, bad) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionParenthesizedFunction() {
@@ -140,10 +140,78 @@ func PositionTupleArgument(bad func() (ID, error)) {
 
 func PositionDeferArgument() {
 	var bad ID
-	defer acceptPositionArgument("ok", /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	defer acceptPositionArgument("ok" /* position */, bad) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionGoArgument() {
 	var bad ID
-	go acceptPositionArgument("ok", /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	go acceptPositionArgument("ok" /* position */, bad) // want "rule: domainzero[.]invalid-zero"
+}
+
+func PositionStructArgument() {
+	var bad Request
+	AcceptRequest( /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+}
+
+func PositionNestedCollectionArgument() {
+	var bad struct{ Reports [2]Request }
+	acceptPositionGeneric("ok" /* position */, bad) // want "rule: domainzero[.]invalid-zero"
+}
+
+func PositionSliceArgument() {
+	bad := make([]ID, 1)
+	AcceptIDs( /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+}
+
+func PositionArrayArgument() {
+	bad := [1]ID{}
+	AcceptAny( /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+}
+
+func acceptPositionBoxes(...any)                        {}
+func acceptPositionRequests(...Request)                 {}
+func acceptPositionGenericVariadic[T any](string, ...T) {}
+
+func PositionVariadicNestedArgument() {
+	var bad Request
+	acceptPositionBoxes("ok" /* position */, bad) // want "rule: domainzero[.]invalid-zero"
+}
+
+func PositionVariadicCollectionArgument() {
+	bad := make([]ID, 1)
+	acceptPositionBoxes("ok" /* position */, bad) // want "rule: domainzero[.]invalid-zero"
+}
+
+func PositionNestedEllipsisArgument() {
+	bad := []Request{{}}
+	acceptPositionRequests( /* position */ bad...) // want "rule: domainzero[.]invalid-zero"
+}
+
+func PositionPossibleVariadicArgument(raw string) {
+	_ = fmt.Sprint("ok" /* position */, ID(raw)) // want "rule: domainzero[.]invalid-zero"
+}
+
+func PositionGenericVariadicArgument(valid ID) {
+	var bad ID
+	acceptPositionGenericVariadic("ok", valid /* position */, bad) // want "rule: domainzero[.]invalid-zero"
+}
+
+func PositionShadowedBuiltin(valid ID) {
+	copy := acceptPositionRepeated
+	var bad ID
+	copy( /* position */ bad, valid) // want "rule: domainzero[.]invalid-zero"
+}
+
+func PositionAppendEllipsis(destination []ID) {
+	bad := make([]ID, 1)
+	_ = append(destination /* position */, bad...) // want "rule: domainzero[.]invalid-zero"
+}
+
+type positionArray [1]ID
+
+func (positionArray) inspect() {}
+
+func PositionArrayReceiver() {
+	var bad positionArray
+	/* position */ bad.inspect() // want "rule: domainzero[.]invalid-zero"
 }

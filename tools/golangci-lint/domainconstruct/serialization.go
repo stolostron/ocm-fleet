@@ -88,7 +88,7 @@ func (c *serializationChecker) checkDeclaration(node *ast.TypeSpec, p *policy) {
 		}
 		if problem := c.snapshotProblem(p.typ, make(map[types.Type]bool)); problem != nil {
 			c.report(node, "snapshot-domain-value", "snapshot", problem.reason,
-				fmt.Sprintf("snapshot %s field %s contains %s; snapshots must contain plain data, without domain values", p.name, problem.path, typeName(problem.typ)),
+				fmt.Sprintf("snapshot %s at path %s contains %s; snapshots must contain plain data, without domain values", p.name, problem.path, typeName(problem.typ)),
 				problem.typ, problem.path)
 		}
 	}
@@ -222,7 +222,7 @@ func (c *serializationChecker) checkType(node ast.Node, t types.Type, codec, ope
 	if problem := c.encodingProblem(t, codec, make(map[encodingVisit]bool)); problem != nil {
 		path := ""
 		if problem.path != "" {
-			path = "field " + problem.path + " "
+			path = "at path " + problem.path + ": "
 		}
 		c.report(node, "unsupported-codec", operation, "codec-not-declared",
 			fmt.Sprintf("%s%s does not declare %s serialization; use a snapshot or declare a checked native round trip", path, typeName(problem.typ), problem.codec),
@@ -340,6 +340,6 @@ func (c *serializationChecker) report(node ast.Node, rule, operation, reason, me
 	c.pass.Report((diagnostic.Finding{
 		Rule: "domainserialization." + rule, Certainty: diagnostic.Known,
 		Operation: operation, Reason: reason, Value: expressionText(c.pass.Fset, node),
-		Type: typeIdentity(t), FieldPath: path, Pos: pos, Message: message,
+		Type: typeIdentity(t), Path: path, Pos: pos, Message: message,
 	}).Diagnostic())
 }

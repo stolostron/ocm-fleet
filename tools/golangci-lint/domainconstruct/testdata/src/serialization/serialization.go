@@ -61,7 +61,7 @@ type InvalidSnapshot struct { // want "snapshot.*ID.*domain value"
 }
 
 func JSONMapKeys(value map[encodingvalues.JSONOnly]string) {
-	json.Marshal(value) // want "does not declare text serialization"
+	json.Marshal(value) // want "at path \\[key\\]: .*does not declare text serialization"
 }
 
 func DifferentMapCodecs(value map[encodingvalues.TextID]encodingvalues.TextID) {

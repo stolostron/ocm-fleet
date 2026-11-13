@@ -131,9 +131,9 @@ func runZero(pass *analysis.Pass) (any, error) {
 				if problem := c.zeroFields(structure, ""); problem != nil {
 					pass.Report((diagnostic.Finding{
 						Rule: "domainzero.invalid-zero-policy", Certainty: diagnostic.Known,
-						Operation: "declaration", Value: object.Name(), Type: typeIdentity(p.typ), FieldPath: problem.path,
+						Operation: "declaration", Value: object.Name(), Type: typeIdentity(p.typ), Path: problem.path,
 						Reason: "required-field-invalid-zero", Pos: object.Pos(),
-						Message: fmt.Sprintf("%s declares a valid zero but required field %s has invalid zero %s", p.name, problem.path, problem.name),
+						Message: fmt.Sprintf("%s declares a valid zero but required value at path %s has invalid zero %s", p.name, problem.path, problem.name),
 					}).Diagnostic())
 				}
 			}

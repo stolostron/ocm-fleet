@@ -22,7 +22,7 @@ export function domainFinding(issue) {
     .trim()
     .match(
       new RegExp(
-        `^operation: ([a-z][a-z-]*); value: (${quoted}); type: (${quoted}); field-path: (${quoted})$`,
+        `^operation: ([a-z][a-z-]*); value: (${quoted}); type: (${quoted}); path: (${quoted})$`,
       ),
     );
   if (!identity || !fields || !identity[1].startsWith(issue.FromLinter + "."))
@@ -52,7 +52,7 @@ export function domainFinding(issue) {
       });
     }
     const [rule, certainty, reason] = identity.slice(1);
-    const [operation, value, type, fieldPath] = fields.slice(1);
+    const [operation, value, type, path] = fields.slice(1);
     const category =
       rule === "domainzero.invalid-zero"
         ? `${certainty}-zero`
@@ -69,7 +69,7 @@ export function domainFinding(issue) {
       Operation: operation,
       Value: JSON.parse(value),
       Type: JSON.parse(type),
-      FieldPath: JSON.parse(fieldPath),
+      Path: JSON.parse(path),
       Reason: reason,
       Pos: issue.Pos,
       Category: category,
