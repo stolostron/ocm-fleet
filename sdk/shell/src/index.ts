@@ -1,2 +1,11 @@
-// Public shell contracts will be added here as the SDK is developed.
-export {};
+export { ConsoleProvider, useConsoleConfig } from "./provider";
+export type {
+  ConsoleAuthConfig,
+  ConsoleCatalog,
+  ConsoleConfig,
+  ConsoleConfigSource,
+  ConsoleConfigState,
+  ConsoleNavLayoutEntry,
+  ConsolePluginEntry,
+  ConsolePluginManifest,
+} from "./types";
