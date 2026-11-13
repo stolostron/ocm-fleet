@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,6 +20,27 @@ function sourceFiles(directory: string): string[] {
 }
 
 describe("shell package boundary", () => {
+  it("keeps React and React DOM versions compatible in browser workspaces", () => {
+    const workspaceRoot = resolve(packageRoot, "../..");
+    for (const project of [
+      "client/web",
+      "extensions/core/client",
+      "extensions/kind/client",
+      "sdk/shell",
+    ]) {
+      const requireFromProject = createRequire(
+        join(workspaceRoot, project, "package.json"),
+      );
+      const react = requireFromProject("react/package.json") as {
+        version: string;
+      };
+      const reactDom = requireFromProject("react-dom/package.json") as {
+        version: string;
+      };
+      expect(reactDom.version, project).toBe(react.version);
+    }
+  });
+
   it("emits public declarations without Scalprum types", () => {
     const configFile = ts.readConfigFile(
       join(packageRoot, "tsconfig.build.json"),
