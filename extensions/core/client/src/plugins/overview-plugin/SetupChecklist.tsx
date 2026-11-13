@@ -1,11 +1,7 @@
 import "./setup-checklist.scss";
 
-import { PluginLink } from "@ocm-fleet/common";
+import { PluginLink, useDynamicExtension } from "@ocm-fleet/common";
 import type { Extension } from "@openshift/dynamic-plugin-sdk";
-import {
-  useExtensions,
-  useResolvedExtensions,
-} from "@openshift/dynamic-plugin-sdk";
 import {
   Button,
   Card,
@@ -96,9 +92,8 @@ interface ChecklistItem {
 
 export default function SetupChecklist() {
   const { progress, loaded: progressLoaded } = useSetupProgressReadonly();
-  const onboardingCandidates = useExtensions(isOnboardingAction);
   const [extensions, extensionsLoaded] =
-    useResolvedExtensions(onboardingCandidates);
+    useDynamicExtension(isOnboardingAction);
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(DISMISS_KEY) === "true",
   );
