@@ -6,8 +6,12 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import xterm from "@xterm/headless";
-import pty from "node-pty";
 import { $ } from "zx";
+
+// node-pty ships a native addon that `npm ci --ignore-scripts` leaves unbuilt;
+// unit tests import this module for terminalEnvironment(). Load it only on the
+// executable path, in main(), so those tests never require the addon.
+let pty;
 
 $.verbose = false;
 const { Terminal } = xterm;
@@ -29,6 +33,49 @@ export function terminalEnvironment(noColor, inherited = process.env) {
   return env;
 }
 
+export function createScreen(columns, rows) {
+  // The screen assertions read terminal.buffer, which @xterm/headless 6 still
+  // gates behind allowProposedApi; without the opt-in every buffer access
+  // throws from inside the minified bundle.
+  return new Terminal({
+    allowProposedApi: true,
+    cols: columns,
+    rows,
+    scrollback: 10_000,
+  });
+}
+
+/** An arrow repaint is complete only once a focus marker exists again. */
+export function repaintComplete(before, current) {
+  // Ink redraws in chunks: mid-frame the marker row is already erased while
+  // the new one is not written yet, so the visible focus line briefly
+  // disappears. Treating that state as "done" reads a torn frame.
+  return current !== undefined && current !== null && current !== before;
+}
+
+/**
+ * Find the bordered box that contains the given screen row. The banner box
+ * renders above the active menu, so menu assertions must anchor on the box
+ * around the focus marker instead of the first box on the screen.
+ */
+export function enclosingBox(lines, index) {
+  let top = index;
+  while (top >= 0 && !lines[top].startsWith("╭") && !lines[top].startsWith("╰"))
+    top -= 1;
+  if (top < 0 || lines[top].startsWith("╰")) return undefined;
+  let bottom = index;
+  while (
+    bottom < lines.length &&
+    !lines[bottom].startsWith("╰") &&
+    !lines[bottom].startsWith("╭")
+  )
+    bottom += 1;
+  if (bottom >= lines.length || lines[bottom].startsWith("╭")) return undefined;
+  const right = [...lines[top]].indexOf("╮");
+  if (right === -1) return undefined;
+  return { top, bottom, right };
+}
+
 class TerminalSession {
   constructor(name, columns, rows, noColor = false) {
     this.name = name;
@@ -38,7 +85,7 @@ class TerminalSession {
     this.latencies = [];
     this.pendingWrite = Promise.resolve();
     this.exitEvent = undefined;
-    this.screen = new Terminal({ cols: columns, rows, scrollback: 10_000 });
+    this.screen = createScreen(columns, rows);
     this.process = pty.spawn(binary, ["--with-kind"], {
       name: "xterm-256color",
       cols: columns,
@@ -102,7 +149,7 @@ class TerminalSession {
     const oldBaseY = this.screen.buffer.active.baseY;
     const started = Date.now();
     this.process.write(key);
-    while (this.focus() === before) {
+    while (!repaintComplete(before, this.focus())) {
       assert.equal(
         this.exitEvent,
         undefined,
@@ -129,13 +176,11 @@ class TerminalSession {
     );
 
     const lines = this.visible().split("\n");
-    const top = lines.findIndex((line) => line.startsWith("╭"));
-    assert.notEqual(top, -1, "active menu has no top border");
-    const bottom = lines.findIndex(
-      (line, index) => index > top && line.startsWith("╰"),
-    );
-    assert.notEqual(bottom, -1, "active menu has no bottom border");
-    const right = [...lines[top]].indexOf("╮");
+    const focusIndex = lines.findLastIndex((line) => line.includes("❯"));
+    assert.notEqual(focusIndex, -1, "no focus marker on screen");
+    const box = enclosingBox(lines, focusIndex);
+    assert.ok(box, "active menu has no enclosing border");
+    const { top, bottom, right } = box;
     for (const row of lines.slice(top + 1, bottom)) {
       assert.equal(row[0], "│", `misaligned left border: ${row}`);
       assert.equal([...row][right], "│", `misaligned right border: ${row}`);
@@ -370,6 +415,7 @@ async function podmanInventory() {
 }
 
 async function main() {
+  pty = (await import("node-pty")).default;
   await mkdir(output, { recursive: true });
   const before = await podmanInventory();
   const results = [

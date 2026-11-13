@@ -6,7 +6,8 @@
   "type": "module",
   "dependencies": {
     "ink": "^6.0.1",
-    "react": "^19.1.0"
+    "react": "^19.1.0",
+    "string-width": "^4.2.3"
   },
   "devDependencies": {
     "@perryts/perry": "0.5.1520",
@@ -14,6 +15,7 @@
     "@types/react": "^19.1.0",
     "@xterm/headless": "^6.0.0",
     "node-pty": "^1.1.0",
+    "yoga-layout": "^3.2.1",
     "zx": "^8.8.5"
   }
 }

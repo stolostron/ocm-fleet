@@ -196,6 +196,49 @@ test("published-image sanity runs nightly or on demand, outside PR validation", 
   assert.match(run.run, /--project=chromium-sanity$/);
 });
 
+test("native bootstrap cold-builds and smoke-tests the Linux executable", () => {
+  const bootstrap = workflow("native-bootstrap");
+  assert.deepEqual(Object.keys(bootstrap.on).sort(), [
+    "pull_request",
+    "push",
+    "workflow_dispatch",
+  ]);
+  for (const trigger of ["pull_request", "push"]) {
+    assert.deepEqual(bootstrap.on[trigger].branches, ["main"]);
+    assert.deepEqual(bootstrap.on[trigger].paths, [
+      ".github/workflows/native-bootstrap.yml",
+      "client/aio-installation-check/**",
+      "package.json",
+      "package-lock.json",
+      "tsconfig.json",
+      "nx.json",
+    ]);
+  }
+  assert.deepEqual(bootstrap.permissions, { contents: "read" });
+  const job = bootstrap.jobs["native-bootstrap"];
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  assert.equal(job["timeout-minutes"], 60);
+  // The version-agnostic Nx entry point: whichever bootstrap implementation
+  // the tree carries, CI drives it through the same workspace target.
+  const build = job.steps.find((step) => step.run?.includes("build-native"));
+  assert.equal(build.run, "npx nx run aio-installation-check:build-native");
+  const smoke = job.steps.find((step) => step.run?.includes("smoke-native"));
+  assert.equal(smoke.run, "npx nx run aio-installation-check:smoke-native");
+  // Linux CI smoke only; the PTY acceptance suite is not part of this job.
+  assert.ok(
+    !job.steps.some((step) => step.run?.includes("native-verify")),
+    "native-bootstrap must not run the PTY suite",
+  );
+  const prerequisites = job.steps.find((step) =>
+    step.run?.includes("apt-get install"),
+  );
+  // Only the base C/clang SDK is preinstalled: each build path brings its
+  // own LLVM and Rust pieces, so neither toolchain is set up here.
+  assert.match(prerequisites.run, /build-essential/);
+  assert.match(prerequisites.run, /clang/);
+  assert.doesNotMatch(prerequisites.run, /rust|llvm/i);
+});
+
 function assertPinnedActions(source, file = "fixture") {
   const document = parseDocument(source);
   assert.deepEqual(document.errors, [], file);

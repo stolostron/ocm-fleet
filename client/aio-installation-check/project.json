@@ -1,6 +1,9 @@
 {
   "name": "aio-installation-check",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "metadata": {
+    "description": "All-in-one host preflight utility for OCM Fleet."
+  },
   "sourceRoot": "client/aio-installation-check/src",
   "projectType": "application",
   "tags": ["lang:typescript", "scope:cli", "scope:aio", "type:js-project"],
@@ -60,20 +63,30 @@
         "cwd": "client/aio-installation-check"
       }
     },
+    "smoke-native": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node scripts/smoke-native.mjs",
+        "cwd": "client/aio-installation-check"
+      }
+    },
     "test": {
       "executor": "nx:run-commands",
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/scripts/**/*",
+        "{projectRoot}/vitest.config.ts",
+        "{projectRoot}/tsconfig.json",
+        "{workspaceRoot}/tsconfig.json",
+        "jsRuntime"
+      ],
       "options": {
         "command": "vitest run --config vitest.config.ts && node --test scripts/*.test.mjs",
         "cwd": "client/aio-installation-check"
       }
     },
-    "typecheck": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "tsc --project tsconfig.json --noEmit",
-        "cwd": "client/aio-installation-check"
-      }
-    },
+    "typecheck": {},
     "lint": {
       "executor": "nx:run-commands",
       "inputs": ["uiSource", "eslintConfig", "{projectRoot}/scripts/**/*.mjs"],

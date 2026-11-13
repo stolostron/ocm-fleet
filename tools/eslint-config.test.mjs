@@ -107,6 +107,20 @@ test("generated Playwright bundles are excluded from formatting and lint fixes",
   }
 });
 
+test("the managed native toolchain tree is excluded from formatting and lint fixes", async () => {
+  for (const path of [
+    "client/aio-installation-check/.native-toolchain/perry/benchmarks/app-patterns/kernels/batch.ts",
+    "client/aio-installation-check/.native-toolchain/perry/test-files/test_async_simple.ts",
+    "client/aio-installation-check/.native-toolchain/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_common-18.0.1/tests/concurrent.js",
+  ]) {
+    assert.equal(
+      await eslint.isPathIgnored(join(repository, path)),
+      true,
+      path,
+    );
+  }
+});
+
 async function lint(path, source) {
   const [result] = await eslint.lintText(source, {
     filePath: join(repository, path),
