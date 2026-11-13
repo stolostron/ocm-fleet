@@ -50,7 +50,7 @@ func SeedCoreFixtures(t *testing.T, tx domain.Tx) Fixture {
 	ctx := context.Background()
 
 	platformOnly := domain.ResourceName("clusters/platform-only")
-	if err := tx.ResourceIdentities().Create(ctx, domain.NewPlatformResource(platformOnly, map[string]string{"env": "prod"}, fixedTime)); err != nil {
+	if err := tx.ResourceIdentities().Create(ctx, domain.NewPlatformResource(platformOnly, fixedTime, domain.WithPlatformResourceLabels(map[string]string{"env": "prod"}))); err != nil {
 		t.Fatalf("seed platform-only resource: %v", err)
 	}
 

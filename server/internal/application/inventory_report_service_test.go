@@ -277,7 +277,7 @@ func seedAcceptedAlias(t *testing.T, store domain.Store, name domain.ResourceNam
 		t.Fatalf("begin tx: %v", err)
 	}
 	defer tx.RollbackOnExit()
-	pr := domain.NewPlatformResource(name, nil, time.Now())
+	pr := domain.NewPlatformResource(name, time.Now())
 	if err := pr.AddAlias(alias); err != nil {
 		t.Fatalf("AddAlias: %v", err)
 	}

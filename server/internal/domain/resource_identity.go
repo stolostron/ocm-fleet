@@ -3,6 +3,7 @@ package domain
 import (
 	"fmt"
 	"iter"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -11,6 +12,8 @@ import (
 
 // ServiceName identifies the extension service that owns a representation
 // (e.g. "kind.open-cluster-management.io").
+//
+//domain:constructors NewServiceName
 type ServiceName string
 
 // NewServiceName validates and returns a [ServiceName]. It rejects empty
@@ -26,6 +29,8 @@ func NewServiceName(s string) (ServiceName, error) {
 }
 
 // APIVersion is the version of the extension API surface (e.g. "v1alpha1").
+//
+//domain:constructors NewAPIVersion
 type APIVersion string
 
 // NewAPIVersion validates and returns an [APIVersion]. It rejects empty
@@ -41,6 +46,8 @@ func NewAPIVersion(v string) (APIVersion, error) {
 }
 
 // CollectionID identifies a resource collection (e.g. "clusters").
+//
+//domain:constructors NewCollectionID
 type CollectionID string
 
 // NewCollectionID validates and returns a [CollectionID]. It rejects
@@ -63,6 +70,8 @@ func NewCollectionID(s string) (CollectionID, error) {
 // ResourceID identifies a resource within its parent collection
 // (e.g. "prod-us-east-1" in "clusters/prod-us-east-1"). This is
 // the "resource ID segment" per AIP-122.
+//
+//domain:constructors NewResourceID
 type ResourceID string
 
 // NewResourceID validates and returns a [ResourceID]. It rejects empty
@@ -79,6 +88,8 @@ func NewResourceID(s string) (ResourceID, error) {
 
 // CollectionName is the full path to a collection container.
 // Flat: "clusters". Nested (future): "publishers/123/books".
+//
+//domain:constructors NewCollectionName ParseCollectionName
 type CollectionName string
 
 // NewCollectionName constructs a [CollectionName] from a flat
@@ -151,6 +162,8 @@ func (n CollectionName) Parent() (ResourceName, bool) {
 // (e.g. "clusters/prod"). Per AIP-122, this is the primary resource
 // identifier — sometimes called "relative resource name" to
 // distinguish from [FullResourceName].
+//
+//domain:constructors NewResourceName ParseResourceName
 type ResourceName string
 
 // FullName composes a [FullResourceName] from this service name and
@@ -161,6 +174,8 @@ func (s ServiceName) FullName(name ResourceName) FullResourceName {
 
 // FullResourceName is the globally unique name of the form
 // "//{service}/{relative_name}" (e.g. "//kind.open-cluster-management.io/clusters/prod").
+//
+//domain:constructors NewFullResourceName
 type FullResourceName string
 
 // AliasNamespace scopes an alias key-space (e.g. "gcp", "aws").
@@ -172,18 +187,26 @@ type AliasKey string
 // AliasValue is the value of an alias (e.g. "my-project-123").
 type AliasValue string
 
-// RelationshipType classifies the relationship between two platform
-// resources (e.g. "runs-on", "member-of").
-type RelationshipType string
+// RelationshipType is a non-empty classification of the relationship between
+// two platform resources (e.g. "runs-on", "member-of"). It is an immutable
+// value; construct it with [NewRelationshipType]. The zero value is invalid.
+//
+//domain:constructors NewRelationshipType ResourceRelationshipFromSnapshot
+type RelationshipType struct {
+	value string
+}
 
 // NewRelationshipType validates and returns a [RelationshipType]. It
 // rejects empty values.
 func NewRelationshipType(s string) (RelationshipType, error) {
 	if s == "" {
-		return "", fmt.Errorf("relationship type: %w: must not be empty", ErrInvalidArgument)
+		return RelationshipType{}, fmt.Errorf("relationship type: %w: must not be empty", ErrInvalidArgument)
 	}
-	return RelationshipType(s), nil
+	return RelationshipType{value: s}, nil
 }
+
+// String returns the relationship classification.
+func (t RelationshipType) String() string { return t.value }
 
 // ---------------------------------------------------------------------------
 // Structured value types
@@ -223,6 +246,11 @@ func (a Alias) Key() AliasKey { return a.key }
 // Value returns the alias value.
 func (a Alias) Value() AliasValue { return a.value }
 
+// Ref returns this alias's namespace and key, without its value.
+func (a Alias) Ref() AliasRef {
+	return AliasRef{namespace: a.namespace, key: a.key}
+}
+
 func aliasLess(a, b Alias) bool {
 	if a.namespace != b.namespace {
 		return a.namespace < b.namespace
@@ -238,6 +266,9 @@ func aliasLess(a, b Alias) bool {
 // result deterministically by (namespace, key, value).
 //
 // The zero value is the empty set.
+//
+//domain:constructors NewAliasSet AliasSet.Without
+//domain:zero-valid
 type AliasSet struct {
 	aliases []Alias
 }
@@ -250,7 +281,7 @@ func NewAliasSet(aliases []Alias) AliasSet {
 	}
 	byRef := make(map[AliasRef]Alias, len(aliases))
 	for _, alias := range aliases {
-		byRef[AliasRef{Namespace: alias.namespace, Key: alias.key}] = alias
+		byRef[alias.Ref()] = alias
 	}
 	merged := make([]Alias, 0, len(byRef))
 	for _, alias := range byRef {
@@ -279,14 +310,14 @@ func (s AliasSet) All() iter.Seq[Alias] {
 	}
 }
 
-// Get returns the alias for ref, if present.
-func (s AliasSet) Get(ref AliasRef) (Alias, bool) {
+// Get returns a copy of the alias for ref, or nil if it is absent.
+func (s AliasSet) Get(ref AliasRef) *Alias {
 	for _, alias := range s.aliases {
-		if alias.namespace == ref.Namespace && alias.key == ref.Key {
-			return alias, true
+		if alias.Ref() == ref {
+			return &alias
 		}
 	}
-	return Alias{}, false
+	return nil
 }
 
 // Merge overlays upserts onto s by (namespace, key), returning a new
@@ -303,6 +334,15 @@ func (s AliasSet) Merge(upserts AliasSet) AliasSet {
 	merged = append(merged, s.aliases...)
 	merged = append(merged, upserts.aliases...)
 	return NewAliasSet(merged)
+}
+
+// Without returns a new set without ref. The original set is unchanged.
+func (s AliasSet) Without(ref AliasRef) AliasSet {
+	aliases := slices.DeleteFunc(s.Slice(), func(alias Alias) bool {
+		return alias.Ref() == ref
+	})
+	// Removing entries preserves the set's canonical order and uniqueness.
+	return AliasSet{aliases: aliases}
 }
 
 // Equal reports whether two alias sets contain the same canonical
@@ -328,10 +368,13 @@ func (s AliasSet) Equal(other AliasSet) bool {
 // retract -- the same way [InventoryDelta.DeleteLabels] identifies a
 // label to remove by key alone, with no need for its current value.
 //
-// Construct with [NewAliasRef] to enforce invariants.
+// This is an immutable value. Construct with [NewAliasRef] or [Alias.Ref] to
+// enforce invariants. The zero value is invalid.
+//
+//domain:constructors NewAliasRef Alias.Ref
 type AliasRef struct {
-	Namespace AliasNamespace
-	Key       AliasKey
+	namespace AliasNamespace
+	key       AliasKey
 }
 
 // NewAliasRef validates and returns an [AliasRef]. Both fields must be
@@ -343,8 +386,14 @@ func NewAliasRef(ns AliasNamespace, key AliasKey) (AliasRef, error) {
 	if key == "" {
 		return AliasRef{}, fmt.Errorf("alias key: %w: must not be empty", ErrInvalidArgument)
 	}
-	return AliasRef{Namespace: ns, Key: key}, nil
+	return AliasRef{namespace: ns, key: key}, nil
 }
+
+// Namespace returns the alias namespace.
+func (r AliasRef) Namespace() AliasNamespace { return r.namespace }
+
+// Key returns the key within the alias namespace.
+func (r AliasRef) Key() AliasKey { return r.key }
 
 // NewResourceName constructs a [ResourceName] from a collection and
 // resource ID. Like [NewCollectionName]/[NewResourceID] and every
@@ -479,6 +528,14 @@ type PlatformResource struct {
 	relationships   []ResourceRelationship
 }
 
+// PlatformResourceOption configures optional fields when constructing a
+// [PlatformResource]. Required inputs remain positional constructor arguments.
+type PlatformResourceOption func(*platformResourceOptions)
+
+type platformResourceOptions struct {
+	labels map[string]string
+}
+
 // NewPlatformResource creates a brand-new [PlatformResource]. Use this
 // on creation paths; use [PlatformResourceFromSnapshot] only for
 // reconstituting from persistence.
@@ -487,16 +544,30 @@ type PlatformResource struct {
 // only warranted when a resource can be deleted and recreated under
 // the same name yet needs to be distinguished across that gap.
 // Platform resources have no such generational concept: [ResourceName]
-// is the sole, permanent identifier.
-func NewPlatformResource(name ResourceName, labels map[string]string, now time.Time) *PlatformResource {
-	if labels == nil {
-		labels = map[string]string{}
+// is the sole, permanent identifier. New resources have no labels unless
+// [WithPlatformResourceLabels] is supplied.
+func NewPlatformResource(name ResourceName, now time.Time, opts ...PlatformResourceOption) *PlatformResource {
+	var options platformResourceOptions
+	for _, opt := range opts {
+		opt(&options)
 	}
+	labels := make(map[string]string, len(options.labels))
+	maps.Copy(labels, options.labels)
 	return &PlatformResource{
 		name:      name,
 		labels:    labels,
 		createdAt: now,
 		updatedAt: now,
+	}
+}
+
+// WithPlatformResourceLabels sets the initial labels. It captures a copy of
+// labels, and the option may be reused to construct independent resources.
+// Nil and empty maps both select an empty label set.
+func WithPlatformResourceLabels(labels map[string]string) PlatformResourceOption {
+	labels = maps.Clone(labels)
+	return func(options *platformResourceOptions) {
+		options.labels = labels
 	}
 }
 
@@ -507,8 +578,8 @@ func (r *PlatformResource) Collection() CollectionName { return r.name.Collectio
 // Name returns the collection-qualified resource name.
 func (r *PlatformResource) Name() ResourceName { return r.name }
 
-// Labels returns the user-defined platform labels.
-func (r *PlatformResource) Labels() map[string]string { return r.labels }
+// Labels returns a copy of the user-defined platform labels.
+func (r *PlatformResource) Labels() map[string]string { return maps.Clone(r.labels) }
 
 // CreatedAt returns the creation timestamp.
 func (r *PlatformResource) CreatedAt() time.Time { return r.createdAt }
@@ -518,10 +589,8 @@ func (r *PlatformResource) UpdatedAt() time.Time { return r.updatedAt }
 
 // SetLabels replaces the platform labels and bumps updatedAt.
 func (r *PlatformResource) SetLabels(labels map[string]string, now time.Time) {
-	if labels == nil {
-		labels = map[string]string{}
-	}
-	r.labels = labels
+	r.labels = make(map[string]string, len(labels))
+	maps.Copy(r.labels, labels)
 	r.updatedAt = now
 }
 
@@ -533,9 +602,10 @@ func (r *PlatformResource) SetLabels(labels map[string]string, now time.Time) {
 // representations, as populated by repository read paths such as
 // [ResourceIdentityRepository.GetByName] and
 // [ResourceIdentityRepository.ListByCollection]. Empty unless the
-// aggregate was hydrated by a repository read that populates them.
+// aggregate was hydrated by a repository read that populates them. The
+// returned slice is a copy.
 func (r *PlatformResource) Representations() []ResourceRepresentation {
-	return r.representations
+	return slices.Clone(r.representations)
 }
 
 // Aliases returns the aliases attached to this platform resource.
@@ -544,9 +614,9 @@ func (r *PlatformResource) Aliases() AliasSet {
 }
 
 // Relationships returns the outgoing relationships from this platform
-// resource.
+// resource. The returned slice is a copy.
 func (r *PlatformResource) Relationships() []ResourceRelationship {
-	return r.relationships
+	return slices.Clone(r.relationships)
 }
 
 // ---------------------------------------------------------------------------
@@ -559,9 +629,8 @@ func (r *PlatformResource) Relationships() []ResourceRelationship {
 // value is rejected as an invariant violation. Cross-resource alias
 // uniqueness is enforced by the repository on save.
 func (r *PlatformResource) AddAlias(alias Alias) error {
-	ref := AliasRef{Namespace: alias.Namespace(), Key: alias.Key()}
-	if existing, ok := r.aliases.Get(ref); ok {
-		if existing == alias {
+	if existing := r.aliases.Get(alias.Ref()); existing != nil {
+		if *existing == alias {
 			return nil // idempotent
 		}
 		return fmt.Errorf("alias %s/%s already has value %q, cannot set %q: %w",
@@ -571,21 +640,25 @@ func (r *PlatformResource) AddAlias(alias Alias) error {
 	return nil
 }
 
+// RemoveAlias withdraws a platform-owned alias. Removing an absent alias is
+// a no-op. The repository reconciles ownership and any remaining extension
+// contributions when the aggregate is saved.
+func (r *PlatformResource) RemoveAlias(ref AliasRef) {
+	r.aliases = r.aliases.Without(ref)
+}
+
 // AddRelationship adds a typed relationship from this platform resource
-// to another. Validates that the relationship type is non-empty and
-// that the source name matches this aggregate. If a relationship with
+// to another. The source name must match this aggregate; the relationship's
+// values already satisfy their own invariants. If a relationship with
 // the same (type, targetName) already exists, it is updated in place.
 func (r *PlatformResource) AddRelationship(rel ResourceRelationship) error {
-	if rel.sourceName != r.name {
+	if rel.SourceName() != r.name {
 		return fmt.Errorf("relationship source name %q does not match resource name %q: %w",
-			rel.sourceName, r.name, ErrInvalidArgument)
-	}
-	if rel.relType == "" {
-		return fmt.Errorf("relationship type: %w: must not be empty", ErrInvalidArgument)
+			rel.SourceName(), r.name, ErrInvalidArgument)
 	}
 
 	for i, existing := range r.relationships {
-		if existing.relType == rel.relType && existing.targetName == rel.targetName {
+		if existing.Type() == rel.Type() && existing.TargetName() == rel.TargetName() {
 			r.relationships[i] = rel
 			return nil
 		}
@@ -627,7 +700,7 @@ func (r *PlatformResource) Snapshot() PlatformResourceSnapshot {
 	for i, rel := range r.relationships {
 		relSnaps[i] = ResourceRelationshipSnapshot{
 			SourceName:    rel.sourceName,
-			Type:          rel.relType,
+			Type:          rel.Type().String(),
 			TargetName:    rel.targetName,
 			SourceService: rel.sourceService,
 			CreatedAt:     rel.createdAt,
@@ -636,7 +709,7 @@ func (r *PlatformResource) Snapshot() PlatformResourceSnapshot {
 
 	return PlatformResourceSnapshot{
 		Name:            r.name,
-		Labels:          r.labels,
+		Labels:          maps.Clone(r.labels),
 		CreatedAt:       r.createdAt,
 		UpdatedAt:       r.updatedAt,
 		Representations: repSnaps,
@@ -769,12 +842,13 @@ func (rr ResourceRelationship) SourceService() ServiceName { return rr.sourceSer
 // CreatedAt returns the creation timestamp.
 func (rr ResourceRelationship) CreatedAt() time.Time { return rr.createdAt }
 
-// ResourceRelationshipFromSnapshot constructs a [ResourceRelationship]
-// from a snapshot.
+// ResourceRelationshipFromSnapshot hydrates a [ResourceRelationship] from
+// trusted persisted state. The snapshot must already satisfy domain invariants;
+// external input must use [NewRelationshipType] and [NewResourceRelationship].
 func ResourceRelationshipFromSnapshot(s ResourceRelationshipSnapshot) ResourceRelationship {
 	return ResourceRelationship{
 		sourceName:    s.SourceName,
-		relType:       s.Type,
+		relType:       RelationshipType{value: s.Type},
 		targetName:    s.TargetName,
 		sourceService: s.SourceService,
 		createdAt:     s.CreatedAt,

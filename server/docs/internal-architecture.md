@@ -53,12 +53,16 @@ This layer makes the end to end use cases of an application testable, without an
 
 ### Method signatures
 
-Application service methods accept **values and command DTOs**, never domain
-aggregates or entities. The transport layer constructs validated value objects
-and command structs from raw protocol input; the application service receives
-these and internally loads, mutates, and persists the aggregate. This keeps the
-aggregate lifecycle encapsulated — callers never hold a mutable aggregate and
-"save it back."
+Application service methods accept **validated values and constructed commands**,
+never domain aggregates or entities. Required inputs are positional; optional
+domain values use pointers. Avoid exported parameter bags whose required domain
+fields can be omitted. See [constructors.md](./constructors.md) for constructor
+options and [domain.md](./domain.md) for boundary DTOs and hydration.
+
+The transport layer constructs validated values and commands from raw protocol
+input; the application service receives these and internally loads, mutates,
+and persists the aggregate. This keeps the aggregate lifecycle encapsulated —
+callers never hold a mutable aggregate and "save it back."
 
 For queries, returning domain aggregates (or projections of them) is fine —
 they are read-only from the caller's perspective.
@@ -92,7 +96,15 @@ A domain model defines the nouns and verbs of the business. We express business 
 
 This can be explicit or declarative. In an explicit model, the domain model has explicit serialize/deserialize functions that expose the raw state of the model, and hydrate from raw state. In a declarative model, the domain model is annotated (in some language dependent way) with how it can be serialized. Declarative metadata can "get away" with describing repository implementation details in the domain model, because it is just that: declarative metadata. Good metadata frameworks are flexible enough such that they don't otherwise impose themselves on the domain model. An ideal domain model makes no concessions to frameworks. Its only concern is modeling the business problem accurately and correctly.
 
-We use an explicit approach. The domain model can be serialized and deserialized to/from generic JSON-like structures. From here, the repository layer can transform this however it needs for its persistence.
+We use an explicit approach: serialization roots expose snapshots with public
+plain-data fields and restore domain state through a root-level hydration
+contract. Snapshots contain primitives or nested DTOs, with conventional
+standard-library values such as `time.Time` where useful. Repositories map
+those fields to their storage layout directly and choose encodings where
+needed; JSON is not a universal requirement. Hydration must account for
+previous snapshot formats and may bypass current creation rules. See
+[domain.md](./domain.md#snapshots-and-persistence) for composition and
+compatibility guidance.
 
 ### Tests
 

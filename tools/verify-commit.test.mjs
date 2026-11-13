@@ -367,7 +367,8 @@ test("a successful manual verify warms the hook cache and workspace imports stay
 import { appendFileSync } from "node:fs";
 import value from "commit-test-dependency";
 appendFileSync(${JSON.stringify(join(f.root, ".checks-ran"))}, "ran:" + value + "\\n");
-assert.equal(value, "staged");
+assert.equal(value, "staged", "staged workspace dependency changed");
+console.log("noisy passing check output");
 `,
   );
   const project = {
@@ -497,8 +498,8 @@ appendFileSync(${JSON.stringify(join(f.root, formatterLog))}, "dependency\\n");
   const env = {
     ...process.env,
     NX_DAEMON: "false",
-    NX_DEFAULT_OUTPUT_STYLE: "summary",
   };
+  delete env.NX_DEFAULT_OUTPUT_STYLE;
   await exec(process.execPath, [nx, "run", "ocm-fleet:verify"], {
     cwd: f.root,
     env,
@@ -531,6 +532,10 @@ appendFileSync(${JSON.stringify(join(f.root, formatterLog))}, "dependency\\n");
     });
   const result = await commit("-m", "cached staged check");
   assert.match(result.stdout + result.stderr, /staged verification passed/);
+  assert.doesNotMatch(
+    result.stdout + result.stderr,
+    /noisy passing check output/,
+  );
   assert.equal(await f.read(".checks-ran"), "ran:staged\n");
 
   await f.stage("docs/example.md", "#  Workspace docs\n");
@@ -575,7 +580,15 @@ appendFileSync(${JSON.stringify(join(f.root, formatterLog))}, "dependency\\n");
   // A stale cache key or bad workspace link would either falsely pass or fail
   // for the wrong reason. Changing staged dependency source must run the test.
   await f.git("add", "dependency/value.mjs");
-  await assert.rejects(commit("-m", "bad staged dependency"), /Command failed/);
+  await assert.rejects(
+    commit("-m", "bad staged dependency"),
+    (error) => {
+      const output = error.stdout + error.stderr;
+      assert.match(output, /staged checks failed/);
+      assert.doesNotMatch(output, /noisy passing check output/);
+      return true;
+    },
+  );
   assert.equal(
     await f.read(".checks-ran"),
     "ran:staged\n".repeat(3) + "ran:unstaged\n",

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -309,69 +310,94 @@ func TestFulfillment_DrainPendingStrategyRecords(t *testing.T) {
 }
 
 func TestPlatformResourceSnapshot_RoundTrip(t *testing.T) {
-	snap := PlatformResourceSnapshot{
-		Name:      "clusters/prod",
-		Labels:    map[string]string{"env": "prod"},
-		CreatedAt: refTime,
-		UpdatedAt: refTime.Add(time.Hour),
-		Representations: []ResourceRepresentationSnapshot{
-			{
-				ServiceName:          "kind.open-cluster-management.io",
-				Version:              "v1",
-				Name:                 "clusters/prod",
-				ExtensionResourceUID: NewExtensionResourceUID(),
-				CreatedAt:            refTime,
-				UpdatedAt:            refTime,
-			},
-			{
-				ServiceName:          "gcp.open-cluster-management.io",
-				Version:              "v1",
-				Name:                 "clusters/prod",
-				ExtensionResourceUID: NewExtensionResourceUID(),
-				CreatedAt:            refTime,
-				UpdatedAt:            refTime,
-			},
-		},
-		Aliases: []ResourceAliasSnapshot{
-			{Namespace: "gcp", Key: "project_id", Value: "my-proj"},
-		},
-		Relationships: []ResourceRelationshipSnapshot{
-			{SourceName: "clusters/prod", Type: "runs-on", TargetName: "clusters/host", SourceService: "kind.open-cluster-management.io", CreatedAt: refTime},
-		},
+	name := mustResourceName(t, "clusters/prod")
+	r := NewPlatformResource(name, refTime,
+		WithPlatformResourceLabels(map[string]string{"env": "dev"}),
+	)
+	r.SetLabels(map[string]string{"env": "prod"}, refTime.Add(time.Hour))
+	alias, err := NewAlias("gcp", "project_id", "my-proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.AddAlias(alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.AddRelationship(NewResourceRelationship(
+		name, mustRelationshipType(t, "runs-on"), mustResourceName(t, "clusters/host"), "kind.open-cluster-management.io", refTime,
+	)); err != nil {
+		t.Fatal(err)
 	}
 
-	r := PlatformResourceFromSnapshot(snap)
-	got := r.Snapshot()
-
-	assertEq(t, "Name", got.Name, snap.Name)
-	assertEq(t, "Labels[env]", got.Labels["env"], snap.Labels["env"])
-	assertEq(t, "CreatedAt", got.CreatedAt, snap.CreatedAt)
-	assertEq(t, "UpdatedAt", got.UpdatedAt, snap.UpdatedAt)
-
-	if len(got.Representations) != 2 {
-		t.Fatalf("Representations len = %d, want 2", len(got.Representations))
+	snap := r.Snapshot()
+	got := PlatformResourceFromSnapshot(snap).Snapshot()
+	if !reflect.DeepEqual(got, snap) {
+		t.Fatalf("snapshot round-trip = %+v, want %+v", got, snap)
 	}
-	assertEq(t, "Rep[0].ServiceName", got.Representations[0].ServiceName, ServiceName("kind.open-cluster-management.io"))
-	assertEq(t, "Rep[1].ServiceName", got.Representations[1].ServiceName, ServiceName("gcp.open-cluster-management.io"))
+
+	// Snapshot DTOs carry raw contents rather than uninitialized domain values.
+	assertEq(t, "Rel.Type", got.Relationships[0].Type, "runs-on")
+
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded PlatformResource
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if got := decoded.Snapshot(); !reflect.DeepEqual(got, snap) {
+		t.Fatalf("JSON round-trip = %+v, want %+v", got, snap)
+	}
+}
+
+func TestPlatformResourceFromSnapshot_Representations(t *testing.T) {
+	name := mustResourceName(t, "clusters/prod")
+	snap := NewPlatformResource(name, refTime).Snapshot()
+
+	// Representations are derived by repository joins and have no domain
+	// creation operation. This hydration test deliberately supplies their
+	// persisted shape; ordinary behavior tests use the repository contract.
+	for _, fixture := range []struct {
+		service string
+		uid     string
+	}{
+		{"kind.open-cluster-management.io", "00000000-0000-4000-8000-000000000001"},
+		{"gcp.open-cluster-management.io", "00000000-0000-4000-8000-000000000002"},
+	} {
+		service, err := NewServiceName(fixture.service)
+		if err != nil {
+			t.Fatal(err)
+		}
+		uid, err := ParseExtensionResourceUID(fixture.uid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		snap.Representations = append(snap.Representations, ResourceRepresentationSnapshot{
+			ServiceName:          service,
+			Version:              "v1",
+			Name:                 name,
+			ExtensionResourceUID: uid,
+			CreatedAt:            refTime,
+			UpdatedAt:            refTime,
+		})
+	}
 
 	// Representations() returns every entry populated at hydration
 	// time as-is: there's no "deleted" bookkeeping to filter, since a
 	// representation only exists here because a repository read
 	// derived it from a live extension resource.
+	r := PlatformResourceFromSnapshot(snap)
 	reps := r.Representations()
 	if len(reps) != 2 {
 		t.Fatalf("Representations() len = %d, want 2", len(reps))
 	}
-
-	if len(got.Aliases) != 1 {
-		t.Fatalf("Aliases len = %d, want 1", len(got.Aliases))
+	for i, rep := range reps {
+		if got := rep.Snapshot(); !reflect.DeepEqual(got, snap.Representations[i]) {
+			t.Fatalf("Representations()[%d] = %+v, want %+v", i, got, snap.Representations[i])
+		}
 	}
-	assertEq(t, "Alias.Namespace", got.Aliases[0].Namespace, AliasNamespace("gcp"))
-
-	if len(got.Relationships) != 1 {
-		t.Fatalf("Relationships len = %d, want 1", len(got.Relationships))
-	}
-	assertEq(t, "Rel.Type", got.Relationships[0].Type, RelationshipType("runs-on"))
+	reps[0] = reps[1]
+	assertEq(t, "Rep[0].ServiceName after caller assignment", r.Representations()[0].ServiceName(), snap.Representations[0].ServiceName)
 }
 
 // ---------------------------------------------------------------------------
