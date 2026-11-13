@@ -186,9 +186,13 @@ func (c *zeroChecker) checkInstruction(instruction ssa.Instruction, point flowPo
 		if c.checkCollectionBuiltin(instruction, point, context) {
 			return
 		}
-		check(instruction.Common().Value, "receiver")
-		for _, argument := range instruction.Common().Args {
-			check(argument, "argument")
+		if !instruction.Common().IsInvoke() || !c.decodingArgument(instruction.Common(), -1) {
+			check(instruction.Common().Value, "receiver")
+		}
+		for index, argument := range instruction.Common().Args {
+			if !c.decodingArgument(instruction.Common(), index) {
+				check(argument, "argument")
+			}
 		}
 	case *ssa.Return:
 		c.checkResults(instruction.Results, point, context, instructionPosition(instruction, point))

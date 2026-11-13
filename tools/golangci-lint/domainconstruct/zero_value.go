@@ -85,9 +85,15 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 		if problem := c.rawValueProblem(value, path, t, point); problem != nil {
 			return problem
 		}
+		if problem := c.pointerStorageProblem(value, path, t, point, context, seen); problem != nil {
+			return problem
+		}
 		return c.collectionProblem(value, point, context, seen)
 	case *ssa.Parameter, *ssa.FreeVar:
-		return c.rawValueProblem(value, path, t, point)
+		if problem := c.rawValueProblem(value, path, t, point); problem != nil {
+			return problem
+		}
+		return c.pointerStorageProblem(value, path, t, point, context, seen)
 	case *ssa.Index:
 		return c.elementProblem(value.X, value.Index, path, t, point, context, seen)
 	case *ssa.Const:
@@ -151,10 +157,26 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 			if problem := c.callResultProblem(call, value.Index, path, t, point, context, seen); problem != nil {
 				return problem
 			}
-			return c.rawValueProblem(value, path, t, point)
+			if problem := c.rawValueProblem(value, path, t, point); problem != nil {
+				return problem
+			}
+			return c.pointerStorageProblem(value, path, t, point, context, seen)
 		}
 	case *ssa.Lookup:
 		return c.conditionalProblem(t, reasonUncheckedLookup)
+	}
+	return nil
+}
+
+// A pointer's construction contract describes its initial contents. Later
+// decoding can invalidate those contents even when the pointer is unchanged.
+func (c *zeroChecker) pointerStorageProblem(value ssa.Value, path []int, t types.Type, point flowPoint, context flowContext, seen map[valueVisit]bool) *zeroProblem {
+	pointer, ok := t.Underlying().(*types.Pointer)
+	if !ok || len(path) != 0 {
+		return nil
+	}
+	if location, ok := c.collectionAddress(value); ok {
+		return c.memoryProblem(location, pointer.Elem(), point, context, seen, make(map[memoryVisit]bool))
 	}
 	return nil
 }
@@ -325,7 +347,7 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 	if c.validZeroStorage(location, t) {
 		return nil
 	}
-	if array, ok := t.Underlying().(*types.Array); ok {
+	if array, ok := t.Underlying().(*types.Array); ok && c.policies.lookup(t) == nil {
 		view := collectionView{storage: location, element: array.Elem(), end: array.Len()}
 		return c.collectionAtProblem(view, point, use, context, values, nil, make(map[collectionVisit]bool))
 	}
@@ -369,7 +391,7 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 					return c.problem(store.Val, remaining, t, use, context, values).
 						step("assignment", store.Pos(), "assign to "+projectedName(location.root, location.path))
 				}
-				// A populated field makes the containing protected struct nonzero.
+				// A populated field makes the containing protected value nonzero.
 				// Its constructor remains responsible for all other invariants.
 				if pathPrefix(destination.path, location.path) {
 					if literal, constant := store.Val.(*ssa.Const); !constant || !zeroConstant(literal) {
@@ -381,6 +403,14 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 		if call, ok := instruction.(ssa.CallInstruction); ok {
 			before := flowPoint{point.block, index}
 			pos := mutationPosition(call, before)
+			if c.decoderInitializes(call, location, before, context) {
+				return nil
+			}
+			if c.decoderMayInvalidate(call, mutationTarget{address: location}, before, context) {
+				return c.failedResultProblem(t, reasonUncheckedError, make(map[types.Type]bool)).
+					withValue(projectedName(location.root, location.path)).
+					step("mutation", pos, callName(call.Common())+" may leave partially decoded state without checked success")
+			}
 			switch c.callMutation(call.Common(), location, before) {
 			case mutationZero:
 				return c.zeroType(t, "").withValue(projectedName(location.root, location.path)).step("source", pos, "helper writes zero").

@@ -31,7 +31,7 @@ func run(keep func(*Record)) Record {
 }`)
 	c := newFlowChecker(function)
 	object := function.Pkg.Pkg.Scope().Lookup("ID").(*types.TypeName)
-	c.policies = policySet{object: {name: "flow.ID", typ: object.Type(), fact: &constructionFact{}}}
+	c.policies = policySet{object: {name: "flow.ID", typ: object.Type(), fact: &constructionFact{Constructors: []string{"NewID"}}}}
 	storage, result := returnedStorage(t, function, "copied")
 	structure := function.Signature.Results().At(0).Type().Underlying().(*types.Struct)
 	point := instructionPoint(result)
@@ -70,7 +70,7 @@ type Record struct { Label string; Payload any }
 func run(keep func(*Record)) Record {`+test.body+`}`)
 			c := newFlowChecker(function)
 			object := function.Pkg.Pkg.Scope().Lookup("ID").(*types.TypeName)
-			c.policies = policySet{object: {name: "flow.ID", typ: object.Type(), fact: &constructionFact{}}}
+			c.policies = policySet{object: {name: "flow.ID", typ: object.Type(), fact: &constructionFact{Constructors: []string{"NewID"}}}}
 			storage, result := returnedStorage(t, function, test.storage)
 			typ := function.Signature.Results().At(0).Type().Underlying().(*types.Struct).Field(1).Type()
 			location := address{root: storage, path: []int{1}}

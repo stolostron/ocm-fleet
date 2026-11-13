@@ -106,6 +106,12 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 				return false
 			}
 		}
+	case *ast.SliceExpr:
+		if p := c.policy(c.pass.TypesInfo.TypeOf(node.X)); p != nil && isArrayRepresentation(p.typ) && !c.approved(p, ancestors) {
+			c.reportProtected(node, p, "domainconstruct.mutable-exposure", "slice", "mutable-contents",
+				fmt.Sprintf("do not expose mutable contents of %s", p.name))
+			return false
+		}
 	}
 
 	expr, ok := node.(ast.Expr)
@@ -137,6 +143,11 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 		}
 	}
 	return true
+}
+
+func isArrayRepresentation(t types.Type) bool {
+	_, array := t.Underlying().(*types.Array)
+	return array
 }
 
 func (c *checker) checkConversion(call *ast.CallExpr, ancestors []ast.Node) bool {
@@ -184,6 +195,9 @@ func (c *checker) fieldOwner(expr ast.Expr) *policy {
 			return c.fieldOwner(expr.X)
 		}
 	case *ast.IndexExpr:
+		if p := c.policy(c.pass.TypesInfo.TypeOf(expr.X)); p != nil {
+			return p
+		}
 		return c.fieldOwner(expr.X)
 	case *ast.StarExpr:
 		return c.fieldOwner(expr.X)

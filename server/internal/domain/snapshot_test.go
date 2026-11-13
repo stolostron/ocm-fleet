@@ -322,14 +322,22 @@ func TestPlatformResourceSnapshot_RoundTrip(t *testing.T) {
 	if err := r.AddAlias(alias); err != nil {
 		t.Fatal(err)
 	}
+	service, err := NewServiceName("kind.open-cluster-management.io")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := r.AddRelationship(NewResourceRelationship(
-		name, mustRelationshipType(t, "runs-on"), mustResourceName(t, "clusters/host"), "kind.open-cluster-management.io", refTime,
+		name, mustRelationshipType(t, "runs-on"), mustResourceName(t, "clusters/host"), service, refTime,
 	)); err != nil {
 		t.Fatal(err)
 	}
 
 	snap := r.Snapshot()
-	got := PlatformResourceFromSnapshot(snap).Snapshot()
+	restored, err := PlatformResourceFromSnapshot(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := restored.Snapshot()
 	if !reflect.DeepEqual(got, snap) {
 		t.Fatalf("snapshot round-trip = %+v, want %+v", got, snap)
 	}
@@ -364,19 +372,11 @@ func TestPlatformResourceFromSnapshot_Representations(t *testing.T) {
 		{"kind.open-cluster-management.io", "00000000-0000-4000-8000-000000000001"},
 		{"gcp.open-cluster-management.io", "00000000-0000-4000-8000-000000000002"},
 	} {
-		service, err := NewServiceName(fixture.service)
-		if err != nil {
-			t.Fatal(err)
-		}
-		uid, err := ParseExtensionResourceUID(fixture.uid)
-		if err != nil {
-			t.Fatal(err)
-		}
 		snap.Representations = append(snap.Representations, ResourceRepresentationSnapshot{
-			ServiceName:          service,
+			ServiceName:          fixture.service,
 			Version:              "v1",
-			Name:                 name,
-			ExtensionResourceUID: uid,
+			Name:                 string(name),
+			ExtensionResourceUID: fixture.uid,
 			CreatedAt:            refTime,
 			UpdatedAt:            refTime,
 		})
@@ -386,7 +386,10 @@ func TestPlatformResourceFromSnapshot_Representations(t *testing.T) {
 	// time as-is: there's no "deleted" bookkeeping to filter, since a
 	// representation only exists here because a repository read
 	// derived it from a live extension resource.
-	r := PlatformResourceFromSnapshot(snap)
+	r, err := PlatformResourceFromSnapshot(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
 	reps := r.Representations()
 	if len(reps) != 2 {
 		t.Fatalf("Representations() len = %d, want 2", len(reps))
@@ -397,7 +400,7 @@ func TestPlatformResourceFromSnapshot_Representations(t *testing.T) {
 		}
 	}
 	reps[0] = reps[1]
-	assertEq(t, "Rep[0].ServiceName after caller assignment", r.Representations()[0].ServiceName(), snap.Representations[0].ServiceName)
+	assertEq(t, "Rep[0].ServiceName after caller assignment", string(r.Representations()[0].ServiceName()), snap.Representations[0].ServiceName)
 }
 
 // ---------------------------------------------------------------------------

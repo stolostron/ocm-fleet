@@ -12,7 +12,7 @@ import (
 	"github.com/golangci/golangci-lint/v2/pkg/commands"
 	"github.com/golangci/golangci-lint/v2/pkg/exitcodes"
 
-	// Register the domain construction analyzer with golangci-lint's module API.
+	// Register the domain analyzers with golangci-lint's module API.
 	_ "github.com/stolostron/ocm-fleet/tools/golangci-lint/domainconstruct/plugin"
 )
 

@@ -60,7 +60,9 @@ export function domainFinding(issue) {
           ? "zero-comparison"
           : issue.FromLinter === "domainconstruct"
             ? "construction"
-            : "contract";
+            : issue.FromLinter === "domainserialization"
+              ? "serialization"
+              : "contract";
     return {
       Rule: rule,
       Certainty: certainty,
@@ -120,7 +122,7 @@ export async function writeDomainReports({
     );
   };
   const counts = (issues) =>
-    ["domainconstruct", "domainzero"].map(
+    ["domainconstruct", "domainzero", "domainserialization"].map(
       (name) => issues.filter((issue) => issue.FromLinter === name).length,
     );
   const file = (suffix) => reportPath.replace(/\.json$/, suffix);
@@ -150,11 +152,11 @@ export async function writeDomainReports({
       file(`-${scope.name}.json`),
       JSON.stringify({ ...enriched, Issues: scope.issues }, null, 2) + "\n",
     );
-    const [construction, zero] = counts(scope.issues);
+    const [construction, zero, serialization] = counts(scope.issues);
     const lines = [
       `# Domain audit — ${scope.title}`,
       "",
-      `Generated ${generatedAt}. ${scope.issues.length} findings: ${construction} construction, ${zero} zero-value.`,
+      `Generated ${generatedAt}. ${scope.issues.length} findings: ${construction} construction, ${zero} zero-value, ${serialization} serialization.`,
       "",
       `[Summary](${basename(file(".md"))}) · [Structured JSON](${basename(file(`-${scope.name}.json`))})`,
       "",
@@ -185,18 +187,18 @@ export async function writeDomainReports({
     "",
     `Generated ${generatedAt}.`,
     "",
-    "| Scope | Construction | Zero-value | Total |",
-    "| --- | ---: | ---: | ---: |",
+    "| Scope | Construction | Zero-value | Serialization | Total |",
+    "| --- | ---: | ---: | ---: | ---: |",
     ...scopes.map((scope) => {
-      const [construction, zero] = counts(scope.issues);
-      return `| [${scope.title}](${basename(file(`-${scope.name}.md`))}) | ${construction} | ${zero} | ${scope.issues.length} |`;
+      const [construction, zero, serialization] = counts(scope.issues);
+      return `| [${scope.title}](${basename(file(`-${scope.name}.md`))}) | ${construction} | ${zero} | ${serialization} | ${scope.issues.length} |`;
     }),
     "",
     `[Combined structured JSON](${basename(reportPath)})`,
     "",
     "Test scope includes Go test files, domain repository contract packages, and test support packages. Other files count as main code, including mixed-purpose files.",
     "",
-    "Known-zero and possible-zero findings describe flow evidence; zero-comparison findings enforce the optionality convention. Construction remains a separate check. Provenance lists the traced source, transformations, and use; it is not a complete execution trace.",
+    "Known-zero and possible-zero findings describe flow evidence; zero-comparison findings enforce the optionality convention. Construction and serialization contracts remain separate checks. Provenance lists the traced source, transformations, and use; it is not a complete execution trace.",
     "",
   ];
   await writeFile(file(".md"), summary.join("\n"));
@@ -220,7 +222,7 @@ async function runDomainAudit(project, moduleRoot) {
       join(workspace, "bin/tools/golangci-lint"),
       [
         "run",
-        "--enable-only=domainconstruct,domainzero",
+        "--enable-only=domainconstruct,domainzero,domainserialization",
         "--config",
         join(workspace, ".golangci.yaml"),
         `--output.json.path=${raw}`,

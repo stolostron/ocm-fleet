@@ -14,7 +14,7 @@ type Alias = string // want "domain:constructors requires a defined type"
 func NewAlias(raw string) Alias { return raw }
 
 //domain:constructors NewList
-type List []string // want "requires a scalar or struct type"
+type List []string // want "requires a scalar, array, or struct type"
 
 func NewList() List { return nil }
 

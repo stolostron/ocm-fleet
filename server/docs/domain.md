@@ -98,10 +98,11 @@ check or missing optionality and receive a separate lint warning. Checking raw
 input before construction and inspecting representation within its approved
 constructor are appropriate.
 
-Passing raw storage to an output API, such as SQL `Scan`, does not establish a
-domain invariant. The linter follows reachable mutation and reports a possible
-zero with its source and transformations when initialization is uncertain.
-Construct from raw outputs after checking the operation's error. Domain-typed
+Passing raw storage to an output API does not by itself establish a domain
+invariant. A declared native decoder establishes valid domain state only after
+its error is checked; see [native encoding contracts](#native-encoding-contracts).
+Other reachable mutations retain a possible zero when initialization is
+uncertain. Construct from raw outputs after checking the operation's error. Domain-typed
 parameters and successful constructed results carry their validity contract;
 receivers do not need to revalidate them.
 
@@ -299,6 +300,44 @@ supported. Parsing external requests or configuration instead establishes the
 current input contract. A snapshot factory's availability is not permission
 to bypass construction in application code or ordinary test setup.
 
+### Native encoding contracts
+
+Prefer domain → snapshot → encoding → snapshot → domain at persistence and
+workflow boundaries. A domain type may instead declare a native round trip for
+a particular codec with `//domain:serialization json text sql`, listing only the
+codecs it supports. The type must also be enrolled with `domain:constructors`.
+Implementing `json.Unmarshaler`, `encoding.TextUnmarshaler`, or `sql.Scanner`
+alone does not establish this domain contract.
+
+Successful hydration must produce valid domain state under the restoration
+contract. Invalid, unsupported, or irrecoverable data returns an error. Encoding
+consumes an already-valid value; declarations do not relax construction or
+zero-value rules. JSON adapters conventionally delegate through snapshots and
+the root's restoration factory. Scalars may reuse a checked `Parse` constructor
+without exposing a separate snapshot type; a scalar snapshot may simply be a
+primitive if useful. Restoration must remain distinct from new-object creation.
+
+Codec support is independent. In particular, a text decoder can be bypassed by
+JSON `null`, and a delegated SQL scanner may accept NULL without assigning
+anything. Required native values must reject these invalid successful outcomes.
+Use optional pointers or a raw nullable representation for absence. Encoding
+methods should work on values, including values held in interfaces and maps.
+
+Mark snapshots with `//domain:snapshot` to enforce recursively plain contents.
+This marker distinguishes snapshots from ordinary envelopes, which may contain
+explicitly codec-capable domain values. A snapshot's scalar fields may still be
+missing, empty, or malformed; their interpretation belongs to restoration.
+Native codec support never makes a domain value suitable as a snapshot field.
+
+Serialization boundaries include JSON and SQL APIs and declared workflow ports.
+The linter checks nested concrete payload types before they become `any`.
+Checked decoding of a declared native domain root establishes its validity;
+checked decoding of an ordinary envelope cannot guarantee that required fields
+were present. Boundary declarations and current static-analysis limits are
+documented in the [lint tooling guide](../../tools/golangci-lint/README.md#serialization-contracts).
+The migration of existing types and snapshots is incremental; opt in only after
+testing round trips, rejected input, and historical state where applicable.
+
 ### Zero-value returns
 
 Error-path returns that need a typed zero value should use the Go zero literal
@@ -312,7 +351,8 @@ writing `return Foo{}, err` alone does not establish that.
 
 1. Define the private-field struct in its source file with accessor methods.
 2. Add a `NewFoo(...)` constructor for the creation path.
-3. Add the plain-data `FooSnapshot` to `snapshot.go`, with nested DTOs where useful.
+3. Add the plain-data `FooSnapshot` to `snapshot.go`, marked `//domain:snapshot`,
+   with nested DTOs where useful.
 4. Add `Snapshot()` and `FooFromSnapshot()` at the root. Add encoding adapters
    when a boundary requires them, such as the current memworkflow JSON pass.
 5. Add a round-trip test in `snapshot_test.go`.

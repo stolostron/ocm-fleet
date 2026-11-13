@@ -43,6 +43,7 @@ type Record interface {
 
 	// Run durably runs an activity. The engine provides the activity's
 	// context internally; callers should use [RunActivity] for type safety.
+	//domain:boundary json encode=in
 	Run(activity Activity[any, any], in any) (any, error)
 
 	// Await blocks until the named signal arrives. It uses the engine's
@@ -131,6 +132,8 @@ func DeleteManagedResourceWorkflowID(name FullResourceName) string {
 
 // RunActivity provides type-safe durable activity execution from within
 // a workflow body. It is a thin wrapper around [Record.Run].
+//
+//domain:boundary json types=I,O
 func RunActivity[I any, O any](record Record, activity Activity[I, O], in I) (O, error) {
 	result, err := record.Run(&activityAdapter[I, O]{activity: activity}, in)
 	if err != nil {
@@ -143,6 +146,8 @@ func RunActivity[I any, O any](record Record, activity Activity[I, O], in I) (O,
 // AwaitSignal provides type-safe signal reception from within a
 // workflow body. It is a thin wrapper around [Record.Await],
 // mirroring how [RunActivity] wraps [Record.Run].
+//
+//domain:boundary json types=T
 func AwaitSignal[T any](record Record, sig Signal[T]) (T, error) {
 	val, err := record.Await(sig.Name)
 	if err != nil {
@@ -155,6 +160,8 @@ func AwaitSignal[T any](record Record, sig Signal[T]) (T, error) {
 // AwaitSignalWithTimeout provides type-safe signal reception with a
 // timeout. Returns [ErrSignalTimeout] if the timeout expires before a
 // signal arrives. A zero timeout is non-blocking.
+//
+//domain:boundary json types=T
 func AwaitSignalWithTimeout[T any](record Record, sig Signal[T], timeout time.Duration) (T, error) {
 	val, err := record.AwaitWithTimeout(sig.Name, timeout)
 	if err != nil {
@@ -167,6 +174,7 @@ func AwaitSignalWithTimeout[T any](record Record, sig Signal[T], timeout time.Du
 // Execution is a handle to a running or completed workflow instance.
 type Execution[T any] interface {
 	WorkflowID() string
+	//domain:boundary json results=0
 	AwaitResult(ctx context.Context) (T, error)
 }
 
@@ -175,12 +183,14 @@ type Execution[T any] interface {
 // that need to signal workflows accept this narrow interface rather
 // than the full [Registry].
 type FulfillmentSignaler interface {
+	//domain:boundary json encode=event
 	SignalFulfillmentEvent(ctx context.Context, fulfillmentID FulfillmentID, event FulfillmentEvent) error
 }
 
 // DeleteCleanupSignaler sends a completion signal to a running
 // delete-cleanup workflow. [Registry] implements this interface.
 type DeleteCleanupSignaler interface {
+	//domain:boundary json encode=event
 	SignalDeleteCleanupComplete(ctx context.Context, fulfillmentID FulfillmentID, event DeleteCleanupCompleteEvent) error
 }
 
@@ -220,18 +230,21 @@ type Registry interface {
 // may return an [Execution] handle for the running workflow, or an
 // [ErrAlreadyRunning] error.
 type OrchestrationWorkflow interface {
+	//domain:boundary json encode=fulfillmentID
 	Start(ctx context.Context, fulfillmentID FulfillmentID) (Execution[struct{}], error)
 }
 
 // CreateDeploymentWorkflow is a registered create-deployment workflow
 // that can start new instances. Returned by [Registry.RegisterCreateDeployment].
 type CreateDeploymentWorkflow interface {
+	//domain:boundary json encode=input
 	Start(ctx context.Context, input CreateDeploymentInput) (Execution[DeploymentView], error)
 }
 
 // ProvisionIdPWorkflow is a registered provision-idp workflow that can
 // start new instances. Returned by [Registry.RegisterProvisionIdP].
 type ProvisionIdPWorkflow interface {
+	//domain:boundary json encode=input
 	Start(ctx context.Context, input ProvisionIdPInput) (Execution[AuthMethod], error)
 }
 
@@ -240,6 +253,7 @@ type ProvisionIdPWorkflow interface {
 // parameter is used by the adapter to derive a generation-qualified
 // instance ID for same-type dedup.
 type DeleteDeploymentWorkflow interface {
+	//domain:boundary json encode=input
 	Start(ctx context.Context, input DeleteDeploymentInput, observedGen Generation) (Execution[DeploymentView], error)
 }
 
@@ -250,6 +264,7 @@ type DeleteDeploymentWorkflow interface {
 // hard-deleting the deployment row and the fulfillment row. The
 // instance ID is deterministic: cleanup-{fulfillmentID}.
 type DeleteDeploymentCleanupWorkflow interface {
+	//domain:boundary json encode=input
 	Start(ctx context.Context, input DeleteDeploymentCleanupInput) (Execution[struct{}], error)
 }
 
@@ -258,18 +273,21 @@ type DeleteDeploymentCleanupWorkflow interface {
 // parameter is used by the adapter to derive a generation-qualified
 // instance ID for same-type dedup.
 type ResumeDeploymentWorkflow interface {
+	//domain:boundary json encode=input
 	Start(ctx context.Context, input ResumeDeploymentInput, observedGen Generation) (Execution[DeploymentView], error)
 }
 
 // CreateManagedResourceWorkflow is a registered create-managed-resource
 // workflow. Returned by [Registry.RegisterCreateManagedResource].
 type CreateManagedResourceWorkflow interface {
+	//domain:boundary json encode=input
 	Start(ctx context.Context, input CreateManagedResourceInput) (Execution[ExtensionResourceView], error)
 }
 
 // DeleteManagedResourceWorkflow is a registered delete-managed-resource
 // workflow. Returned by [Registry.RegisterDeleteManagedResource].
 type DeleteManagedResourceWorkflow interface {
+	//domain:boundary json encode=input
 	Start(ctx context.Context, input DeleteManagedResourceInput) (Execution[ExtensionResourceView], error)
 }
 
@@ -281,6 +299,7 @@ type DeleteManagedResourceWorkflow interface {
 // managed resource whose HEAD record has already been removed. The
 // instance ID is deterministic: cleanup-{fulfillmentID}.
 type DeleteManagedResourceCleanupWorkflow interface {
+	//domain:boundary json encode=input
 	Start(ctx context.Context, input DeleteManagedResourceCleanupInput) (Execution[struct{}], error)
 }
 
@@ -289,6 +308,7 @@ type DeleteManagedResourceCleanupWorkflow interface {
 // observedGen parameter derives a generation-qualified instance ID for
 // same-type dedup.
 type ResumeManagedResourceWorkflow interface {
+	//domain:boundary json encode=input
 	Start(ctx context.Context, input ResumeManagedResourceInput, observedGen Generation) (Execution[ExtensionResourceView], error)
 }
 
@@ -304,6 +324,8 @@ func (e *ContinueAsNewError) Error() string { return "continue as new" }
 
 // ContinueAsNew returns a [ContinueAsNewError] that workflow adapters
 // intercept to restart the workflow with the given input.
+//
+//domain:boundary json encode=input
 func ContinueAsNew(input any) error {
 	return &ContinueAsNewError{Input: input}
 }
