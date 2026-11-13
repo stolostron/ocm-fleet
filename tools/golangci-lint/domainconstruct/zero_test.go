@@ -53,6 +53,8 @@ func TestZeroFlow(t *testing.T) {
 	}
 	for _, result := range results {
 		checkUsePositions(t, result)
+		checkUseLabels(t, result)
+		checkValueNames(t, result)
 		for _, finding := range result.Diagnostics {
 			if finding.Category != "domainzero.invalid-zero" &&
 				!strings.Contains(finding.Message, "| rule: "+finding.Category+"; certainty: known;") {
@@ -80,7 +82,7 @@ func TestZeroFlow(t *testing.T) {
 						for _, text := range []string{
 							"return may produce an empty zeroflow.ID; empty values are invalid",
 							"| rule: domainzero.invalid-zero; certainty: possible; reason: input-may-be-zero",
-							`| operation: return; value: "s.Name"; type: "zeroflow.ID"; field-path: ""`,
+							`| operation: return; value: "s.Name"; type: "zeroflow.ID"; path: ""`,
 						} {
 							if !strings.Contains(diagnostic.Message, text) {
 								t.Errorf("receiver field finding missing %q: %s", text, diagnostic.Message)

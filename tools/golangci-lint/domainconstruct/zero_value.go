@@ -41,12 +41,12 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 		if result == nil {
 			return
 		}
-		result = result.withValue(c.valueName(value, path))
+		if result.value == "" {
+			result = result.withValue(c.valueName(value, path))
+		}
 		switch value := value.(type) {
-		case *ssa.ChangeType:
-			result = result.step("conversion", value.Pos(), c.expressionAt(value.Pos())+" changes the type without validation")
-		case *ssa.Convert:
-			result = result.step("conversion", value.Pos(), c.expressionAt(value.Pos())+" changes the type without validation")
+		case *ssa.ChangeType, *ssa.Convert:
+			result = result.step("conversion", value.Pos(), c.valueReference(value, nil).describe("conversion")+" changes the type without validation")
 		case *ssa.Field:
 			field := value.X.Type().Underlying().(*types.Struct).Field(value.Field)
 			result = result.step("field", value.Pos(), "read field "+field.Name())
@@ -194,7 +194,7 @@ func (c *zeroChecker) rawValueProblem(value ssa.Value, path []int, target types.
 	if types.Identical(source, target) {
 		return nil
 	}
-	name := c.valueName(value, path)
+	reference := c.valueReference(value, path)
 	reason := reasonInputMayBeZero
 	entry := "enters this function"
 	switch value := value.(type) {
@@ -207,7 +207,7 @@ func (c *zeroChecker) rawValueProblem(value ssa.Value, path []int, target types.
 	case *ssa.FreeVar:
 		entry = "is captured"
 	}
-	detail := name + " " + entry + " as a plain " + typeName(source)
+	detail := reference.describe("value") + " " + entry + " as a plain " + typeName(source)
 	if p := c.policies.lookup(source); p != nil {
 		if !p.fact.ZeroValid {
 			return nil
@@ -220,7 +220,7 @@ func (c *zeroChecker) rawValueProblem(value ssa.Value, path []int, target types.
 			return nil // Validation and compatibility are this constructor's contract.
 		}
 	}
-	return c.conditionalProblem(target, reason).withValue(name).step("source", value.Pos(), detail)
+	return c.conditionalProblem(target, reason).withValue(reference.expression).step("source", value.Pos(), detail)
 }
 
 func projectedType(source types.Type, path []int) types.Type {
@@ -383,18 +383,23 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 				return nil // Opaque pointer factories carry their declared contract.
 			}
 			problem := c.zeroType(t, "")
-			if problem != nil {
-				problem.reason = reasonZeroStorage
+			if problem == nil {
+				return nil
 			}
-			return problem.withValue(projectedName(location.root, location.path)).
-				step("source", allocation.Pos(), "storage "+projectedName(location.root, location.path)+" starts at zero")
+			problem.reason = reasonZeroStorage
+			reference := c.valueReference(location.root, location.path)
+			return problem.withValue(reference.expression).
+				step("source", allocation.Pos(), "storage "+reference.describe("unnamed storage")+" starts at zero")
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
 			if destination, ok := c.collectionAddress(store.Addr); ok && destination.root == location.root {
 				if pathPrefix(location.path, destination.path) {
 					remaining := location.path[len(destination.path):]
-					return c.problem(store.Val, remaining, t, use, context, values).
-						step("assignment", store.Pos(), "assign to "+projectedName(location.root, location.path))
+					problem := c.problem(store.Val, remaining, t, use, context, values)
+					if problem == nil {
+						return nil
+					}
+					return problem.step("assignment", store.Pos(), "assign to "+c.storageName(location.root, location.path))
 				}
 				// A populated field makes the containing protected value nonzero.
 				// Its constructor remains responsible for all other invariants.
@@ -413,13 +418,13 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 			}
 			if c.decoderMayInvalidate(call, mutationTarget{address: location}, before, context) {
 				return c.failedResultProblem(t, reasonUncheckedError, make(map[types.Type]bool)).
-					withValue(projectedName(location.root, location.path)).
-					step("mutation", pos, callName(call.Common())+" may leave partially decoded state without checked success")
+					withValue(c.valueName(location.root, location.path)).
+					step("mutation", pos, c.callName(call.Common())+" may leave partially decoded state without checked success")
 			}
 			switch c.callMutation(call.Common(), location, before) {
 			case mutationZero:
-				return c.zeroType(t, "").withValue(projectedName(location.root, location.path)).step("source", pos, "helper writes zero").
-					step("mutation", pos, "definite zero write by "+callName(call.Common()))
+				return c.zeroType(t, "").withValue(c.valueName(location.root, location.path)).step("source", pos, "helper writes zero").
+					step("mutation", pos, "definite zero write by "+c.callName(call.Common()))
 			case mutationNonzero:
 				return nil
 			case mutationUnknown:
@@ -428,9 +433,12 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 				}
 				prior := c.memoryAtProblem(location, t, before, use, context, values, seen)
 				if prior == nil && !storageHasDomainContract(location, t) {
-					prior = c.conditionalProblem(t, reasonInputMayBeZero).step("source", location.root.Pos(), "raw storage "+projectedName(location.root, location.path)+" has no domain construction contract")
+					prior = c.conditionalProblem(t, reasonInputMayBeZero).step("source", location.root.Pos(), "raw storage "+c.storageName(location.root, location.path)+" has no domain construction contract")
 				}
-				return prior.afterUnknownMutation(pos, callName(call.Common()), projectedName(location.root, location.path))
+				if prior == nil {
+					return nil
+				}
+				return prior.afterUnknownMutation(pos, c.callName(call.Common()), c.storageName(location.root, location.path))
 			}
 		}
 	}
@@ -462,37 +470,6 @@ func mutationPosition(call ssa.CallInstruction, point flowPoint) token.Pos {
 	return instructionPosition(call, point)
 }
 
-func projectedName(value ssa.Value, path []int) string {
-	name := value.Name()
-	if allocation, ok := value.(*ssa.Alloc); ok && allocation.Comment != "" {
-		name = allocation.Comment
-	}
-	return projectName(name, value.Type(), path)
-}
-
-func projectName(name string, t types.Type, path []int) string {
-	if pointer, ok := t.Underlying().(*types.Pointer); ok {
-		t = pointer.Elem()
-	}
-	for _, index := range path {
-		switch parent := t.Underlying().(type) {
-		case *types.Struct:
-			if index < 0 || index >= parent.NumFields() {
-				return name + pathKey(path)
-			}
-			field := parent.Field(index)
-			name, t = name+"."+field.Name(), field.Type()
-		case *types.Array:
-			name, t = name+elementLabel(int64(index)), parent.Elem()
-		case *types.Slice:
-			name, t = name+elementLabel(int64(index)), parent.Elem()
-		default:
-			return name + pathKey(path)
-		}
-	}
-	return name
-}
-
 func storageHasDomainContract(location address, target types.Type) bool {
 	pointer, ok := location.root.Type().Underlying().(*types.Pointer)
 	if !ok {
@@ -513,16 +490,6 @@ func storageHasDomainContract(location address, target types.Type) bool {
 		}
 	}
 	return types.Identical(t, target)
-}
-
-func callName(call *ssa.CallCommon) string {
-	if function := call.StaticCallee(); function != nil {
-		return function.Name()
-	}
-	if call.Method != nil {
-		return call.Method.Name()
-	}
-	return call.Value.Name()
 }
 
 func (c *zeroChecker) interestingType(t types.Type) bool {

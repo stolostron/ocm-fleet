@@ -162,6 +162,10 @@ type ID string
 
 func NewID(raw string) ID { return ID(raw) }
 func Encode(id ID) ([]byte, error) { return json.Marshal(id) }
+func Decode(raw []byte) error {
+	var m struct { ID ID }
+	return json.Unmarshal(raw, &m)
+}
 
 //domain:snapshot
 type Snapshot struct { ID ID }
@@ -169,16 +173,22 @@ type Snapshot struct { ID ID }
   );
   await format();
   await assert.rejects(lint(), { code: 1 });
-  const findings = (await issues()).map(domainFinding);
-  assert.equal(findings.length, 2);
+  const raw = await issues();
+  const findings = raw.map(domainFinding);
+  assert.equal(findings.length, 3);
   assert.deepEqual(findings.map((finding) => finding.Rule).sort(), [
     "domainserialization.snapshot-domain-value",
+    "domainserialization.unsupported-codec",
     "domainserialization.unsupported-codec",
   ]);
   for (const finding of findings) {
     assert.equal(finding.Certainty, "known");
     assert.equal(finding.Category, "serialization");
   }
+  const decode = findings.find((finding) => finding.Operation === "decode");
+  assert.equal(decode.Value, "&m");
+  assert.equal(decode.Path, "ID");
+  assert.ok(raw.some((issue) => issue.Text.includes('; value: "&m"; type:')));
 });
 
 test("domain audit decodes explicit metadata independently of wording and whitespace", async () => {
@@ -187,7 +197,7 @@ test("domain audit decodes explicit metadata independently of wording and whites
     Pos: { Filename: "agent.go", Line: 105, Column: 2 },
     Text: `Wording can change without changing the finding.
   | rule: domainzero.invalid-zero; certainty: possible; reason: input-may-be-zero
-  | operation: return; value: "s.Name"; type: "example.com/fleet/domain.ResourceID"; field-path: ""
+  | operation: return; value: "s.Name"; type: "example.com/fleet/domain.ResourceID"; path: ""
   | source: s.Name enters this method as a plain string ("agent.go", line 101, column 7)
   | conversion: ResourceID(s.Name) changes the type without validation ("agent.go", line 105, column 26)
   | use: return ("agent.go", line 105, column 2)`,
@@ -200,7 +210,7 @@ test("domain audit decodes explicit metadata independently of wording and whites
     assert.equal(finding.Operation, "return");
     assert.equal(finding.Value, "s.Name");
     assert.equal(finding.Type, "example.com/fleet/domain.ResourceID");
-    assert.equal(finding.FieldPath, "");
+    assert.equal(finding.Path, "");
     assert.deepEqual(finding.Pos, issue.Pos);
     assert.equal(finding.Category, "possible-zero");
     assert.deepEqual(
@@ -218,13 +228,13 @@ test("domain audit preserves quoted expressions, field paths, and escaped proven
   const finding = domainFinding({
     FromLinter: "domainzero",
     Pos: { Filename: "use.go", Line: 12, Column: 2 },
-    Text: `return may contain an empty domain.ID in field Reports[0].ID
+    Text: `return may contain an empty domain.ID at path Reports[0].ID
   | rule: domainzero.invalid-zero; certainty: known; reason: zero-value
-  | operation: return; value: ${quote(value)}; type: "example.com/domain.ID"; field-path: "Reports[0].ID"
+  | operation: return; value: ${quote(value)}; type: "example.com/domain.ID"; path: "Reports[0].ID"
   | source: a \\| b\\nuses \\\\ representation (${quote(filename)}, line 1, column 1)`,
   });
   assert.equal(finding.Value, value);
-  assert.equal(finding.FieldPath, "Reports[0].ID");
+  assert.equal(finding.Path, "Reports[0].ID");
   assert.equal(finding.Provenance[0].Pos.Filename, filename);
   assert.equal(finding.Provenance[0].Message, "a | b\nuses \\ representation");
 });
@@ -234,13 +244,13 @@ test("domain audit rejects invalid metadata without guessing from prose", async 
     "argument may use known invalid zero of domain.ID",
     `construct domain.ID through NewID
   | rule: domainconstruct.constructor-bypass; certainty: known; reason: constructor-required
-  | operation: construction; value: "ID(raw)"; type: "example.com/domain.ID"; field-path: ""`,
+  | operation: construction; value: "ID(raw)"; type: "example.com/domain.ID"; path: ""`,
     `return produces an empty domain.ID
   | rule: domainzero.invalid-zero; certainty: not-applicable; reason: zero-value
-  | operation: return; value: "ID(0)"; type: "example.com/domain.ID"; field-path: ""`,
+  | operation: return; value: "ID(0)"; type: "example.com/domain.ID"; path: ""`,
     `return produces an empty domain.ID
   | rule: domainzero.invalid-zero; certainty: known; reason: zero-value
-  | operation: return; value: "invalid\\q"; type: "example.com/domain.ID"; field-path: ""`,
+  | operation: return; value: "invalid\\q"; type: "example.com/domain.ID"; path: ""`,
   ]) {
     assert.equal(
       domainFinding({ FromLinter: "domainzero", Text: text }),
@@ -320,7 +330,7 @@ func Copy() value.ID { return value.Fixed }
   assert.equal(structured.Reason, "zero-initialized-storage");
   assert.equal(structured.Operation, "return");
   assert.equal(structured.Value, "raw");
-  assert.equal(structured.FieldPath, "");
+  assert.equal(structured.Path, "");
   assert.equal(
     structured.Type,
     "github.com/stolostron/ocm-fleet/lintfixture/value.ID",
@@ -352,6 +362,80 @@ func Copy() value.ID { return value.Fixed }
   await assert.doesNotReject(lint());
 });
 
+test("domain audit distinguishes variadic uses from real member paths", async (t) => {
+  const { directory, lint, issues, format } = await fixture(t, {
+    domain: true,
+  });
+  await writeFile(
+    join(directory, "main.go"),
+    `package lintfixture
+
+import "fmt"
+
+// ID is constructed explicitly.
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) ID { return ID(raw) }
+
+func Check() {
+  var bad ID
+  _ = fmt.Sprint("id: ", bad)
+  _ = fmt.Sprint("request: ", struct{ ID ID }{ID: bad})
+  _ = fmt.Sprint("ids: ", []ID{bad})
+  _ = fmt.Sprint([]any{bad}...)
+}
+`,
+  );
+  await format();
+  await assert.rejects(lint(), { code: 1 });
+  const findings = (await issues()).map(domainFinding);
+  assert.equal(findings.length, 4);
+  assert.ok(
+    findings.every((finding) => finding?.Rule === "domainzero.invalid-zero"),
+  );
+  assert.deepEqual(
+    findings
+      .sort((a, b) => a.Pos.Line - b.Pos.Line)
+      .map(({ Operation, Path, Message, Certainty }) => ({
+        Operation,
+        Path,
+        Message,
+        Certainty,
+      })),
+    [
+      {
+        Operation: "variadic-argument",
+        Path: "",
+        Message:
+          "variadic argument is an empty lintfixture.ID; empty values are invalid",
+        Certainty: "known",
+      },
+      {
+        Operation: "variadic-argument",
+        Path: "ID",
+        Message:
+          "variadic argument contains an empty lintfixture.ID at path ID; empty values are invalid",
+        Certainty: "known",
+      },
+      {
+        Operation: "variadic-argument",
+        Path: "[0]",
+        Message:
+          "variadic argument contains an empty lintfixture.ID at path [0]; empty values are invalid",
+        Certainty: "known",
+      },
+      {
+        Operation: "argument",
+        Path: "[0]",
+        Message:
+          "argument contains an empty lintfixture.ID at path [0]; empty values are invalid",
+        Certainty: "known",
+      },
+    ],
+  );
+});
+
 test("domain audit separates application and test helpers and writes navigable provenance", async (t) => {
   const { directory } = await fixture(t);
   const reportPath = join(directory, ".nx/reports/domainconstruct/server.json");
@@ -367,7 +451,7 @@ test("domain audit separates application and test helpers and writes navigable p
     rule = "domainzero.invalid-zero",
   ) => `${message}
   | rule: ${rule}; certainty: ${certainty}; reason: ${reason}
-  | operation: argument; value: "raw"; type: "example.com/domain.ID"; field-path: ""`;
+  | operation: argument; value: "raw"; type: "example.com/domain.ID"; path: ""`;
   await writeDomainReports({
     workspace: directory,
     moduleRoot: "server",

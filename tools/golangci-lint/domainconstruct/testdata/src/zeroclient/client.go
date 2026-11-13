@@ -14,7 +14,7 @@ func CrossPackage() {
 func Forward(raw string) (renamed.ID, error) { return renamed.NewID(raw) }
 
 func MissingField() {
-	renamed.AcceptRequest(renamed.Request{}) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\"; field-path: \"ID\""
+	renamed.AcceptRequest(renamed.Request{}) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\"; path: \"ID\""
 }
 
 func InvalidPointer() {

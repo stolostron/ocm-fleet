@@ -15,7 +15,7 @@ func MutationThroughAlias(scan func(*string)) {
 	var raw string
 	alias := &raw
 	scan(alias)
-	AcceptRequest(Request{ID: ID(raw)}) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\"; field-path: \"ID\""
+	AcceptRequest(Request{ID: ID(raw)}) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\"; path: \"ID\""
 }
 
 func MutationThroughVariadic(scanner StringScanner) error {
@@ -24,7 +24,7 @@ func MutationThroughVariadic(scanner StringScanner) error {
 		return err
 	}
 	request := Request{ID: ID(raw)}
-	AcceptRequest(request) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\"; field-path: \"ID\""
+	AcceptRequest(request) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\"; path: \"ID\""
 	return nil
 }
 

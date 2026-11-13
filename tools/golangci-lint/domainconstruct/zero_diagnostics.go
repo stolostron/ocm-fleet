@@ -1,8 +1,6 @@
 package domainconstruct
 
 import (
-	"go/ast"
-	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/ssa"
@@ -26,11 +24,6 @@ const (
 	reasonZeroStorage       zeroReason = "zero-initialized-storage"
 	reasonCleared           zeroReason = "cleared-element"
 )
-
-type sourceExpression struct {
-	node ast.Expr
-	text string
-}
 
 func (reason zeroReason) description() string {
 	switch reason {
@@ -64,7 +57,15 @@ func (c *zeroChecker) report(use zeroUse, problem *zeroProblem, operation string
 		return
 	}
 	c.reported[key] = true
-	pos := c.usePosition(use, value, problem.path)
+	site := c.useSite(use, value, operation, problem.path)
+	pos, operation := site.pos, site.operation
+	// Presentation is relative to the source use; analysis and deduplication
+	// retain the original path through any compiler-generated packing slice.
+	if problem.path != site.path {
+		local := *problem
+		local.path = site.path
+		problem = &local
+	}
 	certainty := diagnostic.Known
 	if problem.possible {
 		certainty = diagnostic.Possible
@@ -74,11 +75,14 @@ func (c *zeroChecker) report(use zeroUse, problem *zeroProblem, operation string
 	} else {
 		problem = problem.source(problem.provenance[0].pos, problem.reason.description())
 	}
-	problem = problem.withValue(c.valueName(value, nil)).step("use", pos, operation)
+	if problem.value == "" {
+		problem = problem.withValue(c.valueName(value, nil))
+	}
+	problem = problem.step("use", pos, operation)
 	finding := diagnostic.Finding{
 		Rule: "domainzero.invalid-zero", Certainty: certainty,
 		Operation: operation, Value: problem.value, Type: typeIdentity(problem.typ),
-		FieldPath: problem.path, Reason: string(problem.reason), Pos: pos,
+		Path: problem.path, Reason: string(problem.reason), Pos: pos,
 		Message: problem.message(operation),
 	}
 	for _, step := range problem.provenance {
@@ -101,9 +105,17 @@ func (problem *zeroProblem) message(operation string) string {
 		if problem.path != "" {
 			definite, possible = "contains", "may contain"
 		}
-	case "argument", "receiver", "map-key", "map-value", "operand":
+	case "argument", "variadic-argument", "receiver", "map-key", "map-value", "operand", "append", "copy", "clear":
 		definite, possible = "is", "may be"
 		switch operation {
+		case "variadic-argument":
+			subject = "variadic argument"
+		case "append":
+			subject = "append argument"
+		case "copy":
+			subject = "copy source"
+		case "clear":
+			subject = "slice element after clear"
 		case "map-key":
 			subject = "map key"
 		case "map-value":
@@ -116,8 +128,6 @@ func (problem *zeroProblem) message(operation string) string {
 		subject, definite, possible = "channel send", "uses", "may use"
 	case "assignment", "store-element":
 		subject, definite, possible = "assignment", "stores", "may store"
-	case "clear":
-		definite, possible = "produces", "may produce"
 	}
 	verb := definite
 	if problem.possible {
@@ -125,7 +135,7 @@ func (problem *zeroProblem) message(operation string) string {
 	}
 	message := subject + " " + verb + " " + value
 	if problem.path != "" {
-		message += " in field " + problem.path
+		message += " at path " + problem.path
 	}
 	return message + "; " + invariant
 }
@@ -137,65 +147,4 @@ func (problem *zeroProblem) withValue(value string) *zeroProblem {
 	copy := *problem
 	copy.value = value
 	return &copy
-}
-
-func (c *zeroChecker) valueName(value ssa.Value, path []int) string {
-	if value == nil {
-		return ""
-	}
-	if len(path) > 0 {
-		if name := c.valueName(value, nil); name != "" {
-			return projectName(name, value.Type(), path)
-		}
-		return ""
-	}
-	switch value := value.(type) {
-	case *ssa.Parameter, *ssa.FreeVar, *ssa.Alloc:
-		return projectedName(value, nil)
-	case *ssa.Const:
-		if value.Value == nil {
-			return "nil"
-		}
-		return value.Value.ExactString()
-	case *ssa.Extract:
-		return c.valueName(value.Tuple, nil)
-	}
-	return c.expressionAt(value.Pos())
-}
-
-func (c *zeroChecker) expressionAt(pos token.Pos) string {
-	expression := c.sourceExpression(pos)
-	if expression.node != nil && expression.text == "" {
-		expression.text = expressionText(c.pass.Fset, expression.node)
-		c.expressions[pos] = expression
-	}
-	return expression.text
-}
-
-func (c *zeroChecker) sourceExpression(pos token.Pos) sourceExpression {
-	if !pos.IsValid() {
-		return sourceExpression{}
-	}
-	if expression, ok := c.expressions[pos]; ok {
-		return expression
-	}
-	var expression ast.Expr
-	for _, file := range c.pass.Files {
-		if pos < file.Pos() || pos > file.End() {
-			continue
-		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			if node == nil || pos < node.Pos() || pos >= node.End() {
-				return false
-			}
-			if candidate, ok := node.(ast.Expr); ok {
-				expression = candidate
-			}
-			return true
-		})
-		break
-	}
-	source := sourceExpression{node: expression}
-	c.expressions[pos] = source
-	return source
 }

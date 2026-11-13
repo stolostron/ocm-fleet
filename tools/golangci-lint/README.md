@@ -56,7 +56,7 @@ reports. Test scope includes test files and recognized test support packages;
 mixed-purpose ordinary files count as main code. Links target files, with line
 and column numbers alongside them so they work in VS Code.
 Each domain issue has a `Domain` object containing its rule, certainty, operation,
-source expression, full type identity, field path, reason, primary location, and
+source expression, full type identity, member path, reason, primary location, and
 ordered provenance. The [diagnostic format](#diagnostic-format) keeps these fields
 independent of the English message.
 The target builds the tool and checks its configuration first. It includes test
@@ -238,16 +238,18 @@ padding. For example:
 ```text
 return may produce an empty domain.ResourceID; empty values are invalid
   | rule: domainzero.invalid-zero; certainty: possible; reason: input-may-be-zero
-  | operation: return; value: "s.Name"; type: "github.com/stolostron/ocm-fleet/server/internal/domain.ResourceID"; field-path: ""
+  | operation: return; value: "s.Name"; type: "github.com/stolostron/ocm-fleet/server/internal/domain.ResourceID"; path: ""
   | source: s.Name enters this method as a plain string ("agent.go", line 101, column 7)
   | conversion: domain.ResourceID(s.Name) changes the type without validation ("agent.go", line 105, column 26)
   | use: return ("agent.go", line 105, column 2)
 ```
 
 The `|` delimiter preserves record boundaries when editors collapse whitespace.
-Metadata strings and filenames use JSON quoting; provenance explanations escape
-backslashes, pipes, and newlines. Human summaries use short package-qualified
-type names; metadata retains import paths to distinguish identically named types.
+Metadata strings and filenames use JSON quoting without HTML escaping, so Go
+expressions such as `&m` stay readable. Pipes within quoted strings remain
+escaped. Provenance explanations escape backslashes, pipes, and newlines.
+Human summaries use short package-qualified type names; metadata retains import
+paths to distinguish identically named types.
 
 The audit decodes these explicit fields rather than classifying English text:
 
@@ -255,10 +257,10 @@ The audit decodes these explicit fields rather than classifying English text:
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `Rule`              | Stable namespaced identifier, such as `domainzero.invalid-zero`, `domainzero.zero-comparison`, or `domainconstruct.constructor-bypass`. |
 | `Certainty`         | Confidence in the reported rule violation: `known` when established, `possible` when uncertain values or control flow may violate it.   |
-| `Operation`         | Stable operation code, such as `return`, `argument`, `assignment`, or `comparison`.                                                     |
+| `Operation`         | Stable use or operation code, such as `return`, `argument`, `variadic-argument`, `receiver`, or `comparison`.                           |
 | `Value`             | Source expression when known, such as `s.Name`.                                                                                         |
 | `Type`              | Full identity of the affected domain type.                                                                                              |
-| `FieldPath`         | Affected field within the consumed value, such as `Reports[0].ID`; empty for a scalar result.                                           |
+| `Path`              | Member path through struct fields and collection elements, such as `Reports[0].ID`; empty at its root.                                  |
 | `Reason`            | Stable source or contract code, independent of certainty and wording.                                                                   |
 | `Pos`, `Provenance` | Primary location and ordered steps with stable kinds, locations, and explanations.                                                      |
 
@@ -273,8 +275,18 @@ giving it a domain type through conversion does not establish otherwise. Other
 reasons distinguish `zero-value`, `source-permits-zero`,
 `conversion-may-produce-zero`, `unchecked-error`, unchecked map/receive/assertion
 results, `zero-initialized-storage`, and `cleared-element`.
-The source expression and result field path are separate:
-`s.Name` can produce a scalar ID whose field path is empty.
+The source expression and path within the consumed value are separate:
+`s.Name` can produce a scalar ID with an empty path.
+
+Source names come from declarations and expressions, never compiler temporary
+names or allocation comments. Storage without a variable is described in
+provenance, for example `assign to composite literal at path val.Deployment.name`.
+Its `Value` can retain the source literal; descriptions are never substituted
+for source expressions. If lowering loses the expression, `Value` stays empty.
+An aggregate zero is not called `nil`, and a symbolic member index belongs in a
+path description rather than an invented expression. Mutation steps use the
+same source resolver for dynamic callees, with `anonymous function` or `call`
+when a source name is unavailable.
 
 Uncertainty preserves the reason for the zero concern. A branch or unknown
 mutation can change certainty from `known` to `possible`; it does not replace
@@ -282,9 +294,9 @@ the source reason. Mutation provenance states what may change and which
 guarantee remains unproven. For example:
 
 ```text
-argument may contain an empty domain.ResourceName in field [0]; empty values are invalid
+argument may contain an empty domain.ResourceName at path [0]; empty values are invalid
   | rule: domainzero.invalid-zero; certainty: possible; reason: zero-initialized-storage
-  | operation: argument; value: "names"; type: "github.com/stolostron/ocm-fleet/server/internal/domain.ResourceName"; field-path: "[0]"
+  | operation: argument; value: "names"; type: "github.com/stolostron/ocm-fleet/server/internal/domain.ResourceName"; path: "[0]"
   | source: collection contains zero-initialized elements ("service.go", line 20, column 15)
   | mutation: ReplaceBatch may modify collection elements; nonzero initialization afterward is unproven ("service.go", line 25, column 2)
   | use: argument ("service.go", line 26, column 12)
@@ -295,11 +307,40 @@ establish that it did. Unknown mutation alone does not create a zero concern
 for a trusted domain value or an initialized collection. Raw output storage
 still lacks that domain contract, and proven zero writes remain evidence of zero.
 
-For `domainzero` value-use findings at calls, the primary position identifies the
-source argument or receiver, including individual arguments packed into a
-variadic slice. Calls without matching source syntax retain their instruction
-position. The editor adapter sends file, line, and column; the Go extension
-chooses the underline's length because that protocol has no end position.
+Use labels describe the source operation. Struct fields and collection elements
+use the neutral phrase `at path`, for example `ID`, `[1]`, or `Reports[0].ID`.
+The structured record uses `Path` (rendered as `path`) for both. An empty path
+identifies the consumed value itself.
+
+For an individual variadic argument, operation is `variadic-argument` and the
+path is relative to that argument. The compiler's packing index is removed;
+real indexes inside an argument remain. A slice passed with an ellipsis is a
+container argument, so its element path remains intact. For example, given
+`logValues(string, ...any)`:
+
+| Source use                                                    | Operation           | Path     | Summary subject   |
+| ------------------------------------------------------------- | ------------------- | -------- | ----------------- |
+| `accept(id)`                                                  | `argument`          | empty    | argument          |
+| `accept(request)` with an invalid `request.ID`                | `argument`          | `ID`     | argument          |
+| `accept(ids)` with an invalid `ids[1]`                        | `argument`          | `[1]`    | argument          |
+| `logValues("id", id)`                                         | `variadic-argument` | empty    | variadic argument |
+| `logValues("items", reports)` with an invalid `reports[0].ID` | `variadic-argument` | `[0].ID` | variadic argument |
+| `logValues("items", args...)` with an invalid `args[1]`       | `argument`          | `[1]`    | argument          |
+
+The highlighted source argument identifies which variadic argument is affected.
+Receiver labels apply to method receivers, including method expressions,
+interface dispatch, and bound methods. Append arguments, copy sources, and
+slice elements after clear have distinct labels. Return values, assignments,
+map keys and values, operands, conversions, and channel sends retain their own
+operation labels. The use provenance record carries the same operation code
+as the diagnostic.
+
+Source positions and labels are resolved together, only after deduplication.
+At calls, the primary position identifies the source argument or receiver,
+including individual arguments packed into a variadic slice. Calls without
+matching source syntax retain their instruction position. The editor adapter
+sends file, line, and column; the Go extension chooses the underline's length
+because that protocol has no end position.
 
 Native Go analysis retains the rule in `Diagnostic.Category` and provenance in
 `Diagnostic.Related`. The golangci-lint adapter groups provenance into the same

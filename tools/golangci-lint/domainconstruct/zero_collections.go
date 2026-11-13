@@ -355,12 +355,12 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 					if c.decoderMayInvalidate(call, storage, before, context) {
 						if problem := c.failedResultProblem(view.element, reasonUncheckedError, make(map[types.Type]bool)); problem != nil {
 							problem.path = fieldPath(elementLabel(remaining.start), problem.path)
-							return problem.step("mutation", mutationPosition(call, before), callName(common)+" may leave partially decoded collection elements without checked success")
+							return problem.step("mutation", mutationPosition(call, before), c.callName(common)+" may leave partially decoded collection elements without checked success")
 						}
 					}
 					if c.collectionMutation(common, remaining, before) != mutationReadOnly {
 						return c.collectionAtProblem(view, before, use, context, values, covered, seen).
-							afterUnknownMutation(mutationPosition(call, before), callName(common), "collection elements")
+							afterUnknownMutation(mutationPosition(call, before), c.callName(common), "collection elements")
 					}
 				}
 			}
