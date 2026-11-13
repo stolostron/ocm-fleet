@@ -33,6 +33,12 @@ formatters:
 linters:
   # Use standard linters and their stock Staticcheck check selection.
   default: standard
+  # Keep domain audits opt-in while their existing findings are migrated.
+  # Configured module plugins join the standard group, so omitting enable does
+  # not disable them. server:lint:domain explicitly selects both with enable-only.
+  disable:
+    - domainconstruct
+    - domainzero
   exclusions:
     # Recognize generated files by the standard Go generated-code header.
     generated: strict
@@ -85,6 +91,13 @@ linters:
       - path: '^server/internal/(domain/(delete_managed_resource|provision_idp)|infrastructure/(postgres|sqlite)/query_filter|transport/grpc/signer_enrollment)\.go$'
         linters: [unused]
   settings:
+    custom:
+      domainconstruct:
+        type: module
+        description: Require approved construction of annotated domain values.
+      domainzero:
+        type: module
+        description: Report invalid zero domain values reaching operations.
     errcheck:
       # Keep the defaults for assertions and explicit blank-identifier discards.
       check-type-assertions: false
@@ -104,6 +117,8 @@ issues:
   # Keep the full report by disabling per-linter and repeated-message limits.
   max-issues-per-linter: 0
   max-same-issues: 0
+  # Construction and zero-flow findings can explain different problems on one line.
+  uniq-by-line: false
 
 output:
   # Keep diagnostics unambiguous when Nx runs tasks from different modules.

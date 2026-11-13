@@ -98,6 +98,42 @@ test("summary output suppresses task output and preserves nested failure logs", 
   );
 });
 
+test("verification shows nested check failures without successful check output", async (t) => {
+  const { root, runNx } = await fixture(t);
+  for (const path of ["project.json", "client/cli/project.json"]) {
+    const project = JSON.parse(await readFile(join(root, path), "utf8"));
+    project.targets["test:output:pass"] = {
+      executor: "nx:run-commands",
+      options: { command: "echo successful-check-noise" },
+    };
+    project.targets["test:output:fail"] = {
+      executor: "nx:run-commands",
+      options: { command: "echo specific-check-failure >&2; exit 1" },
+    };
+    const target = project.targets[path === "project.json" ? "check" : "test"];
+    target.dependsOn = [
+      ...(target.dependsOn ?? []),
+      "test:output:pass",
+      "test:output:fail",
+    ];
+    await writeJSON(root, path, project);
+  }
+  for (const project of ["ocm-fleet", "cli"]) {
+    await assert.rejects(
+      runNx(["run-many", "--targets=verify", `--projects=${project}`], {
+        NX_DEFAULT_OUTPUT_STYLE: "static-failures-only",
+      }),
+      (error) => {
+        assert.equal(error.code, 1);
+        const output = error.stdout + error.stderr;
+        assert.match(output, /specific-check-failure/);
+        assert.doesNotMatch(output, /successful-check-noise/);
+        return true;
+      },
+    );
+  }
+});
+
 test("tooling input filesets include required files and exclude unrelated files", async () => {
   const config = await json("nx.json");
   const workspace = await json("project.json");

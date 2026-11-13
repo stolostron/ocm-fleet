@@ -349,7 +349,8 @@ test("a successful manual verify warms the hook cache and workspace imports stay
 import { appendFileSync } from "node:fs";
 import value from "commit-test-dependency";
 appendFileSync(${JSON.stringify(join(f.root, ".checks-ran"))}, "ran:" + value + "\\n");
-assert.equal(value, "staged");
+assert.equal(value, "staged", "staged workspace dependency changed");
+console.log("noisy passing check output");
 `,
   );
   const project = {
@@ -463,8 +464,8 @@ assert.equal(value, "staged");
   const env = {
     ...process.env,
     NX_DAEMON: "false",
-    NX_DEFAULT_OUTPUT_STYLE: "summary",
   };
+  delete env.NX_DEFAULT_OUTPUT_STYLE;
   await exec(process.execPath, [nx, "run", "ocm-fleet:verify"], {
     cwd: f.root,
     env,
@@ -494,6 +495,10 @@ assert.equal(value, "staged");
     maxBuffer: 4 * 1024 * 1024,
   });
   assert.match(result.stdout + result.stderr, /staged verification passed/);
+  assert.doesNotMatch(
+    result.stdout + result.stderr,
+    /noisy passing check output/,
+  );
   assert.equal(await f.read(".checks-ran"), "ran:staged\n");
   // Force a cache miss and exercise Git's actual temporary --only index while
   // fixing source. Unrelated staged work and unstaged dependency edits survive.
@@ -525,7 +530,12 @@ assert.equal(value, "staged");
       env,
       maxBuffer: 4 * 1024 * 1024,
     }),
-    /Command failed/,
+    (error) => {
+      const output = error.stdout + error.stderr;
+      assert.match(output, /staged workspace dependency changed/);
+      assert.doesNotMatch(output, /noisy passing check output/);
+      return true;
+    },
   );
   assert.equal(
     await f.read(".checks-ran"),

@@ -160,7 +160,7 @@ type ResourceAliasSnapshot struct {
 // [ResourceRelationship].
 type ResourceRelationshipSnapshot struct {
 	SourceName    ResourceName
-	Type          RelationshipType
+	Type          string
 	TargetName    ResourceName
 	SourceService ServiceName
 	CreatedAt     time.Time

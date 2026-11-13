@@ -8,6 +8,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { domainFinding, writeDomainReports } from "./domain-audit.mjs";
+
 const run = promisify(execFile);
 const binary = fileURLToPath(
   new URL("../bin/tools/golangci-lint", import.meta.url),
@@ -34,6 +36,554 @@ test("validates the shared config with our pinned linter", async () => {
 test("accepts formatted Go code with checked errors", async (t) => {
   const { lint } = await fixture(t);
   await assert.doesNotReject(lint());
+});
+
+test("domain checks remain opt-in while the shared lint backlog is being migrated", async (t) => {
+  const { directory, lint, issues, format } = await fixture(t);
+  await writeFile(
+    join(directory, "main.go"),
+    `package lintfixture
+
+// ID is constructed explicitly.
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) ID { return ID(raw) }
+func Check(raw string) ID { return ID(raw) }
+func Missing() ID { var id ID; return id }
+`,
+  );
+  await format();
+  await assert.doesNotReject(lint());
+  await assert.rejects(lint({}, ["--enable-only=domainconstruct,domainzero"]), {
+    code: 1,
+  });
+  assert.deepEqual(
+    [...new Set((await issues()).map((finding) => finding.FromLinter))].sort(),
+    ["domainconstruct", "domainzero"],
+  );
+});
+
+test("domain audit loads construction policies across packages and includes tests", async (t) => {
+  const { directory, lint, issues, format } = await fixture(t, {
+    domain: true,
+  });
+  await mkdir(join(directory, "value"));
+  await writeFile(
+    join(directory, "value/id.go"),
+    `package value
+
+// ID is constructed explicitly.
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) ID { return ID(raw) }
+`,
+  );
+  const source = `package lintfixture
+
+import "github.com/stolostron/ocm-fleet/lintfixture/value"
+
+func Check(raw string) value.ID { return value.ID(raw) }
+`;
+  await writeFile(join(directory, "main.go"), source);
+  await writeFile(
+    join(directory, "main_test.go"),
+    `package lintfixture
+
+import (
+	"testing"
+
+	"github.com/stolostron/ocm-fleet/lintfixture/value"
+)
+
+func TestCheck(t *testing.T) { _ = value.ID("fixture | rule: fake; quoted") }
+`,
+  );
+
+  await format();
+  const audit = () => lint();
+  await assert.rejects(audit(), { code: 1 });
+  const findings = await issues();
+  const construction = findings.filter(
+    (finding) => finding.FromLinter === "domainconstruct",
+  );
+  assert.equal(construction.length, 2);
+  assert.equal(findings.length, 3);
+  for (const finding of construction) {
+    assert.equal(finding.FromLinter, "domainconstruct");
+    assert.match(finding.Text, /construct value\.ID through NewID/);
+    const structured = domainFinding(finding);
+    assert.equal(structured.Rule, "domainconstruct.constructor-bypass");
+    assert.equal(structured.Certainty, "known");
+    assert.equal(structured.Category, "construction");
+    assert.equal(structured.Reason, "constructor-required");
+    assert.equal(structured.Operation, "construction");
+    assert.equal(
+      structured.Type,
+      "github.com/stolostron/ocm-fleet/lintfixture/value.ID",
+    );
+    if (finding.Pos.Filename.endsWith("main_test.go")) {
+      assert.equal(
+        structured.Value,
+        'value.ID("fixture | rule: fake; quoted")',
+      );
+    }
+  }
+
+  await writeFile(
+    join(directory, "main.go"),
+    source.replace("value.ID(raw)", "value.NewID(raw)"),
+  );
+  await writeFile(
+    join(directory, "main_test.go"),
+    'package lintfixture\n\nimport "testing"\n\nfunc TestCheck(t *testing.T) { _ = Check("fixture") }\n',
+  );
+  await assert.doesNotReject(audit());
+});
+
+test("domain audit decodes explicit metadata independently of wording and whitespace", async () => {
+  const issue = {
+    FromLinter: "domainzero",
+    Pos: { Filename: "agent.go", Line: 105, Column: 2 },
+    Text: `Wording can change without changing the finding.
+  | rule: domainzero.invalid-zero; certainty: possible; reason: input-may-be-zero
+  | operation: return; value: "s.Name"; type: "example.com/fleet/domain.ResourceID"; field-path: ""
+  | source: s.Name enters this method as a plain string ("agent.go", line 101, column 7)
+  | conversion: ResourceID(s.Name) changes the type without validation ("agent.go", line 105, column 26)
+  | use: return ("agent.go", line 105, column 2)`,
+  };
+  for (const text of [issue.Text, issue.Text.replace(/\s+/g, " ")]) {
+    const finding = domainFinding({ ...issue, Text: text });
+    assert.equal(finding.Rule, "domainzero.invalid-zero");
+    assert.equal(finding.Certainty, "possible");
+    assert.equal(finding.Reason, "input-may-be-zero");
+    assert.equal(finding.Operation, "return");
+    assert.equal(finding.Value, "s.Name");
+    assert.equal(finding.Type, "example.com/fleet/domain.ResourceID");
+    assert.equal(finding.FieldPath, "");
+    assert.deepEqual(finding.Pos, issue.Pos);
+    assert.equal(finding.Category, "possible-zero");
+    assert.deepEqual(
+      finding.Provenance.map((step) => step.Kind),
+      ["source", "conversion", "use"],
+    );
+    assert.equal(finding.Provenance[0].Pos.Line, 101);
+  }
+});
+
+test("domain audit preserves quoted expressions, field paths, and escaped provenance", async () => {
+  const value = 'NewID("x; | rule: y")\n';
+  const filename = 'a | rule: "source".go';
+  const quote = (text) => JSON.stringify(text).replaceAll("|", "\\u007c");
+  const finding = domainFinding({
+    FromLinter: "domainzero",
+    Pos: { Filename: "use.go", Line: 12, Column: 2 },
+    Text: `return may contain an empty domain.ID in field Reports[0].ID
+  | rule: domainzero.invalid-zero; certainty: known; reason: zero-value
+  | operation: return; value: ${quote(value)}; type: "example.com/domain.ID"; field-path: "Reports[0].ID"
+  | source: a \\| b\\nuses \\\\ representation (${quote(filename)}, line 1, column 1)`,
+  });
+  assert.equal(finding.Value, value);
+  assert.equal(finding.FieldPath, "Reports[0].ID");
+  assert.equal(finding.Provenance[0].Pos.Filename, filename);
+  assert.equal(finding.Provenance[0].Message, "a | b\nuses \\ representation");
+});
+
+test("domain audit rejects invalid metadata without guessing from prose", async () => {
+  for (const text of [
+    "argument may use known invalid zero of domain.ID",
+    `construct domain.ID through NewID
+  | rule: domainconstruct.constructor-bypass; certainty: known; reason: constructor-required
+  | operation: construction; value: "ID(raw)"; type: "example.com/domain.ID"; field-path: ""`,
+    `return produces an empty domain.ID
+  | rule: domainzero.invalid-zero; certainty: not-applicable; reason: zero-value
+  | operation: return; value: "ID(0)"; type: "example.com/domain.ID"; field-path: ""`,
+    `return produces an empty domain.ID
+  | rule: domainzero.invalid-zero; certainty: known; reason: zero-value
+  | operation: return; value: "invalid\\q"; type: "example.com/domain.ID"; field-path: ""`,
+  ]) {
+    assert.equal(
+      domainFinding({ FromLinter: "domainzero", Text: text }),
+      undefined,
+    );
+  }
+});
+
+test("domain audit retains mutation provenance, observations, and imported constants", async (t) => {
+  const { directory, lint, issues, format } = await fixture(t, {
+    domain: true,
+  });
+  await mkdir(join(directory, "value"));
+  await writeFile(
+    join(directory, "value/id.go"),
+    `package value
+
+import "errors"
+
+// ID must be nonempty.
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) (ID, error) {
+  if raw == "" { return "", errors.New("empty ID") }
+  return ID(raw), nil
+}
+
+// Fixed is a reviewed domain constant.
+const Fixed ID = "fixed" //nolint:domainconstruct // This fixed declaration is reviewed explicitly.
+`,
+  );
+  await writeFile(
+    join(directory, "main.go"),
+    `package lintfixture
+
+import "github.com/stolostron/ocm-fleet/lintfixture/value"
+
+type Scanner interface { Scan(...any) error }
+
+func Check(scanner Scanner) (value.ID, error) {
+  var raw string
+  if err := scanner.Scan(&raw); err != nil { return "", err }
+  return value.ID(raw), nil
+}
+
+func Compare(id value.ID) bool { return id == "" }
+func Observe(id value.ID) bool { return id == "fixed" }
+func Copy() value.ID { return value.Fixed }
+`,
+  );
+  await format();
+  await assert.rejects(lint(), { code: 1 });
+  const findings = await issues();
+  assert.equal(findings.length, 3, JSON.stringify(findings));
+  assert.equal(
+    findings.filter((finding) => finding.FromLinter === "domainconstruct")
+      .length,
+    1,
+  );
+  const comparison = findings
+    .map(domainFinding)
+    .filter((finding) => finding?.Rule === "domainzero.zero-comparison");
+  assert.equal(comparison.length, 1);
+  assert.equal(comparison[0].Certainty, "known");
+  assert.equal(comparison[0].Category, "zero-comparison");
+  assert.equal(comparison[0].Reason, "zero-check-on-required-value");
+  assert.equal(comparison[0].Value, "id");
+  const mutation = findings.find(
+    (finding) => domainFinding(finding)?.Reason === "possible-mutation",
+  );
+  assert.ok(mutation, JSON.stringify(findings));
+  const structured = domainFinding(mutation);
+  assert.equal(structured.Category, "possible-zero");
+  assert.equal(structured.Rule, "domainzero.invalid-zero");
+  assert.equal(structured.Certainty, "possible");
+  assert.equal(structured.Operation, "return");
+  assert.equal(structured.Value, "raw");
+  assert.equal(structured.FieldPath, "");
+  assert.equal(
+    structured.Type,
+    "github.com/stolostron/ocm-fleet/lintfixture/value.ID",
+  );
+  for (const kind of ["source", "mutation", "conversion", "use"]) {
+    assert.ok(
+      structured.Provenance.some(
+        (step) => step.Kind === kind && step.Pos.Line > 0,
+      ),
+      kind,
+    );
+  }
+  assert.ok(
+    !findings.some((finding) => finding.Text.includes("(related information)")),
+  );
+
+  const source = await readFile(join(directory, "main.go"), "utf8");
+  await writeFile(
+    join(directory, "main.go"),
+    source
+      .replace("return value.ID(raw), nil", "return value.NewID(raw)")
+      .replace('return id == ""', "return id == value.Fixed"),
+  );
+  await format();
+  await assert.doesNotReject(lint());
+});
+
+test("domain audit separates application and test helpers and writes navigable provenance", async (t) => {
+  const { directory } = await fixture(t);
+  const reportPath = join(directory, ".nx/reports/domainconstruct/server.json");
+  const issue = (filename, text) => ({
+    FromLinter: "domainzero",
+    Text: text,
+    Pos: { Filename: join(directory, filename), Line: 12, Column: 3 },
+  });
+  const text = (
+    message,
+    certainty = "known",
+    reason = "zero-value",
+    rule = "domainzero.invalid-zero",
+  ) => `${message}
+  | rule: ${rule}; certainty: ${certainty}; reason: ${reason}
+  | operation: argument; value: "raw"; type: "example.com/domain.ID"; field-path: ""`;
+  await writeDomainReports({
+    workspace: directory,
+    moduleRoot: "server",
+    reportPath,
+    report: {
+      Issues: [
+        issue(
+          "server/internal/application/service.go",
+          text(
+            "argument may be an empty domain.ID; empty values are invalid",
+            "possible",
+            "possible-mutation",
+          ) +
+            `\n  | source: raw storage starts at zero ("internal/application/service.go", line 4, column 2)\n  | mutation: Scan may write raw (${JSON.stringify(join(directory, "server/internal/application/service.go"))}, line 8, column 2)`,
+        ),
+        issue(
+          "server/internal/application/service_test.go",
+          text("argument is an empty domain.ID; empty values are invalid"),
+        ),
+        issue(
+          "server/internal/domain/queryrepotest/contract.go",
+          text(
+            "zero comparison for domain.ID",
+            "known",
+            "zero-check-on-required-value",
+            "domainzero.zero-comparison",
+          ),
+        ),
+        issue(
+          "server/internal/infrastructure/postgres/testdb.go",
+          text("argument is an empty domain.ID; empty values are invalid"),
+        ),
+        issue(
+          "server/internal/testutil/fixtures.go",
+          text("argument is an empty domain.ID; empty values are invalid"),
+        ),
+      ],
+    },
+  });
+  const main = JSON.parse(
+    await readFile(reportPath.replace(".json", "-main.json"), "utf8"),
+  );
+  const tests = JSON.parse(
+    await readFile(reportPath.replace(".json", "-test.json"), "utf8"),
+  );
+  assert.equal(main.Issues.length, 1);
+  assert.equal(tests.Issues.length, 4);
+  assert.deepEqual(main.Issues[0].Domain.Pos, main.Issues[0].Pos);
+  assert.equal(main.Issues[0].Domain.Provenance[1].Kind, "mutation");
+  assert.equal(
+    main.Issues[0].Domain.Provenance[0].Pos.Filename,
+    join(directory, "server/internal/application/service.go"),
+  );
+  const markdown = await readFile(
+    reportPath.replace(".json", "-main.md"),
+    "utf8",
+  );
+  assert.match(
+    markdown,
+    /\]\(\.\.\/\.\.\/\.\.\/server\/internal\/application\/service\.go\)/,
+  );
+  assert.match(markdown, /line 8/);
+  assert.doesNotMatch(markdown, /service\.go:\d+\)/);
+});
+
+test("domain audit distinguishes valid zeros and checked error payloads across packages", async (t) => {
+  const { directory, lint, issues, format } = await fixture(t, {
+    domain: true,
+  });
+  await mkdir(join(directory, "value"));
+  await writeFile(
+    join(directory, "value/id.go"),
+    `package value
+
+import "errors"
+
+// ID must be nonempty.
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) (ID, error) {
+	if raw == "" { return "", errors.New("empty ID") }
+	return ID(raw), nil
+}
+
+// Total includes zero.
+//domain:constructors NewTotal
+//domain:zero-valid
+type Total int
+
+func NewTotal(raw int) Total { return Total(raw) }
+`,
+  );
+  const source = `package lintfixture
+
+import "github.com/stolostron/ocm-fleet/lintfixture/value"
+
+func Check() value.ID {
+	var id value.ID
+	return id
+}
+
+func Checked(raw string) (value.ID, error) {
+	id, err := value.NewID(raw)
+	if err != nil { return "", err }
+	return id, nil
+}
+
+func Total() value.Total {
+	var total value.Total
+	return total
+}
+`;
+  await writeFile(join(directory, "main.go"), source);
+  await writeFile(
+    join(directory, "main_test.go"),
+    `package lintfixture
+
+import (
+	"testing"
+
+	"github.com/stolostron/ocm-fleet/lintfixture/value"
+)
+
+func TestCheck(t *testing.T) {
+	var id value.ID
+	t.Log(id)
+}
+`,
+  );
+  await format();
+  const audit = () => lint();
+  await assert.rejects(audit(), { code: 1 });
+  const findings = await issues();
+  assert.equal(findings.length, 2, JSON.stringify(findings));
+  for (const finding of findings) {
+    assert.equal(finding.FromLinter, "domainzero");
+    assert.equal(domainFinding(finding).Rule, "domainzero.invalid-zero");
+    assert.equal(
+      domainFinding(finding).Type,
+      "github.com/stolostron/ocm-fleet/lintfixture/value.ID",
+    );
+  }
+
+  await writeFile(
+    join(directory, "main.go"),
+    source
+      .replace("var id value.ID\n\treturn id", 'return value.NewID("valid")')
+      .replace("func Check() value.ID", "func Check() (value.ID, error)"),
+  );
+  await writeFile(
+    join(directory, "main_test.go"),
+    'package lintfixture\n\nimport "testing"\n\nfunc TestCheck(t *testing.T) {\n\tid, err := Check()\n\tif err != nil { t.Fatal(err) }\n\tt.Log(id)\n}\n',
+  );
+  await format();
+  await assert.doesNotReject(audit());
+});
+
+test("domain audit covers zero operations, boxed failures, collections, and generic factories", async (t) => {
+  const { directory, lint, issues, format } = await fixture(t, {
+    domain: true,
+  });
+  await mkdir(join(directory, "value"));
+  await writeFile(
+    join(directory, "value/id.go"),
+    `package value
+
+import "errors"
+
+// ID must be nonempty.
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) (ID, error) {
+  if raw == "" { return "", errors.New("empty ID") }
+  return ID(raw), nil
+}
+
+var ErrMissing = errors.New("missing")
+
+func Terminal(err error) error {
+  if err == nil { return nil }
+  return errors.Join(err)
+}
+
+func Zero[T any]() (value T) { return }
+
+func PointerFailure() (*ID, error) { return new(ID), ErrMissing }
+
+func BoxedFailure() (any, error) {
+  var id ID
+  var payload any = id
+  return payload, ErrMissing
+}
+`,
+  );
+  const valid = `package lintfixture
+
+import "github.com/stolostron/ocm-fleet/lintfixture/value"
+
+func Filled(raw []string) ([]value.ID, error) {
+  ids := make([]value.ID, len(raw))
+  for index, input := range raw {
+    var err error
+    ids[index], err = value.NewID(input)
+    if err != nil { return nil, err }
+  }
+  return ids, nil
+}
+
+func Failure() (value.ID, error) { return "", value.Terminal(value.ErrMissing) }
+
+func Optional() *value.ID { return value.Zero[*value.ID]() }
+`;
+  await writeFile(
+    join(directory, "main.go"),
+    `${valid}
+
+func Generic() value.ID { return value.Zero[value.ID]() }
+
+func Collection() []value.ID { return make([]value.ID, 2) }
+
+func Pointer() *value.ID {
+  id, _ := value.PointerFailure()
+  return id
+}
+
+func Boxed() any {
+  payload, _ := value.BoxedFailure()
+  return payload
+}
+
+func Send(ch chan<- value.ID) {
+  var id value.ID
+  select { case ch <- id: default: }
+}
+
+func Compare(valid value.ID) bool {
+  var id value.ID
+  return id == valid
+}
+`,
+  );
+  await format();
+  const audit = () => lint();
+  await assert.rejects(audit(), { code: 1 });
+  const findings = await issues();
+  assert.equal(findings.length, 6, JSON.stringify(findings));
+  for (const finding of findings) {
+    assert.equal(finding.FromLinter, "domainzero");
+    assert.equal(domainFinding(finding).Rule, "domainzero.invalid-zero");
+    assert.equal(
+      domainFinding(finding).Type,
+      "github.com/stolostron/ocm-fleet/lintfixture/value.ID",
+    );
+  }
+
+  await writeFile(join(directory, "main.go"), valid);
+  await format();
+  await assert.doesNotReject(audit());
 });
 
 test("formatting preserves registration comments and produces lint-clean, stable imports", async (t) => {
@@ -276,7 +826,7 @@ test("reports formatting issues without modifying sources", async (t) => {
 
 // Real modules exercise config paths, formatter checks, exclusions, and exit
 // statuses without third-party dependencies or running the fixture's Go code.
-async function fixture(t, { project = "" } = {}) {
+async function fixture(t, { project = "", domain = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), "ocm-fleet-lint-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const directory = join(root, project);
@@ -294,8 +844,13 @@ async function fixture(t, { project = "" } = {}) {
   );
   return {
     directory,
+    format: () =>
+      run(binary, ["fmt", "--config", configuration, "./..."], {
+        cwd: directory,
+        env: { ...process.env, GOWORK: "off" },
+      }),
     issues: async () => JSON.parse(await readFile(report, "utf8")).Issues ?? [],
-    lint: (env = {}) =>
+    lint: (env = {}, args = []) =>
       run(
         binary,
         [
@@ -304,6 +859,8 @@ async function fixture(t, { project = "" } = {}) {
           configuration,
           "--output.text.path=stdout",
           `--output.json.path=${report}`,
+          ...(domain ? ["--enable-only=domainconstruct,domainzero"] : []),
+          ...args,
           "./...",
         ],
         {

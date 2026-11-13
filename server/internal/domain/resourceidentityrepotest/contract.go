@@ -63,7 +63,7 @@ func Run(t *testing.T, factory Factory) {
 		ctx := context.Background()
 
 		name := domain.ResourceName("clusters/prod")
-		r := domain.NewPlatformResource(name, map[string]string{"env": "prod"}, now)
+		r := domain.NewPlatformResource(name, now, domain.WithPlatformResourceLabels(map[string]string{"env": "prod"}))
 		if err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -93,11 +93,11 @@ func Run(t *testing.T, factory Factory) {
 		ctx := context.Background()
 
 		name := domain.ResourceName("clusters/dup")
-		if err := repo.Create(ctx, domain.NewPlatformResource(name, nil, now)); err != nil {
+		if err := repo.Create(ctx, domain.NewPlatformResource(name, now)); err != nil {
 			t.Fatalf("Create first: %v", err)
 		}
 
-		err := repo.Create(ctx, domain.NewPlatformResource(name, nil, now))
+		err := repo.Create(ctx, domain.NewPlatformResource(name, now))
 		if !errors.Is(err, domain.ErrAlreadyExists) {
 			t.Fatalf("got %v, want ErrAlreadyExists", err)
 		}
@@ -109,13 +109,13 @@ func Run(t *testing.T, factory Factory) {
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
-		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("clusters/a"), nil, now)); err != nil {
+		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("clusters/a"), now)); err != nil {
 			t.Fatalf("Create a: %v", err)
 		}
-		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("clusters/b"), nil, now)); err != nil {
+		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("clusters/b"), now)); err != nil {
 			t.Fatalf("Create b: %v", err)
 		}
-		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("nodes/n1"), nil, now)); err != nil {
+		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("nodes/n1"), now)); err != nil {
 			t.Fatalf("Create n1: %v", err)
 		}
 
@@ -141,7 +141,7 @@ func Run(t *testing.T, factory Factory) {
 		ctx := context.Background()
 
 		name := domain.ResourceName("clusters/labelled")
-		r := domain.NewPlatformResource(name, map[string]string{"a": "1"}, now)
+		r := domain.NewPlatformResource(name, now, domain.WithPlatformResourceLabels(map[string]string{"a": "1"}))
 		if err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -182,7 +182,7 @@ func Run(t *testing.T, factory Factory) {
 		seedExtensionResourceInstance(t, tx, rt1, name, now)
 		seedExtensionResourceInstance(t, tx, rt2, name, now)
 
-		r := domain.NewPlatformResource(name, nil, now)
+		r := domain.NewPlatformResource(name, now)
 		if err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -206,7 +206,7 @@ func Run(t *testing.T, factory Factory) {
 		rt := seedExtensionResourceType(t, tx, "kind.open-cluster-management.io", "v1", now)
 		seedExtensionResourceInstance(t, tx, rt, name, now)
 
-		r := domain.NewPlatformResource(name, nil, now)
+		r := domain.NewPlatformResource(name, now)
 		if err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -244,7 +244,7 @@ func Run(t *testing.T, factory Factory) {
 		rt := seedExtensionResourceType(t, tx, "kind.open-cluster-management.io", "v1", now)
 		erUID := seedExtensionResourceInstance(t, tx, rt, name, now)
 
-		r := domain.NewPlatformResource(name, nil, now)
+		r := domain.NewPlatformResource(name, now)
 		if err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -326,7 +326,7 @@ func Run(t *testing.T, factory Factory) {
 		ctx := context.Background()
 
 		name := domain.ResourceName("clusters/aliased")
-		r := domain.NewPlatformResource(name, nil, now)
+		r := domain.NewPlatformResource(name, now)
 		alias, _ := domain.NewAlias("gcp", "project_id", "my-proj-123")
 		if err := r.AddAlias(alias); err != nil {
 			t.Fatalf("AddAlias: %v", err)
@@ -352,7 +352,7 @@ func Run(t *testing.T, factory Factory) {
 		ctx := context.Background()
 
 		name := domain.ResourceName("clusters/alias-idem")
-		r := domain.NewPlatformResource(name, nil, now)
+		r := domain.NewPlatformResource(name, now)
 		alias, _ := domain.NewAlias("gcp", "project_id", "proj-1")
 		if err := r.AddAlias(alias); err != nil {
 			t.Fatalf("AddAlias: %v", err)
@@ -380,7 +380,7 @@ func Run(t *testing.T, factory Factory) {
 		ctx := context.Background()
 
 		name1 := domain.ResourceName("clusters/ac1")
-		r1 := domain.NewPlatformResource(name1, nil, now)
+		r1 := domain.NewPlatformResource(name1, now)
 		alias, _ := domain.NewAlias("gcp", "project_id", "contested")
 		if err := r1.AddAlias(alias); err != nil {
 			t.Fatalf("AddAlias r1: %v", err)
@@ -390,7 +390,7 @@ func Run(t *testing.T, factory Factory) {
 		}
 
 		name2 := domain.ResourceName("clusters/ac2")
-		r2 := domain.NewPlatformResource(name2, nil, now)
+		r2 := domain.NewPlatformResource(name2, now)
 		if err := r2.AddAlias(alias); err != nil {
 			t.Fatalf("AddAlias r2: %v", err)
 		}
@@ -429,7 +429,7 @@ func Run(t *testing.T, factory Factory) {
 		// platform_owned from the start, with zero contributions, so
 		// withdrawing it must delete the claim outright rather than
 		// merely un-owning it.
-		r := domain.NewPlatformResource(name, nil, now)
+		r := domain.NewPlatformResource(name, now)
 		if err := r.AddAlias(alias); err != nil {
 			t.Fatalf("AddAlias: %v", err)
 		}
@@ -437,13 +437,16 @@ func Run(t *testing.T, factory Factory) {
 			t.Fatalf("Create: %v", err)
 		}
 
-		withdrawn := domain.PlatformResourceFromSnapshot(domain.PlatformResourceSnapshot{
-			Name:      name,
-			Labels:    map[string]string{},
-			CreatedAt: now,
-			UpdatedAt: now.Add(time.Minute),
-		})
-		if err := repo.Update(ctx, withdrawn); err != nil {
+		loaded, err := repo.GetByName(ctx, name)
+		if err != nil {
+			t.Fatalf("GetByName: %v", err)
+		}
+		ref, err := domain.NewAliasRef(alias.Namespace(), alias.Key())
+		if err != nil {
+			t.Fatalf("NewAliasRef: %v", err)
+		}
+		loaded.RemoveAlias(ref)
+		if err := repo.Update(ctx, loaded); err != nil {
 			t.Fatalf("Update (withdraw): %v", err)
 		}
 
@@ -465,15 +468,17 @@ func Run(t *testing.T, factory Factory) {
 		name1 := domain.ResourceName("clusters/rel1")
 		name2 := domain.ResourceName("nodes/rel2")
 
-		r2 := domain.NewPlatformResource(name2, nil, now)
+		r2 := domain.NewPlatformResource(name2, now)
 		if err := repo.Create(ctx, r2); err != nil {
 			t.Fatalf("Create r2: %v", err)
 		}
 
-		r1 := domain.NewPlatformResource(name1, nil, now)
-		_ = r1.AddRelationship(domain.NewResourceRelationship(
-			name1, "runs-on", name2, "kind.open-cluster-management.io", now,
-		))
+		r1 := domain.NewPlatformResource(name1, now)
+		if err := r1.AddRelationship(domain.NewResourceRelationship(
+			name1, mustRelationshipType(t, "runs-on"), name2, "kind.open-cluster-management.io", now,
+		)); err != nil {
+			t.Fatalf("AddRelationship: %v", err)
+		}
 		if err := repo.Create(ctx, r1); err != nil {
 			t.Fatalf("Create r1: %v", err)
 		}
@@ -486,7 +491,7 @@ func Run(t *testing.T, factory Factory) {
 		if len(rels) != 1 {
 			t.Fatalf("relationships len = %d, want 1", len(rels))
 		}
-		if rels[0].Type() != "runs-on" {
+		if rels[0].Type().String() != "runs-on" {
 			t.Errorf("Type = %q, want runs-on", rels[0].Type())
 		}
 		if rels[0].TargetName() != name2 {
@@ -508,14 +513,14 @@ func Run(t *testing.T, factory Factory) {
 
 		target1 := domain.ResourceName("projects/identity-target-1")
 		target2 := domain.ResourceName("projects/identity-target-2")
-		if err := repo.Create(ctx, domain.NewPlatformResource(target1, nil, now)); err != nil {
+		if err := repo.Create(ctx, domain.NewPlatformResource(target1, now)); err != nil {
 			t.Fatalf("Create target1: %v", err)
 		}
-		if err := repo.Create(ctx, domain.NewPlatformResource(target2, nil, now)); err != nil {
+		if err := repo.Create(ctx, domain.NewPlatformResource(target2, now)); err != nil {
 			t.Fatalf("Create target2: %v", err)
 		}
 
-		r := domain.NewPlatformResource(name, map[string]string{"env": "prod"}, now)
+		r := domain.NewPlatformResource(name, now, domain.WithPlatformResourceLabels(map[string]string{"env": "prod"}))
 		projectID, _ := domain.NewAlias("gcp", "project_id", "full-identity-project")
 		clusterID, _ := domain.NewAlias("resource-manager", "cluster_id", "full-identity-cluster")
 		if err := r.AddAlias(projectID); err != nil {
@@ -524,8 +529,12 @@ func Run(t *testing.T, factory Factory) {
 		if err := r.AddAlias(clusterID); err != nil {
 			t.Fatalf("AddAlias cluster_id: %v", err)
 		}
-		_ = r.AddRelationship(domain.NewResourceRelationship(name, "runs-on", target1, "kind.open-cluster-management.io", now))
-		_ = r.AddRelationship(domain.NewResourceRelationship(name, "member-of", target2, "gcp.open-cluster-management.io", now))
+		if err := r.AddRelationship(domain.NewResourceRelationship(name, mustRelationshipType(t, "runs-on"), target1, "kind.open-cluster-management.io", now)); err != nil {
+			t.Fatalf("AddRelationship runs-on: %v", err)
+		}
+		if err := r.AddRelationship(domain.NewResourceRelationship(name, mustRelationshipType(t, "member-of"), target2, "gcp.open-cluster-management.io", now)); err != nil {
+			t.Fatalf("AddRelationship member-of: %v", err)
+		}
 		if err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create source: %v", err)
 		}
@@ -552,17 +561,17 @@ func Run(t *testing.T, factory Factory) {
 		ctx := context.Background()
 
 		// Create a resource in a nested collection: publishers/123/books
-		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("publishers/123/books/les-mis"), nil, now)); err != nil {
+		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("publishers/123/books/les-mis"), now)); err != nil {
 			t.Fatalf("Create book: %v", err)
 		}
 
 		// Create a deeper descendant: publishers/123/books/les-mis/chapters
-		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("publishers/123/books/les-mis/chapters/1"), nil, now)); err != nil {
+		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("publishers/123/books/les-mis/chapters/1"), now)); err != nil {
 			t.Fatalf("Create chapter: %v", err)
 		}
 
 		// Create a resource in a sibling collection: publishers/123/magazines
-		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("publishers/123/magazines/vogue"), nil, now)); err != nil {
+		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("publishers/123/magazines/vogue"), now)); err != nil {
 			t.Fatalf("Create magazine: %v", err)
 		}
 
@@ -587,12 +596,12 @@ func Run(t *testing.T, factory Factory) {
 		ctx := context.Background()
 
 		// Parent resource: publishers/123
-		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("publishers/123"), nil, now)); err != nil {
+		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("publishers/123"), now)); err != nil {
 			t.Fatalf("Create publisher: %v", err)
 		}
 
 		// Child resource in a sub-collection: publishers/123/books/les-mis
-		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("publishers/123/books/les-mis"), nil, now)); err != nil {
+		if err := repo.Create(ctx, domain.NewPlatformResource(domain.ResourceName("publishers/123/books/les-mis"), now)); err != nil {
 			t.Fatalf("Create book: %v", err)
 		}
 
@@ -617,7 +626,7 @@ func Run(t *testing.T, factory Factory) {
 		ctx := context.Background()
 
 		name := domain.ResourceName("publishers/123/books/les-mis")
-		r := domain.NewPlatformResource(name, map[string]string{"genre": "fiction"}, now)
+		r := domain.NewPlatformResource(name, now, domain.WithPlatformResourceLabels(map[string]string{"genre": "fiction"}))
 		if err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -640,8 +649,8 @@ func Run(t *testing.T, factory Factory) {
 		repo := tx.ResourceIdentities()
 		ctx := context.Background()
 
-		r1 := domain.NewPlatformResource(domain.ResourceName("clusters/alpha"), nil, now)
-		r2 := domain.NewPlatformResource(domain.ResourceName("clusters/beta"), nil, now)
+		r1 := domain.NewPlatformResource(domain.ResourceName("clusters/alpha"), now)
+		r2 := domain.NewPlatformResource(domain.ResourceName("clusters/beta"), now)
 
 		if err := repo.Create(ctx, r1); err != nil {
 			t.Fatalf("Create alpha: %v", err)
@@ -685,7 +694,7 @@ func runResolveAliasesBatchTests(t *testing.T, factory Factory, now time.Time) {
 			ctx := context.Background()
 
 			name1 := domain.ResourceName("clusters/rab1")
-			r1 := domain.NewPlatformResource(name1, nil, now)
+			r1 := domain.NewPlatformResource(name1, now)
 			alias1, _ := domain.NewAlias("gcp", "project_id", "proj-rab-1")
 			if err := r1.AddAlias(alias1); err != nil {
 				t.Fatalf("AddAlias r1: %v", err)
@@ -695,7 +704,7 @@ func runResolveAliasesBatchTests(t *testing.T, factory Factory, now time.Time) {
 			}
 
 			name2 := domain.ResourceName("clusters/rab2")
-			r2 := domain.NewPlatformResource(name2, nil, now)
+			r2 := domain.NewPlatformResource(name2, now)
 			alias2, _ := domain.NewAlias("aws", "account_id", "acct-rab-2")
 			if err := r2.AddAlias(alias2); err != nil {
 				t.Fatalf("AddAlias r2: %v", err)
@@ -747,4 +756,13 @@ func runResolveAliasesBatchTests(t *testing.T, factory Factory, now time.Time) {
 			}
 		})
 	})
+}
+
+func mustRelationshipType(t *testing.T, raw string) domain.RelationshipType {
+	t.Helper()
+	relType, err := domain.NewRelationshipType(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return relType
 }

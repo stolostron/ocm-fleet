@@ -18,6 +18,7 @@
     "lint": {
       "inputs": ["goSource", "^default", "goLintConfig"]
     },
+    "lint:domain": {},
     "build": {
       "executor": "nx:run-commands",
       "options": {

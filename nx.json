@@ -197,7 +197,7 @@
         "executor": "nx:run-commands",
         "dependsOn": ["fmt"],
         "options": {
-          "command": "npx nx run {projectName}:check",
+          "command": "npx nx run-many --targets=check --projects={projectName}",
           "forwardAllArgs": false,
           "env": {
             "NX_DAEMON": "false"
@@ -223,7 +223,7 @@
         "options": {
           "commands": [
             "npx nx run {projectName}:fix:lint",
-            "npx nx run {projectName}:check"
+            "npx nx run-many --targets=check --projects={projectName}"
           ],
           "parallel": false,
           "forwardAllArgs": false,
@@ -344,6 +344,27 @@
         "outputs": []
       }
     ],
+    "lint:domain": {
+      "metadata": {
+        "description": "Audit construction and zero-value use for annotated Go domain types."
+      },
+      "executor": "nx:run-commands",
+      "dependsOn": [
+        {
+          "projects": ["ocm-fleet"],
+          "target": "lint:go:config"
+        }
+      ],
+      "options": {
+        "command": "node \"$NX_WORKSPACE_ROOT/tools/domain-audit.mjs\" \"{projectName}\" \"{projectRoot}\"",
+        "forwardAllArgs": false,
+        "cwd": "{projectRoot}",
+        "env": {
+          "GOWORK": "off"
+        }
+      },
+      "cache": false
+    },
     "lint:format": [
       {
         "filter": {
