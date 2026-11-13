@@ -10,7 +10,8 @@ import (
 	"github.com/stolostron/ocm-fleet/tools/golangci-lint/diagnostic"
 )
 
-// Reasons describe evidence, not English fragments used to classify output.
+// zeroReason identifies the zero source or missing validity contract. Certainty
+// and provenance describe how branches and unknown effects affect that evidence.
 type zeroReason string
 
 const (
@@ -22,9 +23,7 @@ const (
 	reasonUncheckedLookup   zeroReason = "unchecked-map-lookup"
 	reasonUncheckedReceive  zeroReason = "unchecked-receive"
 	reasonUncheckedAssert   zeroReason = "unchecked-assertion"
-	reasonMutation          zeroReason = "possible-mutation"
-	reasonBranch            zeroReason = "branch-may-be-zero"
-	reasonUninitialized     zeroReason = "uninitialized-element"
+	reasonZeroStorage       zeroReason = "zero-initialized-storage"
 	reasonCleared           zeroReason = "cleared-element"
 )
 
@@ -51,12 +50,8 @@ func (reason zeroReason) description() string {
 		return "channel receive may return zero when the channel is closed; check ok"
 	case reasonUncheckedAssert:
 		return "type assertion may return zero when it fails; check ok"
-	case reasonMutation:
-		return "a call may leave or introduce zero"
-	case reasonBranch:
-		return "a control-flow alternative may supply zero"
-	case reasonUninitialized:
-		return "collection element starts at zero and has not been initialized"
+	case reasonZeroStorage:
+		return "storage starts at zero; nonzero initialization has not been established"
 	case reasonCleared:
 		return "clear sets collection elements to zero"
 	}

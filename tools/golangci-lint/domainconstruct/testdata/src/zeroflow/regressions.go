@@ -285,7 +285,7 @@ func CallbackInitializes(invoke func(*callbackSpec)) {
 	var captured Request
 	spec := &callbackSpec{start: func(request Request) { captured = request }}
 	invoke(spec)
-	Accept(captured.ID) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: possible-mutation.*type: \"zeroflow[.]ID\""
+	Accept(captured.ID) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\""
 }
 
 func UnusedCallbackDoesNotInitialize() {

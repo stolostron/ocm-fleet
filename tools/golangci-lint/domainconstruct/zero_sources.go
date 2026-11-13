@@ -82,7 +82,7 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 				break
 			}
 		}
-		return alternatives.problem(reasonBranch).step("branch", call.Pos(), "generic helper selects an alternative result")
+		return alternatives.problem().step("branch", call.Pos(), "generic helper selects an alternative result")
 	case sourceConversion:
 		if len(source.Values) != 0 {
 			return c.sourceProblem(source.Values[0], call, result, path, t, point, context, seen).
@@ -187,7 +187,7 @@ func (c *zeroChecker) pointeeSourceProblem(source valueSource, call *ssa.Call, r
 				break
 			}
 		}
-		return alternatives.problem(reasonBranch).step("branch", call.Pos(), "generic helper selects an alternative result")
+		return alternatives.problem().step("branch", call.Pos(), "generic helper selects an alternative result")
 	}
 	return nil
 }

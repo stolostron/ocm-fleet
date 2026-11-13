@@ -8,14 +8,14 @@ type StringScanner interface{ Scan(...any) error }
 func MutationIntoRaw(scan func(*string)) {
 	var raw string
 	scan(&raw)
-	Accept(ID(raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: possible-mutation.*type: \"zeroflow[.]ID\""
+	Accept(ID(raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\""
 }
 
 func MutationThroughAlias(scan func(*string)) {
 	var raw string
 	alias := &raw
 	scan(alias)
-	AcceptRequest(Request{ID: ID(raw)}) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: possible-mutation.*type: \"zeroflow[.]ID\"; field-path: \"ID\""
+	AcceptRequest(Request{ID: ID(raw)}) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\"; field-path: \"ID\""
 }
 
 func MutationThroughVariadic(scanner StringScanner) error {
@@ -24,7 +24,7 @@ func MutationThroughVariadic(scanner StringScanner) error {
 		return err
 	}
 	request := Request{ID: ID(raw)}
-	AcceptRequest(request) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: possible-mutation.*type: \"zeroflow[.]ID\"; field-path: \"ID\""
+	AcceptRequest(request) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\"; field-path: \"ID\""
 	return nil
 }
 
@@ -35,7 +35,7 @@ func MutationThroughAppendedDestinations(scanner StringScanner) error {
 	if err := scanner.Scan(args...); err != nil {
 		return err
 	}
-	Accept(ID(raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: possible-mutation.*type: \"zeroflow[.]ID\""
+	Accept(ID(raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\""
 	return nil
 }
 
@@ -43,7 +43,7 @@ func MutationThroughField(invoke func(any)) {
 	var raw string
 	input := struct{ Destination *string }{Destination: &raw}
 	invoke(input)
-	Accept(ID(raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: possible-mutation.*type: \"zeroflow[.]ID\""
+	Accept(ID(raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\""
 }
 
 func KnownZeroAfterUnrelatedMutation(invoke func(*string)) {
@@ -158,7 +158,7 @@ func conditionallyAssign(raw *string, condition bool) {
 func ConditionalHelperMayLeaveZero(condition bool) {
 	var raw string
 	conditionallyAssign(&raw, condition)
-	Accept(ID(raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: possible-mutation.*type: \"zeroflow[.]ID\""
+	Accept(ID(raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\""
 }
 
 func ImportedMutationContracts() {
@@ -196,19 +196,19 @@ func GenericPrimitiveConversion(raw string) {
 func GenericMutationConversion(scan func(*string)) {
 	var raw string
 	scan(&raw)
-	Accept(flowhelpers.Convert[ID](raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: possible-mutation.*type: \"zeroflow[.]ID\""
+	Accept(flowhelpers.Convert[ID](raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\""
 }
 
 func MutatedZeroElements(mutate func([]ID)) {
 	ids := make([]ID, 2)
-	mutate(ids) // want "(?s)rule: domainzero[.]invalid-zero; certainty: known.*type: \"zeroflow[.]ID\""
-	AcceptIDs(ids) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: possible-mutation.*type: \"zeroflow[.]ID\""
+	mutate(ids)    // want "(?s)rule: domainzero[.]invalid-zero; certainty: known.*type: \"zeroflow[.]ID\""
+	AcceptIDs(ids) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\""
 }
 
 func MutatedZeroElementPointer(mutate func(*ID)) {
 	ids := make([]ID, 2)
-	mutate(&ids[1]) // want "(?s)rule: domainzero[.]invalid-zero; certainty: known.*type: \"zeroflow[.]ID\""
-	AcceptIDs(ids[1:]) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: possible-mutation.*type: \"zeroflow[.]ID\""
+	mutate(&ids[1])    // want "(?s)rule: domainzero[.]invalid-zero; certainty: known.*type: \"zeroflow[.]ID\""
+	AcceptIDs(ids[1:]) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\""
 	AcceptIDs(ids[:1]) // want "(?s)rule: domainzero[.]invalid-zero; certainty: known.*type: \"zeroflow[.]ID\""
 }
 
@@ -222,9 +222,9 @@ func MutatedOtherRange(mutate func([]ID), valid ID) {
 func ArrayCopyBeforeMutation(mutate func([]ID)) {
 	ids := [1]ID{}
 	copy := ids
-	mutate(ids[:]) // want "(?s)rule: domainzero[.]invalid-zero; certainty: known.*type: \"zeroflow[.]ID\""
+	mutate(ids[:])  // want "(?s)rule: domainzero[.]invalid-zero; certainty: known.*type: \"zeroflow[.]ID\""
 	AcceptAny(copy) // want "(?s)rule: domainzero[.]invalid-zero; certainty: known.*type: \"zeroflow[.]ID\""
-	AcceptAny(ids) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: possible-mutation.*type: \"zeroflow[.]ID\""
+	AcceptAny(ids)  // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: zero-value.*type: \"zeroflow[.]ID\""
 }
 
 func ConditionalArrayZero(valid ID, condition bool) {
@@ -233,4 +233,33 @@ func ConditionalArrayZero(valid ID, condition bool) {
 		ids[0] = valid
 	}
 	AcceptAny(ids) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible.*type: \"zeroflow[.]ID\""
+}
+
+func UnknownMutationPreservesValidDomain(mutate func(*ID), id ID) {
+	mutate(&id)
+	Accept(id)
+}
+
+func UnknownMutationPreservesValidCollection(mutate func([]ID), valid ID) {
+	ids := []ID{valid}
+	mutate(ids)
+	AcceptIDs(ids)
+}
+
+func MutationPreservesRawInputSource(mutate func(*string), raw string) {
+	mutate(&raw)
+	Accept(ID(raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: input-may-be-zero"
+}
+
+func UnknownMutationOfRawStorage(mutate func(*string)) {
+	raw := "nonempty"
+	mutate(&raw)
+	Accept(ID(raw)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: input-may-be-zero"
+}
+
+func MutationPreservesClearedSource(mutate func([]ID), valid ID) {
+	ids := []ID{valid}
+	clear(ids)
+	mutate(ids)    // want "(?s)rule: domainzero[.]invalid-zero; certainty: known; reason: cleared-element"
+	AcceptIDs(ids) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible; reason: cleared-element"
 }

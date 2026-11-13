@@ -112,7 +112,7 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 				break
 			}
 		}
-		return alternatives.problem(reasonBranch).step("branch", value.Pos(), "merge values from incoming branches")
+		return alternatives.problem().step("branch", value.Pos(), "merge values from incoming branches")
 	case *ssa.ChangeType:
 		return c.problem(value.X, path, t, point, context, seen)
 	case *ssa.Convert:
@@ -329,7 +329,8 @@ func (c *zeroChecker) failedResultProblem(t types.Type, reason zeroReason, seen 
 
 func (c *zeroChecker) conditionalProblem(t types.Type, reason zeroReason) *zeroProblem {
 	if problem := c.zeroType(t, ""); problem != nil {
-		return problem.uncertain(reason)
+		problem.reason, problem.possible = reason, true
+		return problem
 	}
 	return nil
 }
@@ -381,7 +382,11 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 			case *ssa.Call, *ssa.Extract:
 				return nil // Opaque pointer factories carry their declared contract.
 			}
-			return c.zeroType(t, "").withValue(projectedName(location.root, location.path)).
+			problem := c.zeroType(t, "")
+			if problem != nil {
+				problem.reason = reasonZeroStorage
+			}
+			return problem.withValue(projectedName(location.root, location.path)).
 				step("source", allocation.Pos(), "storage "+projectedName(location.root, location.path)+" starts at zero")
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
@@ -423,10 +428,9 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 				}
 				prior := c.memoryAtProblem(location, t, before, use, context, values, seen)
 				if prior == nil && !storageHasDomainContract(location, t) {
-					prior = c.zeroType(t, "").step("source", location.root.Pos(), "raw storage "+projectedName(location.root, location.path)+" has no domain construction contract")
+					prior = c.conditionalProblem(t, reasonInputMayBeZero).step("source", location.root.Pos(), "raw storage "+projectedName(location.root, location.path)+" has no domain construction contract")
 				}
-				return prior.uncertain(reasonMutation).
-					step("mutation", pos, callName(call.Common())+" may write "+projectedName(location.root, location.path))
+				return prior.afterUnknownMutation(pos, callName(call.Common()), projectedName(location.root, location.path))
 			}
 		}
 	}
@@ -441,7 +445,7 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 			break
 		}
 	}
-	return alternatives.problem(reasonBranch)
+	return alternatives.problem()
 }
 
 func mutationPosition(call ssa.CallInstruction, point flowPoint) token.Pos {

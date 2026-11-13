@@ -9,7 +9,7 @@ import (
 func TestZeroAlternativesStableResult(t *testing.T) {
 	known := &zeroProblem{name: "ID", path: "Name", reason: reasonZeroValue,
 		provenance: []zeroStep{{kind: "source", pos: token.Pos(1), detail: "first source"}}}
-	possible := known.uncertain(reasonMutation)
+	possible := known.uncertain()
 	otherType := &zeroProblem{name: "Ref", path: "Name", reason: reasonZeroValue}
 	otherField := &zeroProblem{name: "ID", path: "Other", reason: reasonZeroValue}
 	cases := []struct {
@@ -39,13 +39,13 @@ func TestZeroAlternativesStableResult(t *testing.T) {
 			if !stable {
 				return
 			}
-			want := alternatives.problem(reasonBranch)
+			want := alternatives.problem()
 			// Every possible suffix must preserve certainty, the selected problem,
 			// its reason and its provenance once the result is stable.
 			for _, suffix := range []*zeroProblem{nil, known, possible, otherType, otherField} {
 				extended := alternatives
 				extended.add(suffix)
-				if got := extended.problem(reasonBranch); !reflect.DeepEqual(got, want) {
+				if got := extended.problem(); !reflect.DeepEqual(got, want) {
 					t.Errorf("another path changed the stable result: got %#v, want %#v", got, want)
 				}
 			}

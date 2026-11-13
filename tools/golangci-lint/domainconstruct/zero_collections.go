@@ -170,7 +170,7 @@ func (c *zeroChecker) elementAtProblem(value, index ssa.Value, projection []int,
 				}
 			}
 		}
-		return alternatives.problem(reasonBranch)
+		return alternatives.problem()
 	}
 	return c.problem(value, nil, value.Type(), use, context, seen)
 }
@@ -284,7 +284,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 	for index := point.index - 1; index >= 0; index-- {
 		instruction := point.block.Instrs[index]
 		if allocation, ok := instruction.(ssa.Value); ok && allocation == view.storage.root {
-			return c.unfilledCollection(view, covered, reasonUninitialized).
+			return c.unfilledCollection(view, covered, reasonZeroStorage).
 				step("source", allocation.Pos(), "collection contains zero-initialized elements")
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
@@ -326,7 +326,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 				case "clear":
 					if destination, ok := c.collectionOf(common.Args[0]); ok && sameStorage(destination.storage, view.storage) && rangesOverlap(destination.start, destination.end, view.start, view.end) {
 						if problem := c.unfilledCollection(intersectView(view, destination.start, destination.end), covered, reasonCleared); problem != nil {
-							return problem
+							return problem.step("source", instruction.Pos(), "clear sets collection elements to zero")
 						}
 					}
 				case "copy":
@@ -360,8 +360,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 					}
 					if c.collectionMutation(common, remaining, before) != mutationReadOnly {
 						return c.collectionAtProblem(view, before, use, context, values, covered, seen).
-							uncertain(reasonMutation).
-							step("mutation", mutationPosition(call, before), callName(common)+" may write collection elements")
+							afterUnknownMutation(mutationPosition(call, before), callName(common), "collection elements")
 					}
 				}
 			}
@@ -386,7 +385,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 			break
 		}
 	}
-	return alternatives.problem(reasonBranch)
+	return alternatives.problem()
 }
 
 func uncoveredViews(view collectionView, covered []elementRange) []collectionView {

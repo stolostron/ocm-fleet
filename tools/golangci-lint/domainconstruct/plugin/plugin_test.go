@@ -23,7 +23,7 @@ func TestRelatedInformationStaysWithFinding(t *testing.T) {
 	found := false
 	for _, result := range results {
 		for _, diagnostic := range result.Diagnostics {
-			if !strings.Contains(diagnostic.Message, "reason: possible-mutation") {
+			if !strings.Contains(diagnostic.Message, "\n  | mutation: ") {
 				continue
 			}
 			found = true
