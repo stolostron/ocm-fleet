@@ -30,7 +30,7 @@ type Finding struct {
 	Value      string // Source expression, when known; never an SSA temporary name.
 	Type       string // Full Go type identity, including the package import path.
 	FieldPath  string // Affected field within the consumed value; empty at its root.
-	Reason     string
+	Reason     string // Source or contract behind the violation, independent of certainty.
 	Pos        token.Pos
 	Message    string
 	Provenance []Step // Ordered evidence, including the final use when applicable.

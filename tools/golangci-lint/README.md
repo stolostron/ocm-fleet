@@ -1,11 +1,11 @@
 # Go lint tooling
 
 We build golangci-lint in this isolated Go module to host custom domain and
-architecture analyzers alongside the stock linters. The opt-in domain audit runs
-`domainconstruct` and `domainzero` for explicitly annotated domain types. Shared
-linting and normal verification explicitly disable them while their existing
-findings are migrated. Broader domain field-access checks remain
-follow-up work in the contributor effectiveness epic.
+architecture analyzers alongside the stock linters. The domain audit runs
+`domainconstruct`, `domainzero`, and `domainserialization` for explicitly
+annotated domain types. The shared configuration controls their participation
+in normal linting, verification, and editor diagnostics. Broader domain
+field-access checks remain follow-up work in the contributor effectiveness epic.
 
 ## VS Code diagnostics
 
@@ -61,12 +61,11 @@ ordered provenance. The [diagnostic format](#diagnostic-format) keeps these fiel
 independent of the English message.
 The target builds the tool and checks its configuration first. It includes test
 files and honors the shared generated-file policy. It selects `domainconstruct`,
-`domainzero`, and `domainserialization` with
-`--enable-only`, overriding their temporary disablement in the shared config.
-Normal `lint`, `check`, `verify`, and VS Code diagnostics use the stock linters and
-formatting checks. Configured module plugins belong to golangci-lint's `standard`
-group, so the shared config must explicitly disable them; removing an `enable`
-entry alone leaves them active.
+`domainzero`, and `domainserialization` with `--enable-only`, independently of
+their enablement in the shared config. Normal `lint`, `check`, `verify`, and
+VS Code diagnostics follow that shared configuration. Configured module plugins
+belong to golangci-lint's `standard` group; disabling them requires an explicit
+`disable` entry, because removing an `enable` entry alone leaves them active.
 
 Opt a type into construction checks in its declaration's doc comment:
 
@@ -260,7 +259,7 @@ The audit decodes these explicit fields rather than classifying English text:
 | `Value`             | Source expression when known, such as `s.Name`.                                                                                         |
 | `Type`              | Full identity of the affected domain type.                                                                                              |
 | `FieldPath`         | Affected field within the consumed value, such as `Reports[0].ID`; empty for a scalar result.                                           |
-| `Reason`            | Stable evidence code, independent of wording.                                                                                           |
+| `Reason`            | Stable source or contract code, independent of certainty and wording.                                                                   |
 | `Pos`, `Provenance` | Primary location and ordered steps with stable kinds, locations, and explanations.                                                      |
 
 Certainty applies to the reported rule across all three analyzers. Constructor bypasses,
@@ -272,10 +271,29 @@ permits zero.
 `input-may-be-zero` means an unvalidated input or raw result can contain zero;
 giving it a domain type through conversion does not establish otherwise. Other
 reasons distinguish `zero-value`, `source-permits-zero`,
-`conversion-may-produce-zero`, `possible-mutation`, `branch-may-be-zero`,
-`unchecked-error`, unchecked map/receive/assertion results, and uninitialized or
-cleared elements. The source expression and result field path are separate:
+`conversion-may-produce-zero`, `unchecked-error`, unchecked map/receive/assertion
+results, `zero-initialized-storage`, and `cleared-element`.
+The source expression and result field path are separate:
 `s.Name` can produce a scalar ID whose field path is empty.
+
+Uncertainty preserves the reason for the zero concern. A branch or unknown
+mutation can change certainty from `known` to `possible`; it does not replace
+the source reason. Mutation provenance states what may change and which
+guarantee remains unproven. For example:
+
+```text
+argument may contain an empty domain.ResourceName in field [0]; empty values are invalid
+  | rule: domainzero.invalid-zero; certainty: possible; reason: zero-initialized-storage
+  | operation: argument; value: "names"; type: "github.com/stolostron/ocm-fleet/server/internal/domain.ResourceName"; field-path: "[0]"
+  | source: collection contains zero-initialized elements ("service.go", line 20, column 15)
+  | mutation: ReplaceBatch may modify collection elements; nonzero initialization afterward is unproven ("service.go", line 25, column 2)
+  | use: argument ("service.go", line 26, column 12)
+```
+
+This means the call may have initialized the elements, but the checker cannot
+establish that it did. Unknown mutation alone does not create a zero concern
+for a trusted domain value or an initialized collection. Raw output storage
+still lacks that domain contract, and proven zero writes remain evidence of zero.
 
 For `domainzero` value-use findings at calls, the primary position identifies the
 source argument or receiver, including individual arguments packed into a
@@ -402,11 +420,12 @@ broader backing range than the program uses. Unknown interface payloads and
 unsupported helper bodies can lose provenance; absence of a finding is not a
 validity proof. A call that can reach a local through an output pointer, boxed
 interface, stored callback, or pointers packaged in array/slice arguments changes
-a previous known zero into a possible zero, retaining its provenance. This is
-general mutation tracking, including unrecognized output APIs; it does not prove
-a callback ran or initialized the value. Recognized decoding boundaries add the
-checked native-root initialization contract described above. Small body summaries establish read-only use or a
-definite scalar write and are shared across packages. Unsupported bodies remain
+a previous known zero into a possible zero, retaining its source reason and
+provenance. This is general mutation tracking, including unrecognized output
+APIs; it does not prove a callback ran or initialized the value. Recognized
+decoding boundaries add the checked native-root initialization contract
+described above. Small body summaries establish read-only use or a definite
+scalar write and are shared across packages. Unsupported bodies remain
 possible mutations; the checker does not recursively analyze a whole call graph.
 Compiler-generated iterator yields have a bounded local summary for paired
 returns and initialization proved by a checked flag; ordinary callbacks do not

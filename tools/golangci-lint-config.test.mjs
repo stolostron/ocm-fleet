@@ -38,7 +38,7 @@ test("accepts formatted Go code with checked errors", async (t) => {
   await assert.doesNotReject(lint());
 });
 
-test("domain checks remain opt-in while the shared lint backlog is being migrated", async (t) => {
+test("domain checks can be explicitly disabled or selected for a focused audit", async (t) => {
   const { directory, lint, issues, format } = await fixture(t);
   await writeFile(
     join(directory, "main.go"),
@@ -54,7 +54,9 @@ func Missing() ID { var id ID; return id }
 `,
   );
   await format();
-  await assert.doesNotReject(lint());
+  await assert.doesNotReject(
+    lint({}, ["--disable=domainconstruct,domainzero,domainserialization"]),
+  );
   await assert.rejects(
     lint({}, ["--enable-only=domainconstruct,domainzero,domainserialization"]),
     {
@@ -308,13 +310,14 @@ func Copy() value.ID { return value.Fixed }
   assert.equal(comparison[0].Reason, "zero-check-on-required-value");
   assert.equal(comparison[0].Value, "id");
   const mutation = findings.find(
-    (finding) => domainFinding(finding)?.Reason === "possible-mutation",
+    (finding) => domainFinding(finding)?.Rule === "domainzero.invalid-zero",
   );
   assert.ok(mutation, JSON.stringify(findings));
   const structured = domainFinding(mutation);
   assert.equal(structured.Category, "possible-zero");
   assert.equal(structured.Rule, "domainzero.invalid-zero");
   assert.equal(structured.Certainty, "possible");
+  assert.equal(structured.Reason, "zero-initialized-storage");
   assert.equal(structured.Operation, "return");
   assert.equal(structured.Value, "raw");
   assert.equal(structured.FieldPath, "");
@@ -330,6 +333,10 @@ func Copy() value.ID { return value.Fixed }
       kind,
     );
   }
+  assert.equal(
+    structured.Provenance.find((step) => step.Kind === "mutation").Message,
+    "Scan may modify raw; nonzero initialization afterward is unproven",
+  );
   assert.ok(
     !findings.some((finding) => finding.Text.includes("(related information)")),
   );
@@ -372,9 +379,9 @@ test("domain audit separates application and test helpers and writes navigable p
           text(
             "argument may be an empty domain.ID; empty values are invalid",
             "possible",
-            "possible-mutation",
+            "zero-initialized-storage",
           ) +
-            `\n  | source: raw storage starts at zero ("internal/application/service.go", line 4, column 2)\n  | mutation: Scan may write raw (${JSON.stringify(join(directory, "server/internal/application/service.go"))}, line 8, column 2)`,
+            `\n  | source: raw storage starts at zero ("internal/application/service.go", line 4, column 2)\n  | mutation: Scan may modify raw; nonzero initialization afterward is unproven (${JSON.stringify(join(directory, "server/internal/application/service.go"))}, line 8, column 2)`,
         ),
         issue(
           "server/internal/application/service_test.go",

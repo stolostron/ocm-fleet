@@ -44,7 +44,7 @@ type zeroProblem struct {
 	typ        types.Type
 	value      string
 	path       string
-	reason     zeroReason
+	reason     zeroReason // Zero source or missing validity contract, independent of certainty.
 	possible   bool
 	provenance []zeroStep
 }
@@ -81,9 +81,9 @@ func (alternatives *zeroAlternatives) add(problem *zeroProblem) bool {
 	return alternatives.possible || alternatives.zeros != alternatives.paths
 }
 
-func (alternatives zeroAlternatives) problem(reason zeroReason) *zeroProblem {
+func (alternatives zeroAlternatives) problem() *zeroProblem {
 	if alternatives.possible || alternatives.zeros != alternatives.paths {
-		return alternatives.first.uncertain(reason)
+		return alternatives.first.uncertain()
 	}
 	return alternatives.first
 }
@@ -309,16 +309,25 @@ func (problem *zeroProblem) step(kind string, pos token.Pos, detail string) *zer
 	return &copy
 }
 
-func (problem *zeroProblem) uncertain(reason zeroReason) *zeroProblem {
+// uncertain changes confidence at the use without replacing the zero source.
+// Branches and unknown effects explain uncertainty through provenance.
+func (problem *zeroProblem) uncertain() *zeroProblem {
 	if problem == nil {
 		return nil
 	}
 	copy := *problem
-	if !copy.possible {
-		copy.reason = reason
-	}
 	copy.possible = true
 	return &copy
+}
+
+// afterUnknownMutation preserves an existing zero concern. The call may
+// initialize the value, but unknown effects cannot establish that guarantee.
+func (problem *zeroProblem) afterUnknownMutation(pos token.Pos, operation, target string) *zeroProblem {
+	if problem == nil {
+		return nil
+	}
+	return problem.uncertain().step("mutation", pos,
+		operation+" may modify "+target+"; nonzero initialization afterward is unproven")
 }
 
 func (c *zeroChecker) zeroType(t types.Type, path string) *zeroProblem {

@@ -14,10 +14,39 @@ func TestZeroFlow(t *testing.T) {
 	results := analysistest.Run(t, analysistest.TestData(), domainconstruct.ZeroAnalyzer,
 		"zeroflow", "zeroclient", "zeromutator")
 	expectations := map[string]struct {
-		source string
-		steps  []string
+		source   string
+		reason   string
+		mutation string
+		origin   string
+		steps    []string
 	}{
-		"MutationThroughVariadic":       {steps: []string{"source", "mutation", "conversion", "assignment", "use"}},
+		"MutationThroughVariadic": {
+			reason:   "zero-initialized-storage",
+			mutation: "Scan may modify raw; nonzero initialization afterward is unproven",
+			steps:    []string{"source", "mutation", "conversion", "assignment", "use"},
+		},
+		"MutatedZeroElements": {
+			reason:   "zero-initialized-storage",
+			mutation: "mutate may modify collection elements; nonzero initialization afterward is unproven",
+			steps:    []string{"source", "mutation", "use"},
+		},
+		"MutationPreservesRawInputSource": {
+			reason:   "input-may-be-zero",
+			mutation: "mutate may modify raw; nonzero initialization afterward is unproven",
+			steps:    []string{"source", "mutation", "conversion", "use"},
+		},
+		"UnknownMutationOfRawStorage": {
+			reason:   "input-may-be-zero",
+			origin:   "raw storage raw has no domain construction contract",
+			mutation: "mutate may modify raw; nonzero initialization afterward is unproven",
+			steps:    []string{"source", "mutation", "conversion", "use"},
+		},
+		"MutationPreservesClearedSource": {
+			reason:   "cleared-element",
+			origin:   "clear sets collection elements to zero",
+			mutation: "mutate may modify collection elements; nonzero initialization afterward is unproven",
+			steps:    []string{"source", "mutation", "use"},
+		},
 		"PrimitiveFieldMayBeZero":       {source: "input.Raw", steps: []string{"source", "conversion", "use"}},
 		"NestedPrimitiveFieldMayBeZero": {source: "input.Metadata.Name", steps: []string{"source", "conversion", "use"}},
 		"RawReceiverFieldMayBeZero":     {source: "s.Name", steps: []string{"source", "conversion", "use"}},
@@ -42,7 +71,8 @@ func TestZeroFlow(t *testing.T) {
 				}
 				found := false
 				for _, diagnostic := range result.Diagnostics {
-					if diagnostic.Pos < function.Pos() || diagnostic.Pos > function.End() {
+					if diagnostic.Pos < function.Pos() || diagnostic.Pos > function.End() ||
+						!strings.Contains(diagnostic.Message, "; certainty: possible;") {
 						continue
 					}
 					found = true
@@ -60,8 +90,22 @@ func TestZeroFlow(t *testing.T) {
 					if diagnostic.Category != "domainzero.invalid-zero" {
 						t.Errorf("%s category = %q, want domainzero.invalid-zero", function.Name.Name, diagnostic.Category)
 					}
-					if !strings.Contains(diagnostic.Message, "certainty: possible") {
-						t.Errorf("%s must retain possible certainty: %s", function.Name.Name, diagnostic.Message)
+					if want.reason != "" && !strings.Contains(diagnostic.Message, "; reason: "+want.reason+"\n") {
+						t.Errorf("%s lost its source reason %s: %s", function.Name.Name, want.reason, diagnostic.Message)
+					}
+					for kind, detail := range map[string]string{"mutation": want.mutation, "source": want.origin} {
+						if detail == "" {
+							continue
+						}
+						present := false
+						for _, related := range diagnostic.Related {
+							if related.Message == kind+": "+detail && related.Pos.IsValid() {
+								present = true
+							}
+						}
+						if !present {
+							t.Errorf("%s diagnostic has no %s record %q", function.Name.Name, kind, detail)
+						}
 					}
 					for _, kind := range want.steps {
 						present := false
