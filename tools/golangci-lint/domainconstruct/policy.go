@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 	"strings"
 )
 
@@ -18,6 +19,13 @@ type policy struct {
 type policySet map[*types.TypeName]*policy
 
 func (policies policySet) lookup(t types.Type) *policy {
+	if p := policies.declaration(t); p != nil && len(p.fact.Constructors) != 0 {
+		return p
+	}
+	return nil
+}
+
+func (policies policySet) declaration(t types.Type) *policy {
 	if named := domainType(t); named != nil {
 		return policies[named.Obj()]
 	}
@@ -46,8 +54,10 @@ func domainType(t types.Type) *types.Named {
 // constructionFact carries the type's policy across package boundaries. Function
 // permissions stay local to the package that owns the protected type.
 type constructionFact struct {
-	Constructors []string
-	ZeroValid    bool
+	Constructors  []string
+	ZeroValid     bool
+	Serialization []string
+	Snapshot      bool
 }
 
 func (*constructionFact) AFact() {}
@@ -88,13 +98,15 @@ func (c *checker) collectPolicy(spec *ast.TypeSpec, doc *ast.CommentGroup) {
 		c.reportPolicy(spec, "defined-type-required", "domain:constructors requires a defined type")
 		return
 	}
-	switch named.Underlying().(type) {
-	case *types.Basic, *types.Struct:
-	default:
-		c.reportPolicy(spec, "unsupported-representation", "domain:constructors requires a scalar or struct type")
-		return
+	if len(fact.Constructors) != 0 {
+		switch named.Underlying().(type) {
+		case *types.Basic, *types.Array, *types.Struct:
+		default:
+			c.reportPolicy(spec, "unsupported-representation", "domain:constructors requires a scalar, array, or struct type")
+			return
+		}
 	}
-	if named.TypeParams().Len() != 0 {
+	if len(fact.Constructors) != 0 && named.TypeParams().Len() != 0 {
 		c.reportPolicy(spec, "generic-declaration", "domain:constructors does not support generic type declarations")
 		return
 	}
@@ -116,6 +128,14 @@ func (c *checker) collectPolicy(spec *ast.TypeSpec, doc *ast.CommentGroup) {
 			return
 		}
 		p.functions[function] = true
+	}
+	// A declared hydration hook owns the same representation writes as a
+	// restoration constructor. Encoding hooks still consume valid values.
+	for _, codec := range fact.Serialization {
+		name := decoderMethod(codec)
+		if method := codecMethod(named, name, true); method != nil && validDecoder(method.Type().(*types.Signature), codec) {
+			p.functions[method.Origin()] = true
+		}
 	}
 	c.policies[object] = p
 	c.pass.ExportObjectFact(object, fact)
@@ -147,6 +167,19 @@ func (c *checker) parsePolicy(spec *ast.TypeSpec, doc *ast.CommentGroup) (*const
 				valid = false
 			}
 			fact.ZeroValid = true
+		case "domain:serialization":
+			// Codec declarations are validated by domainserialization. Keeping
+			// their facts here lets construction and zero flow share ownership.
+			fact.Serialization = append(fact.Serialization, fields[1:]...)
+			if len(fields) == 1 {
+				fact.Serialization = append(fact.Serialization, "")
+			}
+		case "domain:snapshot":
+			fact.Snapshot = true
+			if len(fields) != 1 {
+				c.reportPolicy(spec, "invalid-snapshot-directive", "use domain:snapshot without arguments")
+				valid = false
+			}
 		default:
 			c.reportPolicy(spec, "unknown-directive", fmt.Sprintf("unknown domain directive %s", fields[0]))
 			valid = false
@@ -156,7 +189,7 @@ func (c *checker) parsePolicy(spec *ast.TypeSpec, doc *ast.CommentGroup) (*const
 		c.reportPolicy(spec, "constructors-directive-required", "domain:zero-valid requires domain:constructors")
 		valid = false
 	}
-	return fact, valid && constructors
+	return fact, valid && (constructors || fact.Snapshot || len(fact.Serialization) != 0)
 }
 
 func (c *checker) constructor(name string) types.Object {
@@ -180,7 +213,10 @@ func (c *checker) policy(t types.Type) *policy {
 	}
 	object := named.Obj()
 	if p, known := c.policies[object]; known {
-		return p
+		if p != nil && len(p.fact.Constructors) != 0 {
+			return p
+		}
+		return nil
 	}
 	var fact constructionFact
 	var p *policy
@@ -188,7 +224,15 @@ func (c *checker) policy(t types.Type) *policy {
 		p = &policy{name: object.Pkg().Name() + "." + object.Name(), typ: object.Type(), fact: &fact}
 	}
 	c.policies[object] = p
-	return p
+	return c.policies.lookup(t)
+}
+
+func (p *policy) supports(codec string) bool {
+	if p == nil || len(p.fact.Constructors) == 0 || !slices.Contains(p.fact.Serialization, codec) {
+		return false
+	}
+	decoder := codecMethod(p.typ, decoderMethod(codec), true)
+	return decoder != nil && validDecoder(decoder.Type().(*types.Signature), codec)
 }
 
 func hasDomainDirective(doc *ast.CommentGroup) bool {

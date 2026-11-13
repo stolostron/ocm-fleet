@@ -162,7 +162,7 @@ func run(keep func(*string), mark func(int), flags []bool, valid ID) ID {
 	point := instructionPoint(result)
 	return func() *zeroProblem {
 		c := newFlowChecker(function)
-		c.policies = policySet{object: {name: "flow.ID", typ: typ, fact: &constructionFact{}}}
+		c.policies = policySet{object: {name: "flow.ID", typ: typ, fact: &constructionFact{Constructors: []string{"NewID"}}}}
 		context := c.contextAt(point.block)
 		return c.memoryProblem(address{root: storage}, typ, point, context, make(map[valueVisit]bool), make(map[memoryVisit]bool))
 	}

@@ -237,6 +237,8 @@ func bindSignal[E any](name string, ch <-chan []byte) signalBinding {
 //     concurrent Start cannot see the slot as vacant before the
 //     result is delivered.
 //   - Panic recovery: surfaced as an error on the execution.
+//
+//domain:boundary json types=I,O
 func startWorkflow[I, O any](
 	g *guard,
 	instanceID string,
@@ -645,6 +647,8 @@ func (r *baseRecord) AwaitWithTimeout(signalName string, timeout time.Duration) 
 // jsonRoundTrip marshals v to JSON and unmarshals into a new value of
 // the same concrete type. This catches serialization issues that would
 // be silent without a durable engine.
+//
+//domain:boundary json encode=v results=0
 func jsonRoundTrip(v any) (any, error) {
 	if v == nil {
 		return nil, nil

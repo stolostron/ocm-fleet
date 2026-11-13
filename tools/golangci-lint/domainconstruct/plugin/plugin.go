@@ -18,10 +18,13 @@ func init() {
 	register.Plugin("domainzero", func(any) (register.LinterPlugin, error) {
 		return plugin{domainconstruct.ZeroAnalyzer}, nil
 	})
+	register.Plugin("domainserialization", func(any) (register.LinterPlugin, error) {
+		return plugin{domainconstruct.SerializationAnalyzer}, nil
+	})
 }
 
 func (p plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
-	if p.analyzer != domainconstruct.ZeroAnalyzer {
+	if p.analyzer == domainconstruct.Analyzer {
 		return []*analysis.Analyzer{p.analyzer}, nil
 	}
 	adapter := *p.analyzer

@@ -37,6 +37,11 @@
   [domain.md](./domain.md#raw-dtos-at-boundaries) for an example.
 - Own mutable inputs. Copy maps, slices, or pointed-to values when retaining
   them would let callers change an object's state outside its methods.
+- Native JSON, text, and SQL hydration methods are construction boundaries.
+  Declare supported codecs explicitly and return an error if restoration cannot
+  produce valid state. They may reuse a stable scalar `Parse` constructor or a
+  root's compatibility-aware `FromSnapshot`; no separate scalar snapshot API is
+  mandatory. These declarations do not permit encoding an invalid zero value.
 
 For example, a platform resource requires its name and creation time. Labels
 are optional:

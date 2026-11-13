@@ -346,7 +346,7 @@
     ],
     "lint:domain": {
       "metadata": {
-        "description": "Audit construction and zero-value use for annotated Go domain types."
+        "description": "Audit construction, zero-value use, and serialization contracts for annotated Go domain types."
       },
       "executor": "nx:run-commands",
       "dependsOn": [

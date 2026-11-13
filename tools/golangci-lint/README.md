@@ -41,7 +41,7 @@ environment invalidate the retained reports. Canceled runs leave the stored
 reports unchanged, and OS file locks serialize concurrent report updates. To
 discard retained diagnostics, remove that directory and run **Go: Lint Workspace**.
 
-## Domain construction audit
+## Domain audits
 
 To run only the server's domain audits, use this target from the repository root:
 
@@ -60,7 +60,8 @@ source expression, full type identity, field path, reason, primary location, and
 ordered provenance. The [diagnostic format](#diagnostic-format) keeps these fields
 independent of the English message.
 The target builds the tool and checks its configuration first. It includes test
-files and honors the shared generated-file policy. It selects both audits with
+files and honors the shared generated-file policy. It selects `domainconstruct`,
+`domainzero`, and `domainserialization` with
 `--enable-only`, overriding their temporary disablement in the shared config.
 Normal `lint`, `check`, `verify`, and VS Code diagnostics use the stock linters and
 formatting checks. Configured module plugins belong to golangci-lint's `standard`
@@ -84,7 +85,9 @@ only to the listed type and function body, excluding nested closures. Tests
 receive the same checks as production code. Use a local, explained `nolint`
 only for a justified fixture that cannot use normal construction.
 
-Defined scalars and structs are supported. Aliases resolve to their original
+Defined scalars, arrays, and structs are supported. Arrays cover opaque values
+such as UUIDs; element writes and mutable slices require representation ownership.
+Aliases resolve to their original
 type when checking callers, but cannot declare a separate policy. Put directives
 on individual types in grouped declarations. Missing functions, unsupported
 declarations, and misspelled directives are diagnostics, rather than silent
@@ -122,9 +125,114 @@ constant. Retaining an actual domain constant requires a narrow, explained
 exception does not make zero valid or exempt subsequent operations. Ordinary
 closed enums retain their typed constant pattern.
 
+### Serialization contracts
+
+`domainserialization` checks serialization of constructor-protected types at
+known boundaries. An ordinary envelope may contain domain values recursively,
+but each domain value must declare support for the codec. A protected value
+without that support must first become raw representation data, usually through
+its serialization root's snapshot. Implementing an encoding interface alone is
+not an opt-in, and `domain:zero-valid` does not imply encoding support.
+
+```go
+//domain:constructors NewResource ResourceFromSnapshot
+//domain:serialization json
+type Resource struct { /* private domain state */ }
+
+//domain:snapshot
+type ResourceSnapshot struct {
+    Name string
+    Children []ChildSnapshot
+}
+```
+
+`domain:serialization` accepts `json`, `text`, and `sql`, independently. Each is
+a reviewed contract: encoding valid state and decoding it successfully restores
+valid domain state under the type's restoration rules. Unsupported or invalid
+state must return an error. Compatibility defaults, migrations, and historical
+creation rules belong to restoration, which need not call today's `New` function.
+The analyzer checks the standard method signatures; tests must establish the
+implementation's semantic round trip and rejection behavior. Declaring a codec
+does not exempt construction, mutation, or zero-value use.
+Declared decoding hooks receive construction permission for their receiver type
+only, excluding nested closures. Child domain values still require their own
+construction or restoration paths.
+
+JSON requires pointer `UnmarshalJSON`; composites also need a value encoding
+hook (`MarshalJSON` or `MarshalText`). Text requires value `MarshalText` and
+pointer `UnmarshalText`; SQL requires value `Value` and pointer `Scan`. Encoding
+hooks must work for values in interfaces and maps, where pointer methods alone
+are insufficient. Text support does not imply JSON support: JSON can skip a text
+decoder for `null`. JSON map keys use the text contract. SQL scanners must not
+silently succeed on NULL or empty data while leaving a required value invalid.
+Use an optional representation for absence. A scalar may reuse its checked
+`Parse` constructor; a separate scalar snapshot API is not required.
+
+`domain:snapshot` identifies the stronger representation rule. Snapshots contain
+plain data recursively, including primitives, enums, raw nested DTOs, collections,
+optional pointers, and `time.Time`. Protected domain values remain prohibited
+even when they support a codec. Interface payloads, runtime handles, and behavior
+are not plain data. The marker does not promise valid scalar contents and does
+not enroll the snapshot in construction or zero-value rules. Names alone do not
+identify snapshots. Existing snapshot types are being migrated incrementally.
+
+The analyzer recognizes the Go objects for JSON `Marshal`, `MarshalIndent`,
+`Unmarshal`, `Encoder.Encode`, and `Decoder.Decode`, SQL `Row.Scan`/`Rows.Scan`,
+SQL query/exec parameters and `Named`, and correctly shaped codec hooks on
+protected receivers. An unrelated method called `Scan` is not a boundary.
+Local SSA retains concrete interface payloads and variadic destinations when
+their reaching definitions are known. Recursive type inspection finds domain
+members of ordinary envelopes, including instantiated generic containers.
+
+Declare other serialization APIs at their definitions:
+
+```go
+//domain:boundary json types=I,O
+func RunActivity[I, O any](record Record, activity Activity[I, O], input I) (O, error)
+
+type Execution[T any] interface {
+    //domain:boundary json results=0
+    AwaitResult(ctx context.Context) (T, error)
+}
+
+type scanner interface {
+    //domain:boundary sql decode=dest
+    Scan(dest ...any) error
+}
+
+//domain:boundary json encode=payload
+func Send(payload any) error
+```
+
+Selectors are comma-separated lists: `types=` names function type parameters,
+`encode=` and `decode=` name parameters (or a named method receiver), and
+`results=` gives zero-based payload result indices. Selectors are checked
+against the signature; decoding requires exactly one error result whose nil
+value means success. Declarations on functions and interface methods travel
+across packages as analysis facts. They are kept separate from inferred body
+effects. Use them on shared ports before their payload types are erased, rather
+than teaching the analyzer application-specific function names.
+
+Encoding inputs are valid-value consumers, so encoding an uninitialized domain
+value still produces a `domainzero` finding. Decoder destinations accept zero
+output storage; a parameter selected for both encoding and decoding must already
+be valid. After the error is checked, decoding a declared native domain
+root establishes its validity, including its required members. Decoding an
+ordinary envelope does not establish required-field presence: omitted fields
+can bypass nested decoders. Failure and unchecked errors establish no validity.
+Scanning a primitive and converting it to a domain value still requires a
+constructor.
+
+This is bounded static checking, not whole-program reflection or byte-buffer
+provenance analysis. Opaque interface payloads, indirect function dispatch, and
+unknown storage origins can hide types. New generic forwarding abstractions
+need their own boundary declaration. A narrow, explained
+`nolint:domainserialization` remains available for an exceptional representation;
+do not grant a type an untested codec contract to suppress findings.
+
 ### Diagnostic format
 
-Both analyzers use the shared [`diagnostic.Finding`](diagnostic/diagnostic.go)
+All three analyzers use the shared [`diagnostic.Finding`](diagnostic/diagnostic.go)
 model. A readable summary leads, followed by labeled records without column
 padding. For example:
 
@@ -155,7 +263,7 @@ The audit decodes these explicit fields rather than classifying English text:
 | `Reason`            | Stable evidence code, independent of wording.                                                                                           |
 | `Pos`, `Provenance` | Primary location and ordered steps with stable kinds, locations, and explanations.                                                      |
 
-Certainty applies to the reported rule across both analyzers. Constructor bypasses,
+Certainty applies to the reported rule across all three analyzers. Constructor bypasses,
 zero comparisons, and policy violations are `known`; this does not claim that a
 literal is invalid or that a compared operand is zero. Invalid-zero findings use
 `known` when zero is established and `possible` when the available flow evidence
@@ -295,8 +403,9 @@ unsupported helper bodies can lose provenance; absence of a finding is not a
 validity proof. A call that can reach a local through an output pointer, boxed
 interface, stored callback, or pointers packaged in array/slice arguments changes
 a previous known zero into a possible zero, retaining its provenance. This is
-general mutation tracking, including SQL Scan; it does not prove a callback ran
-or initialized the value. Small body summaries establish read-only use or a
+general mutation tracking, including unrecognized output APIs; it does not prove
+a callback ran or initialized the value. Recognized decoding boundaries add the
+checked native-root initialization contract described above. Small body summaries establish read-only use or a
 definite scalar write and are shared across packages. Unsupported bodies remain
 possible mutations; the checker does not recursively analyze a whole call graph.
 Compiler-generated iterator yields have a bounded local summary for paired

@@ -35,10 +35,11 @@ linters:
   default: standard
   # Keep domain audits opt-in while their existing findings are migrated.
   # Configured module plugins join the standard group, so omitting enable does
-  # not disable them. server:lint:domain explicitly selects both with enable-only.
+  # not disable them. server:lint:domain explicitly selects them with enable-only.
   disable:
     - domainconstruct
     - domainzero
+    - domainserialization
   exclusions:
     # Recognize generated files by the standard Go generated-code header.
     generated: strict
@@ -98,6 +99,9 @@ linters:
       domainzero:
         type: module
         description: Report invalid zero domain values reaching operations.
+      domainserialization:
+        type: module
+        description: Require declared domain codecs and recursively plain snapshots.
     errcheck:
       # Keep the defaults for assertions and explicit blank-identifier discards.
       check-type-assertions: false

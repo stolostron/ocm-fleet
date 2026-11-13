@@ -55,9 +55,12 @@ func Missing() ID { var id ID; return id }
   );
   await format();
   await assert.doesNotReject(lint());
-  await assert.rejects(lint({}, ["--enable-only=domainconstruct,domainzero"]), {
-    code: 1,
-  });
+  await assert.rejects(
+    lint({}, ["--enable-only=domainconstruct,domainzero,domainserialization"]),
+    {
+      code: 1,
+    },
+  );
   assert.deepEqual(
     [...new Set((await issues()).map((finding) => finding.FromLinter))].sort(),
     ["domainconstruct", "domainzero"],
@@ -140,6 +143,40 @@ func TestCheck(t *testing.T) { _ = value.ID("fixture | rule: fake; quoted") }
     'package lintfixture\n\nimport "testing"\n\nfunc TestCheck(t *testing.T) { _ = Check("fixture") }\n',
   );
   await assert.doesNotReject(audit());
+});
+
+test("domain audit includes serialization policy and plain snapshot findings", async (t) => {
+  const { directory, lint, issues, format } = await fixture(t, {
+    domain: true,
+  });
+  await writeFile(
+    join(directory, "main.go"),
+    `package lintfixture
+
+import "encoding/json"
+
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) ID { return ID(raw) }
+func Encode(id ID) ([]byte, error) { return json.Marshal(id) }
+
+//domain:snapshot
+type Snapshot struct { ID ID }
+`,
+  );
+  await format();
+  await assert.rejects(lint(), { code: 1 });
+  const findings = (await issues()).map(domainFinding);
+  assert.equal(findings.length, 2);
+  assert.deepEqual(findings.map((finding) => finding.Rule).sort(), [
+    "domainserialization.snapshot-domain-value",
+    "domainserialization.unsupported-codec",
+  ]);
+  for (const finding of findings) {
+    assert.equal(finding.Certainty, "known");
+    assert.equal(finding.Category, "serialization");
+  }
 });
 
 test("domain audit decodes explicit metadata independently of wording and whitespace", async () => {
@@ -859,7 +896,9 @@ async function fixture(t, { project = "", domain = false } = {}) {
           configuration,
           "--output.text.path=stdout",
           `--output.json.path=${report}`,
-          ...(domain ? ["--enable-only=domainconstruct,domainzero"] : []),
+          ...(domain
+            ? ["--enable-only=domainconstruct,domainzero,domainserialization"]
+            : []),
           ...args,
           "./...",
         ],

@@ -517,6 +517,9 @@ func (n FullResourceName) ResourceName() ResourceName {
 // persistence with [PlatformResourceFromSnapshot]. Mutate via domain
 // methods ([PlatformResource.SetLabels], [PlatformResource.AddAlias],
 // etc.). Read via accessor methods.
+//
+//domain:constructors NewPlatformResource PlatformResourceFromSnapshot PlatformResource.SetLabels PlatformResource.AddAlias PlatformResource.RemoveAlias PlatformResource.AddRelationship
+//domain:serialization json
 type PlatformResource struct {
 	name      ResourceName
 	labels    map[string]string
@@ -690,25 +693,25 @@ func (r *PlatformResource) Snapshot() PlatformResourceSnapshot {
 	for alias := range r.aliases.All() {
 		aliasSnap := alias.Snapshot()
 		aliasSnaps = append(aliasSnaps, ResourceAliasSnapshot{
-			Namespace: aliasSnap.Namespace,
-			Key:       aliasSnap.Key,
-			Value:     aliasSnap.Value,
+			Namespace: string(aliasSnap.Namespace),
+			Key:       string(aliasSnap.Key),
+			Value:     string(aliasSnap.Value),
 		})
 	}
 
 	relSnaps := make([]ResourceRelationshipSnapshot, len(r.relationships))
 	for i, rel := range r.relationships {
 		relSnaps[i] = ResourceRelationshipSnapshot{
-			SourceName:    rel.sourceName,
+			SourceName:    string(rel.sourceName),
 			Type:          rel.Type().String(),
-			TargetName:    rel.targetName,
-			SourceService: rel.sourceService,
+			TargetName:    string(rel.targetName),
+			SourceService: string(rel.sourceService),
 			CreatedAt:     rel.createdAt,
 		}
 	}
 
 	return PlatformResourceSnapshot{
-		Name:            r.name,
+		Name:            string(r.name),
 		Labels:          maps.Clone(r.labels),
 		CreatedAt:       r.createdAt,
 		UpdatedAt:       r.updatedAt,
@@ -768,24 +771,43 @@ func (rr ResourceRepresentation) UpdatedAt() time.Time { return rr.updatedAt }
 
 // ResourceRepresentationFromSnapshot constructs a
 // [ResourceRepresentation] from a snapshot.
-func ResourceRepresentationFromSnapshot(s ResourceRepresentationSnapshot) ResourceRepresentation {
+func ResourceRepresentationFromSnapshot(s ResourceRepresentationSnapshot) (ResourceRepresentation, error) {
+	service, err := NewServiceName(s.ServiceName)
+	if err != nil {
+		return ResourceRepresentation{}, err
+	}
+	version, err := NewAPIVersion(s.Version)
+	if err != nil {
+		return ResourceRepresentation{}, err
+	}
+	name, err := ParseResourceName(s.Name)
+	if err != nil {
+		return ResourceRepresentation{}, err
+	}
+	uid, err := ParseExtensionResourceUID(s.ExtensionResourceUID)
+	if err != nil {
+		return ResourceRepresentation{}, err
+	}
+	if uid.IsZero() {
+		return ResourceRepresentation{}, fmt.Errorf("representation uid: %w: must not be nil", ErrInvalidArgument)
+	}
 	return ResourceRepresentation{
-		serviceName:          s.ServiceName,
-		version:              s.Version,
-		name:                 s.Name,
-		extensionResourceUID: s.ExtensionResourceUID,
+		serviceName:          service,
+		version:              version,
+		name:                 name,
+		extensionResourceUID: uid,
 		createdAt:            s.CreatedAt,
 		updatedAt:            s.UpdatedAt,
-	}
+	}, nil
 }
 
 // Snapshot returns a [ResourceRepresentationSnapshot].
 func (rr ResourceRepresentation) Snapshot() ResourceRepresentationSnapshot {
 	return ResourceRepresentationSnapshot{
-		ServiceName:          rr.serviceName,
-		Version:              rr.version,
-		Name:                 rr.name,
-		ExtensionResourceUID: rr.extensionResourceUID,
+		ServiceName:          string(rr.serviceName),
+		Version:              string(rr.version),
+		Name:                 string(rr.name),
+		ExtensionResourceUID: rr.extensionResourceUID.String(),
 		CreatedAt:            rr.createdAt,
 		UpdatedAt:            rr.updatedAt,
 	}
@@ -843,14 +865,24 @@ func (rr ResourceRelationship) SourceService() ServiceName { return rr.sourceSer
 func (rr ResourceRelationship) CreatedAt() time.Time { return rr.createdAt }
 
 // ResourceRelationshipFromSnapshot hydrates a [ResourceRelationship] from
-// trusted persisted state. The snapshot must already satisfy domain invariants;
-// external input must use [NewRelationshipType] and [NewResourceRelationship].
-func ResourceRelationshipFromSnapshot(s ResourceRelationshipSnapshot) ResourceRelationship {
-	return ResourceRelationship{
-		sourceName:    s.SourceName,
-		relType:       RelationshipType{value: s.Type},
-		targetName:    s.TargetName,
-		sourceService: s.SourceService,
-		createdAt:     s.CreatedAt,
+// persisted state. Its raw scalar fields pass through their checked parsers;
+// aggregate-level consistency is restored by [PlatformResourceFromSnapshot].
+func ResourceRelationshipFromSnapshot(s ResourceRelationshipSnapshot) (ResourceRelationship, error) {
+	source, err := ParseResourceName(s.SourceName)
+	if err != nil {
+		return ResourceRelationship{}, err
 	}
+	target, err := ParseResourceName(s.TargetName)
+	if err != nil {
+		return ResourceRelationship{}, err
+	}
+	relationship, err := NewRelationshipType(s.Type)
+	if err != nil {
+		return ResourceRelationship{}, err
+	}
+	service, err := NewServiceName(s.SourceService)
+	if err != nil {
+		return ResourceRelationship{}, err
+	}
+	return NewResourceRelationship(source, relationship, target, service, s.CreatedAt), nil
 }

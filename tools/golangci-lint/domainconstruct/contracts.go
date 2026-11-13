@@ -11,19 +11,22 @@ import (
 
 // Contract inference uses syntax and type information so importing a contract
 // does not require building SSA for every dependency, including the standard
-// library. Only facts established by a function's body are exported.
+// library. Declared serialization boundaries are kept separate from inferred
+// body effects: a declaration describes a contract, not a proof of its body.
 var contractsAnalyzer = &analysis.Analyzer{
 	Name:       "domaincontracts",
 	Doc:        "derive error and construction contracts for domain zero analysis",
 	Run:        runContracts,
 	ResultType: reflect.TypeFor[*contractSet](),
-	FactTypes:  []analysis.Fact{new(functionContract), new(sentinelContract)},
+	FactTypes:  []analysis.Fact{new(functionContract), new(sentinelContract), new(boundaryFact)},
 }
 
 type contractSet struct {
-	functions map[*types.Func]*functionContract
-	sentinels map[*types.Var]bool
-	writes    map[*types.Var][]token.Pos
+	functions           map[*types.Func]*functionContract
+	boundaries          map[*types.Func]*boundaryFact
+	boundaryDiagnostics []analysis.Diagnostic
+	sentinels           map[*types.Var]bool
+	writes              map[*types.Var][]token.Pos
 }
 
 // A rule describes one error result. Parameter -1 means always non-nil;
@@ -60,13 +63,15 @@ func runContracts(pass *analysis.Pass) (any, error) {
 	b := &contractBuilder{
 		pass: pass,
 		set: &contractSet{
-			functions: make(map[*types.Func]*functionContract),
-			sentinels: make(map[*types.Var]bool),
-			writes:    make(map[*types.Var][]token.Pos),
+			functions:  make(map[*types.Func]*functionContract),
+			boundaries: make(map[*types.Func]*boundaryFact),
+			sentinels:  make(map[*types.Var]bool),
+			writes:     make(map[*types.Var][]token.Pos),
 		},
 		decls:  make(map[*types.Func]*ast.FuncDecl),
 		values: make(map[*types.Var]ast.Expr),
 	}
+	b.collectBoundaries()
 	for _, file := range pass.Files {
 		for _, declaration := range file.Decls {
 			switch declaration := declaration.(type) {
@@ -165,6 +170,8 @@ func runContracts(pass *analysis.Pass) (any, error) {
 			b.set.functions[imported.Object.(*types.Func)] = fact
 		case *sentinelContract:
 			b.set.sentinels[imported.Object.(*types.Var)] = true
+		case *boundaryFact:
+			b.set.boundaries[imported.Object.(*types.Func).Origin()] = fact
 		}
 	}
 	return b.set, nil
