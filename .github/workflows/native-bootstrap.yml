@@ -1,0 +1,106 @@
+name: Native bootstrap
+
+# Cold validation of the AIO preflight native executable on a GitHub-hosted
+# Linux x86_64 runner. Not a branch-protection gate: pull requests touching
+# the bootstrap exercise it, and workflow_dispatch allows on-demand runs.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/native-bootstrap.yml
+      - client/aio-installation-check/**
+      - package.json
+      - package-lock.json
+      - tsconfig.json
+      - nx.json
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/native-bootstrap.yml
+      - client/aio-installation-check/**
+      - package.json
+      - package-lock.json
+      - tsconfig.json
+      - nx.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-bootstrap-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Skip Git hook installation during npm ci and hook execution in CI.
+  HUSKY: "0"
+  NX_DAEMON: "false"
+
+# Keep successful commands silent; replay complete diagnostics on failure.
+defaults:
+  run:
+    shell: bash tools/ci-output.sh {0}
+
+jobs:
+  native-bootstrap:
+    name: Linux x86_64 native build
+    runs-on: ubuntu-latest
+    # Cold-build budget, including any toolchain bootstrap the build performs.
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # Base C/clang SDK for the native build. The build manages its own
+      # LLVM and Rust dependencies; no toolchain is preinstalled here.
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang cmake git xz-utils \
+            zlib1g-dev libzstd-dev libxml2-dev libssl-dev libffi-dev \
+            libedit-dev libncurses-dev
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # Cold build by design: no Nx remote cache.
+      - name: Build native executable
+        run: npx nx run aio-installation-check:build-native
+
+      # Linux CI smoke only (no PTY suite): the executable starts without
+      # Node.js and renders runtime discovery from an isolated empty PATH.
+      # This validates startup and discovery, not full AIO readiness.
+      - name: Smoke test native executable without Node.js
+        run: npx nx run aio-installation-check:smoke-native
+
+      - name: Check repository files stayed unchanged
+        if: ${{ !cancelled() }}
+        run: git diff --exit-code
+
+      - name: Upload native binary and smoke evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: aio-installation-check-native-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            client/aio-installation-check/dist/native/aio-installation-check
+            client/aio-installation-check/dist/native-smoke-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload failure logs
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-logs-${{ github.job }}
+          path: ${{ runner.temp }}/ci-logs/
+          if-no-files-found: ignore
+          retention-days: 7
