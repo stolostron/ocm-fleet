@@ -271,6 +271,73 @@ func TestAliasSet_JSONRoundTrip_EmptyUsesArrayLiteral(t *testing.T) {
 	}
 }
 
+func TestNewAliasRef(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		namespace string
+		key       string
+		wantErr   bool
+	}{
+		{name: "valid", namespace: "gcp", key: "project_id"},
+		{name: "missing namespace", key: "project_id", wantErr: true},
+		{name: "missing key", namespace: "gcp", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ref, err := NewAliasRef(AliasNamespace(tt.namespace), AliasKey(tt.key))
+			if tt.wantErr {
+				if !errors.Is(err, ErrInvalidArgument) {
+					t.Fatalf("NewAliasRef() error = %v, want ErrInvalidArgument", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(ref.Namespace()) != tt.namespace || string(ref.Key()) != tt.key {
+				t.Fatalf("NewAliasRef() = %v, want namespace %q and key %q", ref, tt.namespace, tt.key)
+			}
+		})
+	}
+}
+
+func TestAliasSet_Get(t *testing.T) {
+	alias, err := NewAlias("gcp", "project_id", "my-project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := NewAliasRef("gcp", "project_id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := NewAliasSet([]Alias{alias})
+
+	got := set.Get(ref)
+	if got == nil || *got != alias {
+		t.Fatalf("Get() = %v, want %v", got, alias)
+	}
+
+	// A pointer expresses presence, not permission to overwrite the set's data.
+	replacement, err := NewAlias("gcp", "project_id", "other-project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	*got = replacement
+	if again := set.Get(ref); again == nil || *again != alias {
+		t.Fatalf("Get() after caller assignment = %v, want %v", again, alias)
+	}
+
+	missing, err := NewAliasRef("gcp", "zone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := set.Get(missing); got != nil {
+		t.Fatalf("Get(missing) = %v, want nil", got)
+	}
+	if got := NewAliasSet(nil).Get(ref); got != nil {
+		t.Fatalf("empty set Get() = %v, want nil", got)
+	}
+}
+
 func TestNewRelationshipType(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -292,7 +359,7 @@ func TestNewRelationshipType(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got != RelationshipType(tt.input) {
+			if got.String() != tt.input {
 				t.Errorf("got %q, want %q", got, tt.input)
 			}
 		})
@@ -474,9 +541,75 @@ func TestResourceName_FullName(t *testing.T) {
 // PlatformResourceUID type to test here.
 // ---------------------------------------------------------------------------
 
+func TestNewPlatformResource(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	name := mustResourceName(t, "clusters/prod")
+	r := NewPlatformResource(name, now)
+
+	assertEq(t, "Name", r.Name(), name)
+	assertEq(t, "CreatedAt", r.CreatedAt(), now)
+	assertEq(t, "UpdatedAt", r.UpdatedAt(), now)
+	if labels := r.Labels(); labels == nil || len(labels) != 0 {
+		t.Fatalf("Labels() = %v, want an empty map", labels)
+	}
+}
+
+func TestPlatformResource_LabelsAreOwned(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	labels := map[string]string{"env": "prod"}
+	option := WithPlatformResourceLabels(labels)
+	labels["env"] = "changed after option creation"
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now, option)
+
+	labels["env"] = "changed by caller"
+	if got := r.Labels()["env"]; got != "prod" {
+		t.Fatalf("Labels[env] = %q after caller mutation, want prod", got)
+	}
+
+	other := NewPlatformResource(mustResourceName(t, "clusters/other"), now, option)
+	r.SetLabels(map[string]string{"env": "changed on first resource"}, now.Add(time.Minute))
+	if got := other.Labels()["env"]; got != "prod" {
+		t.Fatalf("Labels[env] = %q after reusing option, want prod", got)
+	}
+}
+
+func TestPlatformResource_SetLabelsCopiesInput(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now)
+	labels := map[string]string{"env": "prod"}
+	r.SetLabels(labels, now.Add(time.Minute))
+
+	labels["env"] = "changed by caller"
+	if got := r.Labels()["env"]; got != "prod" {
+		t.Fatalf("Labels[env] = %q after caller mutation, want prod", got)
+	}
+}
+
+func TestPlatformResource_LabelsReturnsCopy(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now, WithPlatformResourceLabels(map[string]string{"env": "prod"}))
+
+	labels := r.Labels()
+	labels["env"] = "changed by caller"
+	if got := r.Labels()["env"]; got != "prod" {
+		t.Fatalf("Labels[env] = %q after getter mutation, want prod", got)
+	}
+}
+
+func TestPlatformResource_SnapshotLabelsReturnsCopy(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now, WithPlatformResourceLabels(map[string]string{"env": "prod"}))
+
+	snapshot := r.Snapshot()
+	snapshot.Labels["env"] = "changed by caller"
+	if got := r.Labels()["env"]; got != "prod" {
+		t.Fatalf("Labels[env] = %q after snapshot mutation, want prod", got)
+	}
+}
+
 func TestPlatformResource_SetLabels(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	r := NewPlatformResource("clusters/prod", map[string]string{"a": "1"}, now)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now, WithPlatformResourceLabels(map[string]string{"a": "1"}))
 
 	later := now.Add(time.Hour)
 	r.SetLabels(map[string]string{"b": "2"}, later)
@@ -503,7 +636,7 @@ func TestPlatformResource_SetLabels(t *testing.T) {
 
 func TestPlatformResource_AddAlias(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	r := NewPlatformResource("clusters/prod", nil, now)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now)
 
 	alias, _ := NewAlias("gcp", "project_id", "my-proj")
 	if err := r.AddAlias(alias); err != nil {
@@ -521,7 +654,7 @@ func TestPlatformResource_AddAlias(t *testing.T) {
 
 func TestPlatformResource_AddAlias_Idempotent(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	r := NewPlatformResource("clusters/prod", nil, now)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now)
 
 	alias, _ := NewAlias("gcp", "project_id", "my-proj")
 	if err := r.AddAlias(alias); err != nil {
@@ -538,7 +671,7 @@ func TestPlatformResource_AddAlias_Idempotent(t *testing.T) {
 
 func TestPlatformResource_AddAlias_RejectsConflictingValue(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	r := NewPlatformResource("clusters/prod", nil, now)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now)
 
 	first, _ := NewAlias("gcp", "project_id", "proj-a")
 	if err := r.AddAlias(first); err != nil {
@@ -562,7 +695,7 @@ func TestPlatformResource_AddAlias_RejectsConflictingValue(t *testing.T) {
 
 func TestPlatformResource_AddAlias_AllowsDifferentKeysInSameNamespace(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	r := NewPlatformResource("clusters/prod", nil, now)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now)
 
 	a1, _ := NewAlias("gcp", "project_id", "proj-a")
 	a2, _ := NewAlias("gcp", "zone", "us-central1-a")
@@ -578,11 +711,46 @@ func TestPlatformResource_AddAlias_AllowsDifferentKeysInSameNamespace(t *testing
 	}
 }
 
+func TestPlatformResource_RemoveAlias(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now)
+	project, err := NewAlias("gcp", "project_id", "my-project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	zone, err := NewAlias("gcp", "zone", "us-central1-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, alias := range []Alias{project, zone} {
+		if err := r.AddAlias(alias); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ref, err := NewAliasRef(project.Namespace(), project.Key())
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := r.Aliases()
+
+	r.RemoveAlias(ref)
+	if got := r.Aliases().Slice(); len(got) != 1 || got[0] != zone {
+		t.Fatalf("Aliases() = %v, want [%v]", got, zone)
+	}
+	if got := before.Slice(); !slices.Equal(got, []Alias{project, zone}) {
+		t.Fatalf("RemoveAlias changed a previously returned alias value to %v", got)
+	}
+	r.RemoveAlias(ref)
+	if got := r.Aliases().Slice(); len(got) != 1 || got[0] != zone {
+		t.Fatalf("Aliases() after repeated removal = %v, want [%v]", got, zone)
+	}
+}
+
 func TestPlatformResource_AddRelationship(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	r := NewPlatformResource("clusters/prod", nil, now)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now)
 
-	err := r.AddRelationship(NewResourceRelationship("clusters/prod", "runs-on", "clusters/host", "kind.open-cluster-management.io", now))
+	err := r.AddRelationship(NewResourceRelationship(r.Name(), mustRelationshipType(t, "runs-on"), mustResourceName(t, "clusters/host"), "kind.open-cluster-management.io", now))
 	if err != nil {
 		t.Fatalf("AddRelationship: %v", err)
 	}
@@ -591,26 +759,41 @@ func TestPlatformResource_AddRelationship(t *testing.T) {
 	if len(rels) != 1 {
 		t.Fatalf("len(Relationships) = %d, want 1", len(rels))
 	}
-	if rels[0].Type() != "runs-on" {
+	if rels[0].Type().String() != "runs-on" {
 		t.Errorf("Type = %q, want runs-on", rels[0].Type())
 	}
 }
 
-func TestPlatformResource_AddRelationship_RejectsEmptyType(t *testing.T) {
+func TestPlatformResource_AddRelationship_ReplacesExisting(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	r := NewPlatformResource("clusters/prod", nil, now)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now)
 
-	err := r.AddRelationship(NewResourceRelationship("clusters/prod", "", "clusters/host", "kind.open-cluster-management.io", now))
-	if !errors.Is(err, ErrInvalidArgument) {
-		t.Errorf("empty type: got %v, want ErrInvalidArgument", err)
+	relType := mustRelationshipType(t, "runs-on")
+	first := NewResourceRelationship(r.Name(), relType, mustResourceName(t, "clusters/host"), "kind.open-cluster-management.io", now)
+	if err := r.AddRelationship(first); err != nil {
+		t.Fatal(err)
+	}
+	replacement := NewResourceRelationship(first.SourceName(), first.Type(), first.TargetName(), "gcp.open-cluster-management.io", now.Add(time.Minute))
+	if err := r.AddRelationship(replacement); err != nil {
+		t.Fatal(err)
+	}
+
+	rels := r.Relationships()
+	if len(rels) != 1 || rels[0] != replacement {
+		t.Fatalf("Relationships() = %v, want [%v]", rels, replacement)
+	}
+	// Collection access must not allow replacing an aggregate-owned entity.
+	rels[0] = first
+	if got := r.Relationships()[0]; got != replacement {
+		t.Fatalf("Relationships()[0] = %v after caller assignment, want %v", got, replacement)
 	}
 }
 
 func TestPlatformResource_AddRelationship_RejectsForeignSourceName(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	r := NewPlatformResource("clusters/prod", nil, now)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now)
 
-	err := r.AddRelationship(NewResourceRelationship("clusters/other", "runs-on", "clusters/host", "kind.open-cluster-management.io", now))
+	err := r.AddRelationship(NewResourceRelationship(mustResourceName(t, "clusters/other"), mustRelationshipType(t, "runs-on"), mustResourceName(t, "clusters/host"), "kind.open-cluster-management.io", now))
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Errorf("foreign source name: got %v, want ErrInvalidArgument", err)
 	}
@@ -621,7 +804,7 @@ func TestPlatformResource_AddRelationship_RejectsForeignSourceName(t *testing.T)
 
 func TestPlatformResource_EffectiveLabels(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	r := NewPlatformResource("clusters/prod", map[string]string{"env": "prod", "team": "infra"}, now)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now, WithPlatformResourceLabels(map[string]string{"env": "prod", "team": "infra"}))
 
 	got := r.EffectiveLabels()
 
@@ -634,9 +817,27 @@ func TestPlatformResource_EffectiveLabels(t *testing.T) {
 
 func TestPlatformResource_EffectiveLabels_ReturnsCopy(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	r := NewPlatformResource("clusters/prod", map[string]string{"env": "prod"}, now)
+	r := NewPlatformResource(mustResourceName(t, "clusters/prod"), now, WithPlatformResourceLabels(map[string]string{"env": "prod"}))
 
 	got := r.EffectiveLabels()
 	got["env"] = "mutated"
 	assertEq(t, "original unchanged", r.EffectiveLabels()["env"], "prod")
+}
+
+func mustResourceName(t *testing.T, raw string) ResourceName {
+	t.Helper()
+	name, err := ParseResourceName(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
+func mustRelationshipType(t *testing.T, raw string) RelationshipType {
+	t.Helper()
+	relType, err := NewRelationshipType(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return relType
 }

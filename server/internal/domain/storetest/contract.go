@@ -256,7 +256,7 @@ func Run(t *testing.T, factory Factory) {
 		}
 		defer tx.RollbackOnExit()
 
-		r := domain.NewPlatformResource(name, nil, fixed)
+		r := domain.NewPlatformResource(name, fixed)
 		if err := tx.ResourceIdentities().Create(ctx, r); err != nil {
 			t.Fatalf("ResourceIdentities().Create: %v", err)
 		}

@@ -77,6 +77,54 @@ func TestReportsSurviveFailedRuns(t *testing.T) {
 	}
 }
 
+func TestReportsIncludeCustomAnalyzersAndSurviveFailedRuns(t *testing.T) {
+	editor, root := fixture(t)
+	module := addModule(t, root, "first", `package fixture
+
+// ID requires construction.
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) ID { return ID(raw) }
+
+func Invalid(raw string) ID { return ID(raw) }
+
+func Zero() ID {
+	var id ID
+	return id
+}
+`)
+	audit := func() []issue {
+		t.Helper()
+		return lint(t, editor, module, "--enable-only=domainconstruct,domainzero")
+	}
+	findings := audit()
+	requireFinding(t, findings, filepath.Join(module, "main.go"), "domainconstruct")
+	requireFinding(t, findings, filepath.Join(module, "main.go"), "domainzero")
+
+	write(t, filepath.Join(module, "main.go"), "package fixture\ninvalid Go\n")
+	findings = audit()
+	requireFinding(t, findings, filepath.Join(module, "main.go"), "domainconstruct")
+	requireFinding(t, findings, filepath.Join(module, "go.mod"), "lint-editor")
+	requireFinding(t, findings, filepath.Join(module, "main.go"), "typecheck")
+	for _, finding := range findings {
+		if finding.Pos.Filename == filepath.Join(module, "main.go") && finding.Pos.Line > 3 {
+			t.Fatalf("retained location exceeds the edited file: %v", finding)
+		}
+	}
+
+	write(t, filepath.Join(module, "go.mod"), "module example.com/first\n\ngo 1.99.0\n")
+	findings = audit()
+	requireFinding(t, findings, filepath.Join(module, "main.go"), "domainzero")
+	requireFinding(t, findings, filepath.Join(module, "go.mod"), "lint-editor")
+
+	write(t, filepath.Join(module, "go.mod"), "module example.com/first\n\ngo 1.26.0\n")
+	write(t, filepath.Join(module, "main.go"), clean)
+	if findings := audit(); len(findings) != 0 {
+		t.Fatalf("recovered module: got %v", findings)
+	}
+}
+
 func TestChangedConfigurationInvalidatesRetainedReports(t *testing.T) {
 	editor, root := fixture(t)
 	first := addModule(t, root, "first", unchecked)
@@ -243,9 +291,9 @@ func addModule(t *testing.T, root, name, source string) string {
 	return module
 }
 
-func lint(t *testing.T, editor *editor, cwd string) []issue {
+func lint(t *testing.T, editor *editor, cwd string, flags ...string) []issue {
 	t.Helper()
-	findings, err := editor.run(t.Context(), cwd, nil)
+	findings, err := editor.run(t.Context(), cwd, flags)
 	if err != nil {
 		t.Fatal(err)
 	}

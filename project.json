@@ -30,7 +30,7 @@
         "env": {
           "NX_DAEMON": "false"
         },
-        "command": "npx nx run ocm-fleet:check"
+        "command": "npx nx run-many --targets=check --projects=ocm-fleet"
       },
       "cache": false,
       "dependsOn": ["fmt"]
@@ -48,7 +48,7 @@
         "commands": [
           "npx nx run ocm-fleet:fix:workspace",
           "npx nx run-many --targets=fix:lint --exclude=ocm-fleet --nxBail=false",
-          "npx nx run ocm-fleet:check"
+          "npx nx run-many --targets=check --projects=ocm-fleet"
         ],
         "parallel": false
       },
@@ -388,6 +388,7 @@
       "inputs": [
         "goLintConfig",
         "{workspaceRoot}/tools/golangci-lint-config.test.mjs",
+        "{workspaceRoot}/tools/domain-audit.mjs",
         "jsRuntime"
       ],
       "outputs": []

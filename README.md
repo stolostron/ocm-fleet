@@ -134,6 +134,20 @@ npx nx run-many --targets=verify --projects=web,plugins
 npx nx run ocm-fleet:verify:go # Go-only aliases remain available
 ```
 
+For quieter workspace verification with failed diagnostics inline, use:
+
+```bash
+NX_DEFAULT_OUTPUT_STYLE=static-failures-only npx nx run-many --targets=verify --projects=ocm-fleet
+```
+
+`run-many` collapses successful task output even when selecting just one project.
+`nx run` also prints the full output of successful tasks in the selected project,
+which includes the workspace tooling tests for `ocm-fleet`. The output setting is
+inherited by nested Nx commands. Set it in your local `.env` to keep that default
+(the [environment template](.env.template) includes it); `--outputStyle=static`
+shows all output and `--outputStyle=summary` shows counts and failure log paths.
+The [pre-commit hook](docs/precommit.md) defaults to failures-only output.
+
 The workspace targets collect each project's supported checks: Go uses our
 custom golangci-lint; JavaScript/TypeScript uses Prettier and ESLint; styles use
 Prettier and stylelint; protobuf uses Buf. Shared scripts and configuration have

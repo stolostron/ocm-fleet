@@ -103,7 +103,7 @@ export async function verifyCommit({
       delete snapshotEnv[key];
   }
   snapshotEnv.NX_DAEMON = "false";
-  snapshotEnv.NX_DEFAULT_OUTPUT_STYLE ??= "summary";
+  snapshotEnv.NX_DEFAULT_OUTPUT_STYLE ??= "static-failures-only";
   const temporary = await mkdtemp(join(tmpdir(), "ocm-fleet-staged-"));
   const snapshot = join(temporary, "checkout");
   let registered = false;
@@ -291,8 +291,11 @@ function runNx(target, cwd, env, signal) {
       process.execPath,
       [
         join(cwd, "node_modules/nx", nxPackage.bin.nx),
-        "run",
-        `ocm-fleet:${target}`,
+        // run-many also collapses passing workspace tasks. A single-project run
+        // prints every task in that project, even with failures-only output.
+        "run-many",
+        `--targets=${target}`,
+        "--projects=ocm-fleet",
       ],
       { cwd, env, stdio: "inherit" },
     );

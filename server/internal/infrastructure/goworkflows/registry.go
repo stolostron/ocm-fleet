@@ -438,6 +438,8 @@ func (r *Registry) RegisterDeleteManagedResource(spec *domain.DeleteManagedResou
 
 // registerActivity registers a typed activity with go-workflows and
 // creates a corresponding typed invoker.
+//
+//domain:boundary json types=I,O
 func registerActivity[I, O any](
 	w *worker.Worker,
 	invokers map[string]activityInvoker,

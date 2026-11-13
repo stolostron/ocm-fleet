@@ -23,13 +23,14 @@ type ResourceIdentityRepo struct {
 
 func (r *ResourceIdentityRepo) Create(ctx context.Context, pr *domain.PlatformResource) error {
 	s := pr.Snapshot()
+	name := pr.Name()
 	labels, err := json.Marshal(s.Labels)
 	if err != nil {
 		return fmt.Errorf("marshal labels: %w", err)
 	}
 
-	collectionName := string(s.Name.Collection())
-	resourceID := string(s.Name.ID())
+	collectionName := string(name.Collection())
+	resourceID := string(name.ID())
 
 	_, err = r.DB.ExecContext(ctx,
 		`INSERT INTO platform_resources (collection_name, resource_id, labels, created_at, updated_at)
@@ -45,10 +46,10 @@ func (r *ResourceIdentityRepo) Create(ctx context.Context, pr *domain.PlatformRe
 		return fmt.Errorf("insert platform resource: %w", err)
 	}
 
-	if err := r.reconcileAliases(ctx, s); err != nil {
+	if err := r.reconcileAliases(ctx, name, s.Aliases); err != nil {
 		return err
 	}
-	if err := r.reconcileRelationships(ctx, s); err != nil {
+	if err := r.reconcileRelationships(ctx, name, s.Relationships); err != nil {
 		return err
 	}
 	return nil
@@ -74,13 +75,14 @@ func (r *ResourceIdentityRepo) GetByName(ctx context.Context, name domain.Resour
 
 func (r *ResourceIdentityRepo) Update(ctx context.Context, pr *domain.PlatformResource) error {
 	s := pr.Snapshot()
+	name := pr.Name()
 	labels, err := json.Marshal(s.Labels)
 	if err != nil {
 		return fmt.Errorf("marshal labels: %w", err)
 	}
 
-	collectionName := string(s.Name.Collection())
-	resourceID := string(s.Name.ID())
+	collectionName := string(name.Collection())
+	resourceID := string(name.ID())
 
 	res, err := r.DB.ExecContext(ctx,
 		`UPDATE platform_resources SET labels = $1, updated_at = $2 WHERE collection_name = $3 AND resource_id = $4`,
@@ -96,10 +98,10 @@ func (r *ResourceIdentityRepo) Update(ctx context.Context, pr *domain.PlatformRe
 		return fmt.Errorf("platform resource %q: %w", s.Name, domain.ErrNotFound)
 	}
 
-	if err := r.reconcileAliases(ctx, s); err != nil {
+	if err := r.reconcileAliases(ctx, name, s.Aliases); err != nil {
 		return err
 	}
-	if err := r.reconcileRelationships(ctx, s); err != nil {
+	if err := r.reconcileRelationships(ctx, name, s.Relationships); err != nil {
 		return err
 	}
 	return nil
@@ -222,13 +224,13 @@ ORDER BY b.resource_id`
 // Reconciliation helpers
 // ---------------------------------------------------------------------------
 
-// reconcileAliases reconciles resource_alias_claims against s.Aliases
+// reconcileAliases reconciles resource_alias_claims against aliases
 // -- the PlatformResource aggregate's own complete, current view of
 // the aliases it asserts directly (as opposed to ones merely
 // contributed by some extension resource's inventory report; see the
 // migration's resource_alias_claims doc comment for the platform_owned
 // flag this distinction hinges on). Like [domain.InventoryReplacement.Aliases]'s
-// contract for ReplaceInventory, s.Aliases is treated as the complete
+// contract for ReplaceInventory, the aliases are treated as the complete
 // current set: an entry present marks (or creates) its claim
 // platform_owned; a platform_owned claim absent from it gets
 // unmarked, and deleted outright if no contributor is left holding it
@@ -239,16 +241,16 @@ ORDER BY b.resource_id`
 // which are already one-row-at-a-time by nature (a single aggregate),
 // so there's no batch to fold into a single round trip the way
 // ReplaceInventory's chunk of many reports has.
-func (r *ResourceIdentityRepo) reconcileAliases(ctx context.Context, s domain.PlatformResourceSnapshot) error {
-	collectionName := string(s.Name.Collection())
-	resourceID := string(s.Name.ID())
+func (r *ResourceIdentityRepo) reconcileAliases(ctx context.Context, name domain.ResourceName, aliases []domain.ResourceAliasSnapshot) error {
+	collectionName := string(name.Collection())
+	resourceID := string(name.ID())
 
-	asserted := make(map[domain.Alias]bool, len(s.Aliases))
-	for _, alias := range s.Aliases {
+	asserted := make(map[domain.Alias]bool, len(aliases))
+	for _, alias := range aliases {
 		a := domain.AliasFromSnapshot(domain.AliasSnapshot{
-			Namespace: alias.Namespace,
-			Key:       alias.Key,
-			Value:     alias.Value,
+			Namespace: domain.AliasNamespace(alias.Namespace),
+			Key:       domain.AliasKey(alias.Key),
+			Value:     domain.AliasValue(alias.Value),
 		})
 		asserted[a] = true
 
@@ -264,7 +266,7 @@ func (r *ResourceIdentityRepo) reconcileAliases(ctx context.Context, s domain.Pl
 			if existingCollection != collectionName || existingResourceID != resourceID {
 				return fmt.Errorf("alias %s/%s/%s owned by %s/%s, not %s: %w",
 					alias.Namespace, alias.Key, alias.Value,
-					existingCollection, existingResourceID, s.Name, domain.ErrAlreadyExists)
+					existingCollection, existingResourceID, name, domain.ErrAlreadyExists)
 			}
 			if platformOwned {
 				continue
@@ -369,13 +371,17 @@ func (r *ResourceIdentityRepo) retractAbsentPlatformOwnedAliases(ctx context.Con
 	return nil
 }
 
-func (r *ResourceIdentityRepo) reconcileRelationships(ctx context.Context, s domain.PlatformResourceSnapshot) error {
-	sourceCollection := string(s.Name.Collection())
-	sourceResourceID := string(s.Name.ID())
-	for _, rel := range s.Relationships {
-		targetCollection := string(rel.TargetName.Collection())
-		targetResourceID := string(rel.TargetName.ID())
-		_, err := r.DB.ExecContext(ctx,
+func (r *ResourceIdentityRepo) reconcileRelationships(ctx context.Context, name domain.ResourceName, relationships []domain.ResourceRelationshipSnapshot) error {
+	sourceCollection := string(name.Collection())
+	sourceResourceID := string(name.ID())
+	for _, rel := range relationships {
+		target, err := domain.ParseResourceName(rel.TargetName)
+		if err != nil {
+			return fmt.Errorf("relationship target: %w", err)
+		}
+		targetCollection := string(target.Collection())
+		targetResourceID := string(target.ID())
+		_, err = r.DB.ExecContext(ctx,
 			`INSERT INTO resource_relationships
 			   (source_collection_name, source_resource_id, type, target_collection_name, target_resource_id, source_service, created_at)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -484,7 +490,7 @@ func scanPlatformResourceAggregate(s scanner) (*domain.PlatformResource, error) 
 	}
 
 	snap := domain.PlatformResourceSnapshot{
-		Name:      domain.ResourceName(collectionName + "/" + resourceID),
+		Name:      collectionName + "/" + resourceID,
 		Labels:    labels,
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
@@ -498,5 +504,9 @@ func scanPlatformResourceAggregate(s scanner) (*domain.PlatformResource, error) 
 	if err := json.Unmarshal([]byte(relationshipsJSON), &snap.Relationships); err != nil {
 		return nil, fmt.Errorf("unmarshal relationships: %w", err)
 	}
-	return domain.PlatformResourceFromSnapshot(snap), nil
+	resource, err := domain.PlatformResourceFromSnapshot(snap)
+	if err != nil {
+		return nil, fmt.Errorf("restore platform resource: %w", err)
+	}
+	return resource, nil
 }

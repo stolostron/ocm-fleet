@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -115,8 +116,10 @@ type SignerEnrollmentSnapshot struct {
 
 // PlatformResourceSnapshot is the persistence DTO for [PlatformResource].
 // It captures the aggregate's full state including child entities.
+//
+//domain:snapshot
 type PlatformResourceSnapshot struct {
-	Name      ResourceName
+	Name      string
 	Labels    map[string]string
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -128,11 +131,13 @@ type PlatformResourceSnapshot struct {
 
 // ResourceRepresentationSnapshot is the persistence DTO for
 // [ResourceRepresentation].
+//
+//domain:snapshot
 type ResourceRepresentationSnapshot struct {
-	ServiceName          ServiceName
-	Version              APIVersion
-	Name                 ResourceName
-	ExtensionResourceUID ExtensionResourceUID
+	ServiceName          string
+	Version              string
+	Name                 string
+	ExtensionResourceUID string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 }
@@ -149,20 +154,24 @@ type AliasSetSnapshot []AliasSnapshot
 
 // ResourceAliasSnapshot is the persistence DTO for an [Alias] bound
 // to a platform resource.
+//
+//domain:snapshot
 type ResourceAliasSnapshot struct {
-	Namespace AliasNamespace
-	Key       AliasKey
-	Value     AliasValue
+	Namespace string
+	Key       string
+	Value     string
 	CreatedAt time.Time
 }
 
 // ResourceRelationshipSnapshot is the persistence DTO for
 // [ResourceRelationship].
+//
+//domain:snapshot
 type ResourceRelationshipSnapshot struct {
-	SourceName    ResourceName
-	Type          RelationshipType
-	TargetName    ResourceName
-	SourceService ServiceName
+	SourceName    string
+	Type          string
+	TargetName    string
+	SourceService string
 	CreatedAt     time.Time
 }
 
@@ -661,7 +670,17 @@ func SignerEnrollmentFromSnapshot(s SignerEnrollmentSnapshot) SignerEnrollment {
 // snapshot. Labels are shallow-copied to avoid sharing the map with
 // the caller. Child entities (representations, aliases,
 // relationships) are reconstituted from their snapshot slices.
-func PlatformResourceFromSnapshot(s PlatformResourceSnapshot) *PlatformResource {
+// Missing historical update timestamps default to the creation timestamp.
+// Restoration checks the persisted representation and aggregate consistency;
+// it does not create a new resource or replace historical timestamps with now.
+func PlatformResourceFromSnapshot(s PlatformResourceSnapshot) (*PlatformResource, error) {
+	name, err := ParseResourceName(s.Name)
+	if err != nil {
+		return nil, fmt.Errorf("platform resource name: %w", err)
+	}
+	if s.UpdatedAt.IsZero() {
+		s.UpdatedAt = s.CreatedAt
+	}
 	labels := make(map[string]string, len(s.Labels))
 	for k, v := range s.Labels {
 		labels[k] = v
@@ -669,32 +688,61 @@ func PlatformResourceFromSnapshot(s PlatformResourceSnapshot) *PlatformResource 
 
 	reps := make([]ResourceRepresentation, len(s.Representations))
 	for i, rs := range s.Representations {
-		reps[i] = ResourceRepresentationFromSnapshot(rs)
+		rep, err := ResourceRepresentationFromSnapshot(rs)
+		if err != nil {
+			return nil, fmt.Errorf("platform resource representation %d: %w", i, err)
+		}
+		if rep.Name() != name {
+			return nil, fmt.Errorf("platform resource representation %d name differs from resource: %w", i, ErrInvalidArgument)
+		}
+		reps[i] = rep
 	}
 
 	aliases := make([]Alias, len(s.Aliases))
+	aliasValues := make(map[AliasRef]AliasValue, len(s.Aliases))
 	for i, as := range s.Aliases {
-		aliases[i] = AliasFromSnapshot(AliasSnapshot{
-			Namespace: as.Namespace,
-			Key:       as.Key,
-			Value:     as.Value,
-		})
+		alias, err := NewAlias(AliasNamespace(as.Namespace), AliasKey(as.Key), AliasValue(as.Value))
+		if err != nil {
+			return nil, fmt.Errorf("platform resource alias %d: %w", i, err)
+		}
+		if value, exists := aliasValues[alias.Ref()]; exists && value != alias.Value() {
+			return nil, fmt.Errorf("platform resource alias %d conflicts with another alias: %w", i, ErrInvalidArgument)
+		}
+		aliasValues[alias.Ref()] = alias.Value()
+		aliases[i] = alias
 	}
 
 	rels := make([]ResourceRelationship, len(s.Relationships))
+	type relationshipKey struct {
+		kind   RelationshipType
+		target ResourceName
+	}
+	relationships := make(map[relationshipKey]bool, len(s.Relationships))
 	for i, rs := range s.Relationships {
-		rels[i] = ResourceRelationshipFromSnapshot(rs)
+		rel, err := ResourceRelationshipFromSnapshot(rs)
+		if err != nil {
+			return nil, fmt.Errorf("platform resource relationship %d: %w", i, err)
+		}
+		if rel.SourceName() != name {
+			return nil, fmt.Errorf("platform resource relationship %d source differs from resource: %w", i, ErrInvalidArgument)
+		}
+		key := relationshipKey{rel.Type(), rel.TargetName()}
+		if relationships[key] {
+			return nil, fmt.Errorf("platform resource relationship %d is duplicated: %w", i, ErrInvalidArgument)
+		}
+		relationships[key] = true
+		rels[i] = rel
 	}
 
 	return &PlatformResource{
-		name:            s.Name,
+		name:            name,
 		labels:          labels,
 		createdAt:       s.CreatedAt,
 		updatedAt:       s.UpdatedAt,
 		representations: reps,
 		aliases:         NewAliasSet(aliases),
 		relationships:   rels,
-	}
+	}, nil
 }
 
 // ExtensionResourceTypeFromSnapshot constructs an
@@ -1007,7 +1055,11 @@ func (r *PlatformResource) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return err
 	}
-	*r = *PlatformResourceFromSnapshot(s)
+	value, err := PlatformResourceFromSnapshot(s)
+	if err != nil {
+		return err
+	}
+	*r = *value
 	return nil
 }
 

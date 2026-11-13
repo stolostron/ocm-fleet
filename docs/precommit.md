@@ -19,7 +19,15 @@ needed, then runs `ocm-fleet:check` against the exact proposed commit.
 - Failed checks leave source and staging unchanged. Existing unstaged and
   untracked files stay in place throughout; there is no stash to restore.
 - If a check fails, run `npx nx run ocm-fleet:verify`, review its changes, and stage
-  the intended changes before retrying. Nx prints paths to detailed failure logs.
+  the intended changes before retrying.
+
+The hook defaults to Nx's `static-failures-only` output: passing tasks collapse to
+one line and failed tasks show their diagnostics inline, including nested Nx
+failures. It uses `run-many` with just the workspace project selected so successful
+workspace tooling tests also collapse; `nx run` prints all output for tasks in the
+selected project. Set `NX_DEFAULT_OUTPUT_STYLE=summary` to show counts and failure
+log paths instead, or `static` to show every task's full output. An existing
+environment setting takes precedence over the hook's default.
 
 The adapter reuses installed external npm dependencies and redirects workspace
 package links into the snapshot. It refuses mismatched staged dependencies;
