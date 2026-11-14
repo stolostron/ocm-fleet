@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
+	_ "google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	// Blank import ensures attestation.proto is registered in
 	// protoregistry.GlobalFiles so the dynamic descriptor builder
@@ -21,7 +22,7 @@ import (
 // extension resource service. These are used to create dynamic messages for
 // gRPC request/response marshaling.
 //
-// Management request descriptors (CreateRequest, DeleteRequest, ResumeRequest)
+// Management request descriptors (CreateRequest, UpdateRequest, DeleteRequest, ResumeRequest)
 // and Spec are nil when the type has no management capability.
 type ExtensionServiceDescriptors struct {
 	// File is the synthesized file descriptor containing all messages and service.
@@ -36,6 +37,9 @@ type ExtensionServiceDescriptors struct {
 	// CreateRequest is the create request message descriptor.
 	// Nil when the type has no management capability.
 	CreateRequest protoreflect.MessageDescriptor
+
+	// UpdateRequest is nil for inventory-only resource types.
+	UpdateRequest protoreflect.MessageDescriptor
 
 	// GetRequest is the get request message descriptor.
 	GetRequest protoreflect.MessageDescriptor
@@ -114,6 +118,14 @@ func BuildExtensionServiceDescriptors(cfg *ResourceTypeConfig, specDesc protoref
 
 	var specFullName string
 	if hasManagement {
+		deps = append(deps, "google/protobuf/field_mask.proto")
+		maskFile, err := protoregistry.GlobalFiles.FindFileByPath("google/protobuf/field_mask.proto")
+		if err != nil {
+			return nil, err
+		}
+		if err := dynamicapi.RegisterFileAndDeps(files, maskFile); err != nil {
+			return nil, err
+		}
 		specFullName = string(specDesc.FullName())
 		specFile := specDesc.ParentFile()
 		deps = append([]string{string(specFile.Path())}, deps...)
@@ -146,6 +158,7 @@ func BuildExtensionServiceDescriptors(cfg *ResourceTypeConfig, specDesc protoref
 
 	if hasManagement {
 		messages = append(messages, buildCreateRequest(singular, lower, resourceFQN))
+		messages = append(messages, buildUpdateRequest(singular, lower, resourceFQN))
 	}
 	messages = append(messages,
 		buildGetRequest(singular),
@@ -191,6 +204,7 @@ func BuildExtensionServiceDescriptors(cfg *ResourceTypeConfig, specDesc protoref
 	}
 	if hasManagement {
 		out.CreateRequest = fd.Messages().ByName(protoreflect.Name("Create" + singular + "Request"))
+		out.UpdateRequest = fd.Messages().ByName(protoreflect.Name("Update" + singular + "Request"))
 		out.DeleteRequest = fd.Messages().ByName(protoreflect.Name("Delete" + singular + "Request"))
 		out.ResumeRequest = fd.Messages().ByName(protoreflect.Name("Resume" + singular + "Request"))
 		out.Spec = specDesc
@@ -231,6 +245,8 @@ func buildResourceMessage(cfg *ResourceTypeConfig, singular, pkg, resourceFQN, s
 			dynamicapi.Int64Field("generation", 25),
 			dynamicapi.MessageField("provenance", 26, "ocm.v1alpha.Provenance"),
 			dynamicapi.MessageField("delete_time", 27, "google.protobuf.Timestamp"),
+			dynamicapi.Int64Field("observed_generation", 28),
+			dynamicapi.StringField("status_reason", 29),
 		)
 	}
 
@@ -285,6 +301,20 @@ func buildCreateRequest(singular, lower, resourceFQN string) *descriptorpb.Descr
 			dynamicapi.MessageField(lower, 2, resourceFQN),
 			dynamicapi.BytesField("user_signature", 3),
 			dynamicapi.MessageField("valid_until", 4, "google.protobuf.Timestamp"),
+			dynamicapi.StringField("request_id", 5),
+		},
+	}
+}
+
+func buildUpdateRequest(singular, lower, resourceFQN string) *descriptorpb.DescriptorProto {
+	return &descriptorpb.DescriptorProto{
+		Name: proto.String("Update" + singular + "Request"),
+		Field: []*descriptorpb.FieldDescriptorProto{
+			dynamicapi.MessageField(lower, 1, resourceFQN),
+			dynamicapi.MessageField("update_mask", 2, "google.protobuf.FieldMask"),
+			dynamicapi.BytesField("user_signature", 3),
+			dynamicapi.MessageField("valid_until", 4, "google.protobuf.Timestamp"),
+			dynamicapi.Int64Field("expected_generation", 5),
 		},
 	}
 }
@@ -323,6 +353,7 @@ func buildDeleteRequest(singular string) *descriptorpb.DescriptorProto {
 		Name: proto.String("Delete" + singular + "Request"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("name", 1),
+			dynamicapi.StringField("etag", 2),
 		},
 	}
 }
@@ -342,11 +373,16 @@ func buildResumeRequest(singular string) *descriptorpb.DescriptorProto {
 
 func buildService(singular, plural, pkg string, hasManagement bool) *descriptorpb.ServiceDescriptorProto {
 	fqnPrefix := "." + pkg + "."
-	methods := make([]*descriptorpb.MethodDescriptorProto, 0, 5)
+	methods := make([]*descriptorpb.MethodDescriptorProto, 0, 6)
 	if hasManagement {
 		methods = append(methods, &descriptorpb.MethodDescriptorProto{
 			Name:       proto.String("Create" + singular),
 			InputType:  proto.String(fqnPrefix + "Create" + singular + "Request"),
+			OutputType: proto.String(fqnPrefix + singular),
+		})
+		methods = append(methods, &descriptorpb.MethodDescriptorProto{
+			Name:       proto.String("Update" + singular),
+			InputType:  proto.String(fqnPrefix + "Update" + singular + "Request"),
 			OutputType: proto.String(fqnPrefix + singular),
 		})
 	}

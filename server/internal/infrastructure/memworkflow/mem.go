@@ -157,6 +157,10 @@ func (r *Registry) RegisterCreateManagedResource(spec *domain.CreateManagedResou
 	return &createManagedResourceWorkflow{spec: spec}, nil
 }
 
+func (r *Registry) RegisterUpdateManagedResource(spec *domain.UpdateManagedResourceWorkflowSpec) (domain.UpdateManagedResourceWorkflow, error) {
+	return &updateManagedResourceWorkflow{spec: spec}, nil
+}
+
 func (r *Registry) RegisterDeleteManagedResource(spec *domain.DeleteManagedResourceWorkflowSpec) (domain.DeleteManagedResourceWorkflow, error) {
 	return &deleteManagedResourceWorkflow{registry: r, spec: spec}, nil
 }
@@ -447,12 +451,24 @@ type createManagedResourceWorkflow struct {
 func (w *createManagedResourceWorkflow) Start(ctx context.Context, input domain.CreateManagedResourceInput) (domain.Execution[domain.ExtensionResourceView], error) {
 	fullName := input.ResourceType.FullName(input.Name)
 	instanceID := domain.CreateManagedResourceWorkflowID(fullName)
+	if input.RequestID != "" {
+		instanceID += "-" + input.RequestID
+	}
 	return startWorkflow(&w.guard, instanceID, ctx,
 		nil, w.spec.Run, input,
 	)
 }
 
 // --- DeleteManagedResourceWorkflow ---
+
+type updateManagedResourceWorkflow struct {
+	spec  *domain.UpdateManagedResourceWorkflowSpec
+	guard guard
+}
+
+func (w *updateManagedResourceWorkflow) Start(ctx context.Context, input domain.UpdateManagedResourceInput) (domain.Execution[domain.ExtensionResourceView], error) {
+	return startWorkflow(&w.guard, "update-mr-"+input.RequestID, ctx, nil, w.spec.Run, input)
+}
 
 type deleteManagedResourceWorkflow struct {
 	registry *Registry
@@ -463,6 +479,9 @@ type deleteManagedResourceWorkflow struct {
 func (w *deleteManagedResourceWorkflow) Start(ctx context.Context, input domain.DeleteManagedResourceInput) (domain.Execution[domain.ExtensionResourceView], error) {
 	fullName := input.ResourceType.FullName(input.Name)
 	instanceID := domain.DeleteManagedResourceWorkflowID(fullName)
+	if input.RequestID != "" {
+		instanceID += "-" + input.RequestID
+	}
 	return startWorkflow(&w.guard, instanceID, ctx,
 		nil, w.spec.Run, input,
 	)

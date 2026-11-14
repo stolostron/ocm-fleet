@@ -1,0 +1,8 @@
+apiVersion: records.open-cluster-management.io/v1alpha1
+kind: FleetRecord
+metadata:
+  name: example
+  namespace: fleet-record-demo
+spec:
+  values:
+    message: hello from Kubernetes

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
 )
 
@@ -20,6 +22,7 @@ import (
 type ExtensionResourceService struct {
 	store         domain.Store
 	createWF      domain.CreateManagedResourceWorkflow
+	updateWF      domain.UpdateManagedResourceWorkflow
 	deleteWF      domain.DeleteManagedResourceWorkflow
 	resumeWF      domain.ResumeManagedResourceWorkflow
 	provenanceSvc *domain.ProvenanceService
@@ -45,6 +48,7 @@ func WithExtensionResourceClock(fn func() time.Time) ExtensionResourceServiceOpt
 func NewExtensionResourceService(
 	store domain.Store,
 	createWF domain.CreateManagedResourceWorkflow,
+	updateWF domain.UpdateManagedResourceWorkflow,
 	deleteWF domain.DeleteManagedResourceWorkflow,
 	resumeWF domain.ResumeManagedResourceWorkflow,
 	provenanceSvc *domain.ProvenanceService,
@@ -53,6 +57,7 @@ func NewExtensionResourceService(
 	s := &ExtensionResourceService{
 		store:         store,
 		createWF:      createWF,
+		updateWF:      updateWF,
 		deleteWF:      deleteWF,
 		resumeWF:      resumeWF,
 		provenanceSvc: provenanceSvc,
@@ -67,6 +72,7 @@ func NewExtensionResourceService(
 // CreateExtensionResourceInput carries the fields needed to create an
 // extension resource instance.
 type CreateExtensionResourceInput struct {
+	RequestID     string
 	ResourceType  domain.ResourceType
 	Name          domain.ResourceName
 	Spec          json.RawMessage
@@ -81,6 +87,9 @@ type CreateExtensionResourceInput struct {
 // starts the create workflow. Spec validation is handled at the
 // transport layer via protovalidate before reaching this method.
 func (s *ExtensionResourceService) Create(ctx context.Context, in CreateExtensionResourceInput) (domain.ExtensionResourceView, error) {
+	if in.RequestID == "" {
+		in.RequestID = uuid.NewString()
+	}
 	if len(in.Spec) == 0 {
 		return domain.ExtensionResourceView{}, fmt.Errorf("%w: spec is required", domain.ErrInvalidArgument)
 	}
@@ -145,6 +154,7 @@ func (s *ExtensionResourceService) Create(ctx context.Context, in CreateExtensio
 	}
 
 	exec, err := s.createWF.Start(ctx, domain.CreateManagedResourceInput{
+		RequestID:    in.RequestID,
 		ResourceType: in.ResourceType,
 		Name:         in.Name,
 		Spec:         in.Spec,
@@ -157,6 +167,37 @@ func (s *ExtensionResourceService) Create(ctx context.Context, in CreateExtensio
 		return domain.ExtensionResourceView{}, fmt.Errorf("start create workflow: %w", err)
 	}
 
+	return exec.AwaitResult(ctx)
+}
+
+// UpdateExtensionResourceInput selects complete mutable ownership units.
+// The transport resolves update_mask into UpdateSpec and UpdateLabels.
+type UpdateExtensionResourceInput = domain.UpdateManagedResourceInput
+
+// Update schedules a conditional mutation and its durable orchestration handoff.
+func (s *ExtensionResourceService) Update(ctx context.Context, in UpdateExtensionResourceInput) (domain.ExtensionResourceView, error) {
+	if in.UpdateSpec && len(in.Spec) == 0 {
+		return domain.ExtensionResourceView{}, fmt.Errorf("%w: spec is required", domain.ErrInvalidArgument)
+	}
+	// Bind even an unconditional API update to the incarnation and state read
+	// before scheduling. A worker replay must not overwrite newer intent.
+	if in.Etag == "" {
+		current, err := s.Get(ctx, in.ResourceType, in.Name)
+		if err != nil {
+			return domain.ExtensionResourceView{}, err
+		}
+		in.Etag = current.Etag()
+	}
+	if in.RequestID == "" {
+		in.RequestID = uuid.NewString()
+	}
+	if ac := AuthFromContext(ctx); ac != nil && ac.Subject != nil {
+		in.Auth = domain.DeliveryAuth{Caller: ac.Subject, Audience: ac.Audience, Token: ac.Token}
+	}
+	exec, err := s.updateWF.Start(ctx, in)
+	if err != nil {
+		return domain.ExtensionResourceView{}, err
+	}
 	return exec.AwaitResult(ctx)
 }
 
@@ -191,8 +232,21 @@ func (s *ExtensionResourceService) List(ctx context.Context, rt domain.ResourceT
 	return views, tx.Commit()
 }
 
+// DeleteExtensionResourceInput identifies the resource and optional freshness
+// precondition. The workflow additionally binds the loaded resource UID.
+type DeleteExtensionResourceInput struct {
+	RequestID    string
+	ResourceType domain.ResourceType
+	Name         domain.ResourceName
+	Etag         domain.Etag
+}
+
 // Delete starts the delete workflow for an extension resource.
-func (s *ExtensionResourceService) Delete(ctx context.Context, rt domain.ResourceType, name domain.ResourceName) (domain.ExtensionResourceView, error) {
+func (s *ExtensionResourceService) Delete(ctx context.Context, in DeleteExtensionResourceInput) (domain.ExtensionResourceView, error) {
+	rt, name := in.ResourceType, in.Name
+	if in.RequestID == "" {
+		in.RequestID = uuid.NewString()
+	}
 	var auth domain.DeliveryAuth
 	ac := AuthFromContext(ctx)
 	if ac != nil && ac.Subject != nil {
@@ -225,9 +279,13 @@ func (s *ExtensionResourceService) Delete(ctx context.Context, rt domain.Resourc
 	// custom Deployment materializes a resource the addon also manages.
 	// Those must fail here rather than retry forever in mr-mutate-to-deleting.
 	fullName := rt.FullName(name)
-	er, err := tx.ExtensionResources().Get(ctx, fullName)
+	view, err := tx.ExtensionResources().GetView(ctx, fullName)
 	if err != nil {
 		return domain.ExtensionResourceView{}, err
+	}
+	er := &view.Resource
+	if in.Etag == "" {
+		in.Etag = view.Etag()
 	}
 	if er.Managed() == nil {
 		return domain.ExtensionResourceView{}, fmt.Errorf(
@@ -240,8 +298,11 @@ func (s *ExtensionResourceService) Delete(ctx context.Context, rt domain.Resourc
 	}
 
 	exec, err := s.deleteWF.Start(ctx, domain.DeleteManagedResourceInput{
+		RequestID:    in.RequestID,
 		ResourceType: rt,
 		Name:         name,
+		ExpectedUID:  er.UID(),
+		Etag:         in.Etag,
 		Auth:         auth,
 		TypeDef:      typeDef,
 	})

@@ -93,6 +93,9 @@ func Build(cfg *ResourceTypeConfig, deps Deps) (*RegisteredService, error) {
 			Handler:    handler.handleCreate,
 		})
 	}
+	if svcDescs.UpdateRequest != nil {
+		methods = append(methods, grpc.MethodDesc{MethodName: "Update" + cfg.Singular, Handler: handler.handleUpdate})
+	}
 	methods = append(methods,
 		grpc.MethodDesc{
 			MethodName: "Get" + cfg.Singular,
@@ -226,6 +229,10 @@ func (h *dynamicHandler) doCreate(ctx context.Context, req proto.Message) (proto
 		ResourceType: h.cfg.ResourceType,
 		Name:         resourceName,
 		Spec:         json.RawMessage(specJSON),
+	}
+	in.RequestID, err = readRequestID(reqMsg)
+	if err != nil {
+		return nil, err
 	}
 
 	labelsField := h.descs.Resource.Fields().ByName("labels")
@@ -375,7 +382,8 @@ func (h *dynamicHandler) doDelete(ctx context.Context, req proto.Message) (proto
 		return nil, status.Errorf(codes.InvalidArgument, "invalid name: %v", err)
 	}
 
-	view, err := h.resources.Delete(ctx, h.cfg.ResourceType, resourceName)
+	etag := domain.Etag(req.ProtoReflect().Get(h.descs.DeleteRequest.Fields().ByName("etag")).String())
+	view, err := h.resources.Delete(ctx, application.DeleteExtensionResourceInput{ResourceType: h.cfg.ResourceType, Name: resourceName, Etag: etag})
 	if err != nil {
 		return nil, dynamicapi.ToStatusError(err)
 	}

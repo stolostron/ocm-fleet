@@ -1,10 +1,13 @@
 package extensionresource
 
 import (
+	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -21,6 +24,7 @@ import (
 //
 //	POST   {prefix}                 -> Create
 //	GET    {prefix}/{id}            -> Get
+//	PATCH  {prefix}/{id}            -> Update
 //	GET    {prefix}                 -> List
 //	DELETE {prefix}/{id}            -> Delete
 //	POST   {prefix}/{id}:resume     -> Resume
@@ -70,6 +74,12 @@ func BuildHTTPHandler(svc *RegisteredService, conn *grpc.ClientConn, prefix stri
 		case r.Method == http.MethodGet && len(rest) > 1:
 			id := strings.TrimPrefix(rest, "/")
 			handleHTTPGet(w, r, conn, svc, id)
+		case r.Method == http.MethodPatch && len(rest) > 1:
+			if svc.Descriptors.UpdateRequest == nil {
+				http.NotFound(w, r)
+				return
+			}
+			handleHTTPUpdate(w, r, conn, svc, strings.TrimPrefix(rest, "/"))
 		case r.Method == http.MethodDelete && len(rest) > 1:
 			if svc.Descriptors.DeleteRequest == nil {
 				http.NotFound(w, r)
@@ -110,6 +120,10 @@ func handleHTTPCreate(w http.ResponseWriter, r *http.Request, conn *grpc.ClientC
 	resourceField := svc.Descriptors.CreateRequest.Fields().ByNumber(2)
 	createReq.Set(idField, stringValue(id))
 	createReq.Set(resourceField, messageValue(resource))
+	if err := populateMutationQuery(r, createReq); err != nil {
+		dynamicapi.HTTPError(w, codes.InvalidArgument, err.Error())
+		return
+	}
 
 	resp := dynamicpb.NewMessage(svc.Descriptors.Resource)
 	method := "/" + svc.Config.GRPCServiceName() + "/Create" + svc.Config.Singular
@@ -169,6 +183,11 @@ func handleHTTPDelete(w http.ResponseWriter, r *http.Request, conn *grpc.ClientC
 	deleteReq := dynamicpb.NewMessage(svc.Descriptors.DeleteRequest)
 	nameField := svc.Descriptors.DeleteRequest.Fields().ByName("name")
 	deleteReq.Set(nameField, stringValue(svc.Config.Collection()+id))
+	deleteReq.Set(svc.Descriptors.DeleteRequest.Fields().ByName("etag"), stringValue(r.URL.Query().Get("etag")))
+	if err := populateMutationQuery(r, deleteReq); err != nil {
+		dynamicapi.HTTPError(w, codes.InvalidArgument, err.Error())
+		return
+	}
 
 	resp := dynamicpb.NewMessage(svc.Descriptors.Resource)
 	method := "/" + svc.Config.GRPCServiceName() + "/Delete" + svc.Config.Singular
@@ -216,4 +235,89 @@ func stringValue(s string) protoreflect.Value {
 
 func messageValue(m *dynamicpb.Message) protoreflect.Value {
 	return protoreflect.ValueOfMessage(m)
+}
+
+func handleHTTPUpdate(w http.ResponseWriter, r *http.Request, conn *grpc.ClientConn, svc *RegisteredService, id string) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<20))
+	if err != nil {
+		dynamicapi.HTTPError(w, codes.InvalidArgument, "read body: "+err.Error())
+		return
+	}
+	resource := dynamicpb.NewMessage(svc.Descriptors.Resource)
+	if err := protojson.Unmarshal(body, resource); err != nil {
+		dynamicapi.HTTPError(w, codes.InvalidArgument, "parse body: "+err.Error())
+		return
+	}
+	nameField := svc.Descriptors.Resource.Fields().ByName("name")
+	name := svc.Config.Collection() + id
+	if supplied := resource.Get(nameField).String(); supplied != "" && supplied != name {
+		dynamicapi.HTTPError(w, codes.InvalidArgument, "body name does not match request path")
+		return
+	}
+	resource.Set(nameField, stringValue(name))
+	req := dynamicpb.NewMessage(svc.Descriptors.UpdateRequest)
+	req.Set(svc.Descriptors.UpdateRequest.Fields().ByNumber(1), messageValue(resource))
+	query := r.URL.Query()
+	paths, present := query["update_mask"]
+	if !present {
+		paths, present = query["updateMask"]
+	}
+	if present {
+		mask := req.Mutable(svc.Descriptors.UpdateRequest.Fields().ByName("update_mask")).Message()
+		list := mask.Mutable(mask.Descriptor().Fields().ByName("paths")).List()
+		for _, value := range paths {
+			if value == "" {
+				continue // an explicitly empty mask is a no-op
+			}
+			for path := range strings.SplitSeq(value, ",") {
+				list.Append(stringValue(path))
+			}
+		}
+	}
+	if err := populateMutationQuery(r, req); err != nil {
+		dynamicapi.HTTPError(w, codes.InvalidArgument, err.Error())
+		return
+	}
+	resp := dynamicpb.NewMessage(svc.Descriptors.Resource)
+	if err := conn.Invoke(dynamicapi.GRPCContext(r), "/"+svc.Config.GRPCServiceName()+"/Update"+svc.Config.Singular, req, resp); err != nil {
+		dynamicapi.GRPCHTTPError(w, err)
+		return
+	}
+	dynamicapi.WriteJSON(w, http.StatusOK, resp)
+}
+
+// populateMutationQuery handles request metadata outside the resource body,
+// matching the standard HTTP binding for Create and Update.
+func populateMutationQuery(r *http.Request, req *dynamicpb.Message) error {
+	fields := req.Descriptor().Fields()
+	query := r.URL.Query()
+	if field := fields.ByName("request_id"); field != nil {
+		req.Set(field, stringValue(query.Get("request_id")))
+	}
+	if field := fields.ByName("user_signature"); field != nil && query.Get("user_signature") != "" {
+		value, err := base64.StdEncoding.DecodeString(query.Get("user_signature"))
+		if err != nil {
+			return fmt.Errorf("invalid user_signature: %w", err)
+		}
+		req.Set(field, protoreflect.ValueOfBytes(value))
+	}
+	if field := fields.ByName("valid_until"); field != nil && query.Get("valid_until") != "" {
+		value, err := time.Parse(time.RFC3339Nano, query.Get("valid_until"))
+		if err != nil {
+			return fmt.Errorf("invalid valid_until: %w", err)
+		}
+		valueProto, err := dynamicapi.MarshalTimestamp(field, value)
+		if err != nil {
+			return err
+		}
+		req.Set(field, valueProto)
+	}
+	if field := fields.ByName("expected_generation"); field != nil && query.Get("expected_generation") != "" {
+		value, err := strconv.ParseInt(query.Get("expected_generation"), 10, 64)
+		if err != nil || value <= 0 {
+			return fmt.Errorf("expected_generation must be a positive integer")
+		}
+		req.Set(field, protoreflect.ValueOfInt64(value))
+	}
+	return nil
 }

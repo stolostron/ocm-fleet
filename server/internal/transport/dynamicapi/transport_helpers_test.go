@@ -2,6 +2,7 @@ package dynamicapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -23,6 +24,26 @@ func TestHTTPError_AbortedMapsToConflict(t *testing.T) {
 	}
 }
 
+func TestCreationRetired_DecisionSurvivesHTTPTranslation(t *testing.T) {
+	err := ToStatusError(fmt.Errorf("replayed Create: %w", domain.ErrCreationRetired))
+	w := httptest.NewRecorder()
+	GRPCHTTPError(w, err)
+	var body struct {
+		Code    int `json:"code"`
+		Details []struct {
+			Type   string `json:"@type"`
+			Reason string `json:"reason"`
+			Domain string `json:"domain"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusNotFound || body.Code != int(codes.NotFound) || len(body.Details) != 1 || body.Details[0].Type != "type.googleapis.com/google.rpc.ErrorInfo" || body.Details[0].Reason != "CREATION_RETIRED" || body.Details[0].Domain != "open-cluster-management.io" {
+		t.Fatalf("lost the definitive creation outcome: %s", w.Body.String())
+	}
+}
+
 func TestHTTPError_AllCodes(t *testing.T) {
 	tests := []struct {
 		code     codes.Code
@@ -32,6 +53,9 @@ func TestHTTPError_AllCodes(t *testing.T) {
 		{codes.NotFound, http.StatusNotFound},
 		{codes.AlreadyExists, http.StatusConflict},
 		{codes.Aborted, http.StatusConflict},
+		{codes.Unauthenticated, http.StatusUnauthorized},
+		{codes.Unavailable, http.StatusServiceUnavailable},
+		{codes.DeadlineExceeded, http.StatusGatewayTimeout},
 		// codes.OK is not a real error path; asserts the defensive default for unhandled codes.
 		{codes.OK, http.StatusInternalServerError},
 		{codes.PermissionDenied, http.StatusForbidden},
@@ -43,6 +67,13 @@ func TestHTTPError_AllCodes(t *testing.T) {
 			HTTPError(w, tt.code, "msg")
 			if w.Code != tt.wantHTTP {
 				t.Errorf("got %d, want %d", w.Code, tt.wantHTTP)
+			}
+			var body struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Code != int(tt.code) || body.Message != "msg" {
+				t.Fatalf("structured error: %s, %v", w.Body.String(), err)
 			}
 		})
 	}

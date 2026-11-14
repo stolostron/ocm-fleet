@@ -40,7 +40,13 @@ func hashExtensionResourceFields(h hash.Hash, v ExtensionResourceView) {
 	}
 	if v.Intent != nil {
 		binary.Write(h, binary.BigEndian, int64(v.Intent.Version))
-		hashBytes(h, v.Intent.Spec)
+		// PostgreSQL JSONB can reorder object keys. Persisting the same
+		// immutable intent must not invalidate the write response's etag.
+		spec, err := canonicalJSON(v.Intent.Spec)
+		if err != nil {
+			spec = v.Intent.Spec
+		}
+		hashBytes(h, spec)
 	}
 	// TODO: If the capability is no longer active, we should either:
 	// - Not return this from repository queries at all (ideal)
@@ -75,7 +81,9 @@ func hashDeploymentFields(h hash.Hash, v DeploymentView) {
 
 func hashFulfillmentFields(h hash.Hash, f Fulfillment) {
 	binary.Write(h, binary.BigEndian, int64(f.generation))
+	binary.Write(h, binary.BigEndian, int64(f.observedGeneration))
 	hashString(h, string(f.state))
+	hashString(h, f.pauseReason)
 	hashString(h, f.statusReason)
 	binary.Write(h, binary.BigEndian, int64(len(f.resolvedTargets)))
 	for _, t := range f.resolvedTargets {

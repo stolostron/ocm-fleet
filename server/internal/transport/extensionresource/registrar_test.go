@@ -211,7 +211,7 @@ func setupWithDelivery(
 	}
 
 	extensionResourceSvc := application.NewExtensionResourceService(
-		store, createMRWf, deleteMRWf, resumeMRWf, nil,
+		store, createMRWf, mustRegisterUpdate(t, reg, store, orchWf), deleteMRWf, resumeMRWf, nil,
 	)
 
 	targetSvc := &application.TargetService{Store: store}
@@ -281,6 +281,15 @@ func setupWithDelivery(
 	t.Cleanup(func() { conn.Close() })
 
 	return &testEnv{conn: conn, svc: svc, store: store}
+}
+
+func mustRegisterUpdate(t *testing.T, reg domain.Registry, store domain.Store, orch domain.OrchestrationWorkflow) domain.UpdateManagedResourceWorkflow {
+	t.Helper()
+	wf, err := reg.RegisterUpdateManagedResource(&domain.UpdateManagedResourceWorkflowSpec{Store: store, Orchestration: orch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wf
 }
 
 func TestDynamic_CreateThenGet(t *testing.T) {
@@ -638,8 +647,8 @@ func TestDynamic_ServiceDescriptors(t *testing.T) {
 	}
 
 	// Verify method count
-	if len(svc.Desc.Methods) != 5 {
-		t.Fatalf("method count = %d, want 5", len(svc.Desc.Methods))
+	if len(svc.Desc.Methods) != 6 {
+		t.Fatalf("method count = %d, want 6", len(svc.Desc.Methods))
 	}
 
 	// Verify method names

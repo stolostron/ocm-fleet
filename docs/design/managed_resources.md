@@ -460,7 +460,7 @@ Managed resource types extend both the gRPC and HTTP API surface at runtime. Sch
 When a schema is activated, the platform:
 
 1. **Compiles** the addon's inline proto sources into a file descriptor set, resolving well-known imports (`buf/validate/`_, `google/protobuf/`_) from a built-in registry.
-2. **Builds** a dynamic gRPC `ServiceDesc` with Create, Get, List, and Delete methods. The service name follows the addon's proto package: `{proto_package}.{Singular}Service` (e.g. `ocm.kind.v1alpha.ClusterService`). Request/response messages are constructed dynamically from the compiled spec descriptor.
+2. **Builds** a dynamic gRPC `ServiceDesc` with Create, Get, List, Update, Delete, and Resume methods for managed types; inventory-only types expose Get and List. The service name follows the addon's proto package: `{proto_package}.{Singular}Service` (e.g. `ocm.kind.v1alpha.ClusterService`). Request/response messages are constructed dynamically from the compiled spec descriptor.
 3. **Registers** the service in the `DynamicServiceMux`, which is wired as the gRPC server's `UnknownServiceHandler`. Requests to services not registered at server creation time are routed here instead of being rejected. Composite reflection merges dynamic services with static ones so they are discoverable via `grpcurl`.
 4. **Registers HTTP routes** in the `DynamicHTTPMux` — a wrapper around `http.ServeMux` that uses handler indirection for zero-downtime replacement. HTTP handlers proxy to the gRPC service, providing REST access at `/apis/{service_name}/{version}/{plural}` and `/apis/{service_name}/{version}/{plural}/{id}`.
 5. **Registers the platform resource type** in the platform API layer (generic schema), enabling the canonical identity surface at `/apis/open-cluster-management.io/v1alpha/{plural}/{id}`. For a cluster-capable addon this means the extension API is at `/apis/kind.open-cluster-management.io/v1alpha/clusters/{id}`, while the shared identity surface is at `/apis/open-cluster-management.io/v1alpha/clusters/{id}`.
@@ -468,6 +468,69 @@ When a schema is activated, the platform:
 Atomic replacement is a first-class operation. When an addon reconnects with a changed schema, the `DynamicSchemaActivator` detects the change via content hashing (SHA-256 over proto files, spec message, singular, plural, proto package, and service name), recompiles, and atomically swaps both the gRPC and HTTP service entries. In-flight requests that already resolved the old entry complete normally; new requests route to the replacement immediately. Unchanged schemas skip recompilation entirely.
 
 The transport-layer components live across three packages under `internal/transport/`: shared infrastructure (`dynamicapi` — muxes, file registry, compiler, helpers), extension services (`extensionresource` — service builder, activator), and platform-canonical services (`platformresource` — builder and handler). They are documented in [addon_integration.md — API extensibility](architecture/addon_integration.md#api-extensibility--dynamic-grpc-and-http). See also [addon lifecycle](architecture/addon_integration.md#addon-lifecycle) for how schemas flow from addon connect to API registration.
+
+### Controllers and conditional intent
+
+A controller can treat a managed resource's complete spec as one ownership unit.
+An update records a new immutable resource intent, advances the derived strategy
+and fulfillment generation, and arranges durable reconciliation. The spec change
+and its orchestration handoff must survive process failure without depending on
+a successful response reaching the caller. A semantically unchanged spec need
+not advance either version. User labels and provider inventory remain independent.
+
+Managed updates accept an etag from a prior read; deletes use the same conditional
+contract. A stale etag rejects the write and requires a fresh read. The comparison
+and mutation occur within a serialized write transaction for that aggregate.
+This prevents a controller's delayed write from overwriting a later spec change
+or operating on a replacement that reused the name. A completed older
+reconciliation may contribute delivery history needed for cleanup, but must not
+restore superseded lifecycle, credentials, or provenance. Cleanup itself belongs
+to the original fulfillment identity.
+
+Create requests need durable identities in addition to names. The Create
+request ID can also serve as the creation nonce: one logical attempt has one
+identity, and a new attempt uses a fresh nonce. A timeout can leave an attempt
+unresolved while a read reports absence; it might still arrive or finish later.
+Fleet serializes acceptance or definitive name-conflict rejection against other
+copies of that attempt. The decision commits before its response and survives
+the incarnation's deletion. A rejected attempt therefore remains rejected if the
+resource that occupied the name is subsequently deleted. This does not reserve
+the name against a fresh attempt.
+
+Creation decisions are compact state owned by the resource repository, not full
+historical resource responses. Accepted decisions identify their incarnation;
+replays can read its current state or explicitly report that it was retired.
+Rejected and retired decisions need a documented retention window. Forgetting
+them permits sufficiently late replay, so bounded storage gives bounded replay
+protection unless expired attempts can be independently rejected. Live accepted
+identities remain for the resource lifetime. Retention at the RM is distinct from
+signed creation authority and target-side revocation; see the
+[target delivery contract](architecture/target_delivery_contract.md#option-signed-creation-nonce).
+
+Updates and deletes need no ledger of every mutation to achieve controller
+convergence. A conditional activity replay may encounter its own stale etag and
+fail safely. Current generation gaps and unfinished deletion must remain durable
+and discoverable, so recovery dispatches current work without depending on that
+original mutation succeeding again. A committed deletion reconciliation also
+provides a durable cleanup predicate; a lost or consumed notification must not
+strand cleanup after a workflow failure. Recovery can notify an existing cleanup
+listener again or let a restarted listener read the committed completion state.
+
+A Kubernetes controller can use a finalizer, a persisted unresolved-create record,
+and UID-qualified names to implement this contract without a general Fleet owner
+reference API. A reserved name range provides initial ownership by convention;
+recording Fleet's UID fences later replacements. Without creation cancellation,
+finalization must resolve any outstanding Create first, even when retrying it
+might instantiate a resource that will immediately be deleted. This is suitable
+where that range and the controller's source state are protected. Server-enforced ownership,
+ownership transfer, and orphan discovery remain separate capabilities.
+
+Generation-aware status distinguishes accepted intent from completed execution.
+The managed API exposes current and observed generations alongside lifecycle,
+reconciling, pause, and failure information. A controller may report readiness
+only for the source generation and Fleet generation it actually observed.
+Provider-specific health still belongs to inventory; an acknowledgement from a
+configuration-only provider does not establish external resource health.
 
 ### Durability
 

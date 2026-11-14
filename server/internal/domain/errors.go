@@ -9,6 +9,11 @@ var (
 	// ErrNotFound indicates that a requested resource does not exist.
 	ErrNotFound = errors.New("not found")
 
+	// ErrCreationRetired means this exact Create was accepted, but its
+	// incarnation has since been deleted. Unlike a generic lookup failure,
+	// this is a definitive creation decision within the retention window.
+	ErrCreationRetired = errors.New("creation retired")
+
 	// ErrAlreadyExists indicates that a resource with the same identity
 	// already exists.
 	ErrAlreadyExists = errors.New("already exists")

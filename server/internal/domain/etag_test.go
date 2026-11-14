@@ -200,6 +200,18 @@ func TestExtensionResourceView_Etag_Deterministic(t *testing.T) {
 	}
 }
 
+func TestExtensionResourceView_Etag_SpecEncoding(t *testing.T) {
+	view := extensionView()
+	view.Intent.Spec = json.RawMessage(`{"values":{"z":"last","a":"first"}}`)
+	written := view.Etag()
+	// PostgreSQL's JSONB representation changes whitespace and key order,
+	// without changing the intent or any other concurrency-relevant field.
+	view.Intent.Spec = json.RawMessage(`{"values": {"a": "first", "z": "last"}}`)
+	if persisted := view.Etag(); persisted != written {
+		t.Fatalf("persistence changed the etag without changing intent: %s != %s", persisted, written)
+	}
+}
+
 func TestExtensionResourceView_Etag_WeakPrefix(t *testing.T) {
 	etag := string(extensionView().Etag())
 	if !strings.HasPrefix(etag, `W/"`) {

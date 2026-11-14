@@ -94,7 +94,7 @@ func TestBuildExtensionServiceDescriptors_ManagedOnly(t *testing.T) {
 
 	res := descs.Resource
 	assertHasFields(t, res, "name", "uid", "labels", "create_time", "update_time", "etag",
-		"spec", "intent_version", "state", "reconciling", "pause_reason", "generation", "provenance", "delete_time")
+		"spec", "intent_version", "state", "reconciling", "pause_reason", "generation", "observed_generation", "status_reason", "provenance", "delete_time")
 	assertMissingFields(t, res, "local_labels", "conditions", "observation", "local_update_time", "index_update_time")
 
 	labels := res.Fields().ByName("labels")
@@ -102,8 +102,8 @@ func TestBuildExtensionServiceDescriptors_ManagedOnly(t *testing.T) {
 		t.Error("labels should be map<string,string>")
 	}
 
-	assertMethodNames(t, descs.Service, "CreateCluster", "GetCluster", "ListClusters", "DeleteCluster", "ResumeCluster")
-	if descs.CreateRequest == nil || descs.DeleteRequest == nil || descs.ResumeRequest == nil {
+	assertMethodNames(t, descs.Service, "CreateCluster", "UpdateCluster", "GetCluster", "ListClusters", "DeleteCluster", "ResumeCluster")
+	if descs.CreateRequest == nil || descs.UpdateRequest == nil || descs.DeleteRequest == nil || descs.ResumeRequest == nil {
 		t.Error("management request descriptors should be present")
 	}
 	if descs.Spec == nil {
@@ -120,7 +120,7 @@ func TestBuildExtensionServiceDescriptors_InventoryOnly(t *testing.T) {
 	res := descs.Resource
 	assertHasFields(t, res, "name", "uid", "labels", "create_time", "update_time", "etag",
 		"local_labels", "conditions", "observation", "local_update_time", "index_update_time")
-	assertMissingFields(t, res, "spec", "intent_version", "state", "reconciling", "pause_reason", "generation", "provenance", "delete_time")
+	assertMissingFields(t, res, "spec", "intent_version", "state", "reconciling", "pause_reason", "generation", "observed_generation", "status_reason", "provenance", "delete_time")
 
 	localLabels := res.Fields().ByName("local_labels")
 	if localLabels == nil || !localLabels.IsMap() {
@@ -135,8 +135,8 @@ func TestBuildExtensionServiceDescriptors_InventoryOnly(t *testing.T) {
 	}
 
 	assertMethodNames(t, descs.Service, "GetCluster", "ListClusters")
-	assertMissingMethods(t, descs.Service, "CreateCluster", "DeleteCluster", "ResumeCluster")
-	if descs.CreateRequest != nil || descs.DeleteRequest != nil || descs.ResumeRequest != nil {
+	assertMissingMethods(t, descs.Service, "CreateCluster", "UpdateCluster", "DeleteCluster", "ResumeCluster")
+	if descs.CreateRequest != nil || descs.UpdateRequest != nil || descs.DeleteRequest != nil || descs.ResumeRequest != nil {
 		t.Error("management request descriptors should be nil for inventory-only")
 	}
 	if descs.Spec != nil {
@@ -154,7 +154,7 @@ func TestBuildExtensionServiceDescriptors_ManagedAndInventory(t *testing.T) {
 	assertHasFields(t, res, "name", "uid", "labels", "create_time", "update_time", "etag",
 		"spec", "intent_version", "state", "reconciling",
 		"local_labels", "conditions", "observation", "local_update_time", "index_update_time")
-	assertMethodNames(t, descs.Service, "CreateCluster", "GetCluster", "ListClusters", "DeleteCluster", "ResumeCluster")
+	assertMethodNames(t, descs.Service, "CreateCluster", "UpdateCluster", "GetCluster", "ListClusters", "DeleteCluster", "ResumeCluster")
 }
 
 func TestBuildExtensionServiceDescriptors_CommonLabelsOnAllShapes(t *testing.T) {
