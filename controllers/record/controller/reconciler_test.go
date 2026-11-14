@@ -63,7 +63,7 @@ func TestReconcile_LifecycleAndDrift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := env.remote.Update(env.ctx, current, uuid.NewString(), fleet.Spec{Values: map[string]string{"message": "external drift"}}); err != nil {
+	if _, err := env.remote.Update(env.ctx, current, fleet.Spec{Values: map[string]string{"message": "external drift"}}); err != nil {
 		t.Fatal(err)
 	}
 	for {
@@ -76,9 +76,9 @@ func TestReconcile_LifecycleAndDrift(t *testing.T) {
 			break
 		}
 	}
-	// A resolved create is sealed forever. Repairing manual deletion needs
+	// Within the replay window a resolved create stays sealed. Repair needs
 	// a new request ID and records a new Fleet incarnation at the same name.
-	if err := env.remote.Delete(env.ctx, current, uuid.NewString()); err != nil {
+	if err := env.remote.Delete(env.ctx, current); err != nil {
 		t.Fatal(err)
 	}
 	for {
@@ -136,7 +136,7 @@ func TestReconcile_ConcurrentEditsConvergeWithoutStaleStatus(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		_, err = env.remote.Update(env.ctx, current, uuid.NewString(), fleet.Spec{Values: map[string]string{"message": "competing Fleet write"}})
+		_, err = env.remote.Update(env.ctx, current, fleet.Spec{Values: map[string]string{"message": "competing Fleet write"}})
 		return err
 	}
 	if _, err := env.reconciler.Reconcile(env.ctx, ctrl.Request{NamespacedName: env.key}); !apierrors.IsConflict(err) {
@@ -173,6 +173,29 @@ func TestReconcile_UnavailableRouteRetainsFinalizer(t *testing.T) {
 	}
 	unavailable = false
 	env.driveDeleted()
+}
+
+func TestReconcile_CreateNotFoundDoesNotResolveUnknownAttempt(t *testing.T) {
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodPost {
+			return &http.Response{StatusCode: http.StatusNotFound, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"code":5,"message":"resource type temporarily unavailable"}`)), Request: req}, nil
+		}
+		return http.DefaultTransport.RoundTrip(req)
+	})
+	env := setup(t, transport)
+	env.step() // finalizer
+	env.step() // write-ahead Create
+	_, _ = env.reconciler.Reconcile(env.ctx, ctrl.Request{NamespacedName: env.key})
+	if env.get().Status.CreateConfirmed {
+		t.Fatal("an ordinary NotFound does not prove the creation nonce was retired")
+	}
+	if err := env.kube.Delete(env.ctx, env.get()); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = env.reconciler.Reconcile(env.ctx, ctrl.Request{NamespacedName: env.key})
+	if !slices.Contains(env.get().Finalizers, controller.Finalizer) {
+		t.Fatal("an ambiguous Create must retain the finalizer")
+	}
 }
 
 func TestReconcile_UnknownCreateThenDeletionAndLateRequest(t *testing.T) {
@@ -218,6 +241,46 @@ func TestReconcile_UnknownCreateThenDeletionAndLateRequest(t *testing.T) {
 	}
 }
 
+func TestReconcile_ConflictedCreateStaysRejectedAfterAdoptionAndDeletion(t *testing.T) {
+	gate := &delayedCreate{release: make(chan struct{}), done: make(chan error, 1)}
+	env := setup(t, gate)
+	defer gate.unblock()
+	env.step() // finalizer
+	env.step() // write-ahead N2
+	pending := env.get()
+	gate.requestID = pending.Status.CreateRequestID
+	// A separately created incarnation N1 occupies the reserved name before
+	// N2 is attempted. Only N2's first transport copy is held back.
+	existing, err := env.remote.Create(env.ctx, pending.Status.FleetName, uuid.NewString(), fleet.Spec{Values: map[string]string{"message": "existing"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.reconciler.Reconcile(env.ctx, ctrl.Request{NamespacedName: env.key}); err == nil {
+		t.Fatal("expected the ambiguous first N2 request")
+	}
+	env.step() // N2 retry durably conflicts, then adopts N1 by name
+	bound := env.get()
+	if !bound.Status.CreateConfirmed || bound.Status.FleetUID != existing.UID {
+		t.Fatal("N2 was not resolved before binding N1")
+	}
+	if err := env.kube.Delete(env.ctx, bound); err != nil {
+		t.Fatal(err)
+	}
+	env.driveDeleted()
+	gate.unblock()
+	select {
+	case err := <-gate.done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-env.ctx.Done():
+		t.Fatal(env.ctx.Err())
+	}
+	if _, err := env.remote.Get(env.ctx, pending.Status.FleetName); !fleet.IsNotFound(err) {
+		t.Fatalf("the delayed, rejected N2 created an orphan: %v", err)
+	}
+}
+
 func TestReconcile_ReplacementUIDIsNeverMutatedOrDeleted(t *testing.T) {
 	env := setup(t, nil)
 	bound := env.drive(func(r *api.FleetRecord) bool { return meta.IsStatusConditionTrue(r.Status.Conditions, "Ready") })
@@ -225,7 +288,7 @@ func TestReconcile_ReplacementUIDIsNeverMutatedOrDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := env.remote.Delete(env.ctx, current, uuid.NewString()); err != nil {
+	if err := env.remote.Delete(env.ctx, current); err != nil {
 		t.Fatal(err)
 	}
 	for {
@@ -365,19 +428,20 @@ func (e *environment) driveDeleted() {
 
 // delayedCreate is a transport fault injector, not an alternate Fleet
 // implementation. It releases an actual HTTP request after finalization, which
-// exercises Fleet's durable receipt rather than merely counting method calls.
+// exercises Fleet's retained creation decision rather than counting calls.
 type delayedCreate struct {
 	once        sync.Once
 	releaseOnce sync.Once
 	release     chan struct{}
 	done        chan error
+	requestID   string
 }
 
 func (g *delayedCreate) unblock() { g.releaseOnce.Do(func() { close(g.release) }) }
 
 func (g *delayedCreate) RoundTrip(req *http.Request) (*http.Response, error) {
 	deferred := false
-	if req.Method == http.MethodPost && req.URL.Query().Get("record_id") != "" {
+	if req.Method == http.MethodPost && req.URL.Query().Get("record_id") != "" && (g.requestID == "" || req.URL.Query().Get("request_id") == g.requestID) {
 		g.once.Do(func() { deferred = true })
 	}
 	if !deferred {

@@ -99,6 +99,20 @@ type ExtensionResourceRepository interface {
 	// never folded into any cross-resource state.
 	Delete(ctx context.Context, name FullResourceName) error
 
+	// Creation decisions belong to the same repository as managed state, but
+	// survive removal of an incarnation. GetCreation serializes concurrent
+	// Creates by both request ID and resource name, including absent records.
+	// Call it in a write transaction before checking existence or mutating.
+	GetCreation(ctx context.Context, requestID string, name FullResourceName) (ManagedResourceCreation, error)
+	PutCreation(ctx context.Context, creation ManagedResourceCreation) error
+	// RetireCreation starts retention once, at final deletion. Repeated cleanup
+	// must not extend the retention window or affect a replacement incarnation.
+	RetireCreation(ctx context.Context, uid ExtensionResourceUID, retainUntil time.Time) error
+	PurgeExpiredCreations(ctx context.Context, now time.Time, limit int) (int, error)
+	// ListManagedResourceWork uses a UID cursor so failed or paused deletions
+	// cannot starve later work. It returns no intent payload or credentials.
+	ListManagedResourceWork(ctx context.Context, after ExtensionResourceUID, limit int) ([]ManagedResourceWork, error)
+
 	// Read views (join extension resource + managed state + intent + fulfillment + inventory)
 	GetView(ctx context.Context, name FullResourceName) (ExtensionResourceView, error)
 	ListViewsByType(ctx context.Context, rt ResourceType) ([]ExtensionResourceView, error)

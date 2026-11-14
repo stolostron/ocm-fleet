@@ -48,6 +48,11 @@ type APIError struct {
 	StatusCode int    `json:"-"`
 	Code       int    `json:"code"`
 	Message    string `json:"message"`
+	Details    []struct {
+		Type   string `json:"@type"`
+		Reason string `json:"reason"`
+		Domain string `json:"domain"`
+	} `json:"details,omitempty"`
 }
 
 func (e *APIError) Error() string {
@@ -71,6 +76,22 @@ func IsConflict(err error) bool {
 func IsAlreadyExists(err error) bool {
 	var e *APIError
 	return errors.As(err, &e) && e.StatusCode == http.StatusConflict && e.Code == 6
+}
+
+// IsCreationRetired recognizes Fleet's definitive decision for an accepted
+// incarnation that has been deleted. Generic Create NotFound errors can instead
+// concern an unavailable parent or resource type and leave the attempt unknown.
+func IsCreationRetired(err error) bool {
+	var e *APIError
+	if !errors.As(err, &e) || !IsNotFound(err) {
+		return false
+	}
+	for _, detail := range e.Details {
+		if detail.Type == "type.googleapis.com/google.rpc.ErrorInfo" && detail.Domain == "open-cluster-management.io" && detail.Reason == "CREATION_RETIRED" {
+			return true
+		}
+	}
+	return false
 }
 
 // TokenSource loads credentials for each request, allowing projected token
@@ -121,11 +142,11 @@ func (c *Client) Create(ctx context.Context, name, requestID string, spec Spec) 
 }
 
 // Update conditionally replaces the entire spec, preserving unowned metadata.
-func (c *Client) Update(ctx context.Context, current Record, requestID string, spec Spec) (Record, error) {
+func (c *Client) Update(ctx context.Context, current Record, spec Spec) (Record, error) {
 	if current.Etag == "" {
 		return Record{}, fmt.Errorf("fleet update requires an etag")
 	}
-	return c.request(ctx, http.MethodPatch, current.Name, url.Values{"update_mask": {"spec"}, "request_id": {requestID}}, struct {
+	return c.request(ctx, http.MethodPatch, current.Name, url.Values{"update_mask": {"spec"}}, struct {
 		Name string `json:"name"`
 		Etag string `json:"etag"`
 		Spec Spec   `json:"spec"`
@@ -133,11 +154,11 @@ func (c *Client) Update(ctx context.Context, current Record, requestID string, s
 }
 
 // Delete begins conditional deletion. A later GET 404 confirms completion.
-func (c *Client) Delete(ctx context.Context, current Record, requestID string) error {
+func (c *Client) Delete(ctx context.Context, current Record) error {
 	if current.Etag == "" {
 		return fmt.Errorf("fleet delete requires an etag")
 	}
-	_, err := c.request(ctx, http.MethodDelete, current.Name, url.Values{"etag": {current.Etag}, "request_id": {requestID}}, nil)
+	_, err := c.request(ctx, http.MethodDelete, current.Name, url.Values{"etag": {current.Etag}}, nil)
 	return err
 }
 

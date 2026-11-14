@@ -43,12 +43,11 @@ func TestUpdateManagedResource_ConditionalIntentAndReplay(t *testing.T) {
 	if !changed.Resource.UpdatedAt().Equal(now.Add(time.Minute)) {
 		t.Fatal("spec update did not update the resource timestamp")
 	}
-	replayed, err := update.Run(&stubRecord{ctx: ctx}, in)
-	if err != nil {
-		t.Fatalf("replay after commit/checkpoint loss: %v", err)
-	}
-	if replayed.Intent.Version != 2 || replayed.Fulfillment.Generation() != 2 {
-		t.Fatal("replay produced another intent or generation")
+	// A lost activity result may replay with its own now-stale etag. The
+	// conditional mutation fails safely; generation recovery must dispatch
+	// the already-committed intent without a historical response receipt.
+	if _, err := update.Run(&stubRecord{ctx: ctx}, in); !errors.Is(err, domain.ErrStaleGeneration) {
+		t.Fatalf("replay after commit must fail its original precondition: %v", err)
 	}
 
 	in.RequestID = "conflicting-update"
@@ -66,11 +65,7 @@ func TestUpdateManagedResource_ConditionalIntentAndReplay(t *testing.T) {
 	if unchanged.Intent.Version != 2 || unchanged.Fulfillment.Generation() != 2 || unchanged.Etag() != changed.Etag() {
 		t.Fatal("a semantically identical spec must not change intent, generation, or etag")
 	}
-	// Reusing the request ID with a different input is never a new mutation.
-	in.Spec = json.RawMessage(`{"values":{"message":"different"}}`)
-	if _, err := update.Run(&stubRecord{ctx: ctx}, in); !errors.Is(err, domain.ErrInvalidArgument) {
-		t.Fatalf("request ID reuse with changed input: %v", err)
-	}
+
 }
 
 func TestUpdateManagedResource_RejectsDeleting(t *testing.T) {

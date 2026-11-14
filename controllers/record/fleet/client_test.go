@@ -34,21 +34,21 @@ func TestClient_RealFleetLifecycle(t *testing.T) {
 	}
 	current := awaitRecord(t, ctx, remote, name, func(r fleet.Record) bool { return r.Ready() })
 	changed := fleet.Spec{Values: map[string]string{"message": "updated"}}
-	updated, err := remote.Update(ctx, current, uuid.NewString(), changed)
+	updated, err := remote.Update(ctx, current, changed)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.UID != created.UID || updated.Generation != 2 || !maps.Equal(updated.Spec.Values, changed.Values) {
 		t.Fatalf("update: %+v", updated)
 	}
-	if _, err := remote.Update(ctx, current, uuid.NewString(), want); !fleet.IsConflict(err) {
+	if _, err := remote.Update(ctx, current, want); !fleet.IsConflict(err) {
 		t.Fatalf("stale update: %v", err)
 	}
-	if err := remote.Delete(ctx, current, uuid.NewString()); !fleet.IsConflict(err) {
+	if err := remote.Delete(ctx, current); !fleet.IsConflict(err) {
 		t.Fatalf("stale delete: %v", err)
 	}
 	current = awaitRecord(t, ctx, remote, name, func(r fleet.Record) bool { return r.Ready() && r.Generation == 2 })
-	if err := remote.Delete(ctx, current, uuid.NewString()); err != nil {
+	if err := remote.Delete(ctx, current); err != nil {
 		t.Fatal(err)
 	}
 	for {
@@ -60,8 +60,8 @@ func TestClient_RealFleetLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := remote.Create(ctx, name, requestID, want); err != nil {
-		t.Fatal(err)
+	if _, err := remote.Create(ctx, name, requestID, want); !fleet.IsCreationRetired(err) {
+		t.Fatalf("retired Create must return a definitive creation decision: %v", err)
 	}
 	if _, err := remote.Get(ctx, name); !fleet.IsNotFound(err) {
 		t.Fatalf("old create resurrected the resource: %v", err)

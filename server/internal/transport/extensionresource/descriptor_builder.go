@@ -315,7 +315,6 @@ func buildUpdateRequest(singular, lower, resourceFQN string) *descriptorpb.Descr
 			dynamicapi.BytesField("user_signature", 3),
 			dynamicapi.MessageField("valid_until", 4, "google.protobuf.Timestamp"),
 			dynamicapi.Int64Field("expected_generation", 5),
-			dynamicapi.StringField("request_id", 6),
 		},
 	}
 }
@@ -355,7 +354,6 @@ func buildDeleteRequest(singular string) *descriptorpb.DescriptorProto {
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("name", 1),
 			dynamicapi.StringField("etag", 2),
-			dynamicapi.StringField("request_id", 3),
 		},
 	}
 }

@@ -2,32 +2,12 @@ package domain
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 )
-
-// ManagedResourceMutationReceipt is an immutable result stored in the same
-// transaction as a managed-resource mutation. It survives resource deletion:
-// retrying an old Create must never create a second incarnation. Receipts also
-// close the activity-commit/checkpoint gap in durable workflows.
-type ManagedResourceMutationReceipt struct {
-	RequestID     string
-	Fingerprint   string
-	View          ExtensionResourceView
-	AlreadyExists bool
-}
-
-// ManagedResourceMutationRepository stores request receipts independently of
-// the resource lifecycle. A request ID may identify only one logical input.
-type ManagedResourceMutationRepository interface {
-	Get(ctx context.Context, requestID string) (ManagedResourceMutationReceipt, error)
-	Create(ctx context.Context, receipt ManagedResourceMutationReceipt) error
-}
 
 // mutationRequestID supplies a deterministic fallback for direct workflow
 // invocation. Application services normally supply a UUID before scheduling,
@@ -65,27 +45,6 @@ func canonicalJSON(input any) ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(value)
-}
-
-func loadMutationReceipt(ctx context.Context, tx Tx, id, fingerprint string) (*ManagedResourceMutationReceipt, error) {
-	receipt, err := tx.ManagedResourceMutations().Get(ctx, id)
-	if errors.Is(err, ErrNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if receipt.Fingerprint != fingerprint {
-		return nil, TerminalError(fmt.Errorf("%w: request_id was already used for different input", ErrInvalidArgument))
-	}
-	return &receipt, nil
-}
-
-func (r ManagedResourceMutationReceipt) result() (ExtensionResourceView, error) {
-	if r.AlreadyExists {
-		return ExtensionResourceView{}, TerminalError(fmt.Errorf("%w: managed resource already exists", ErrAlreadyExists))
-	}
-	return r.View, nil
 }
 
 func mutationActor(auth DeliveryAuth) *FederatedIdentity {

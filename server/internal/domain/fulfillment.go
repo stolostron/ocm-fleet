@@ -274,6 +274,13 @@ func (f *Fulfillment) AcquireOrchestrationLock() bool {
 	return true
 }
 
+// DeletionReconciled reports successful deletion reconciliation, after delivery
+// cleanup but before the abstraction-specific resource row is removed. Paused
+// attempts may also have an observed generation, so that alone is insufficient.
+func (f *Fulfillment) DeletionReconciled() bool {
+	return f.State() == FulfillmentStateDeleting && !f.Paused() && f.ObservedGeneration() >= f.Generation()
+}
+
 // ReleaseOrchestrationLock clears activeWorkflowGen without
 // advancing observedGeneration. Used before ContinueAsNew so the
 // next execution can re-acquire the lock for a fresh attempt.

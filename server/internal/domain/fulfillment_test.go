@@ -405,6 +405,32 @@ func TestFulfillment_Reconciling(t *testing.T) {
 	}
 }
 
+func TestFulfillment_DeletionReconciled(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		state       FulfillmentState
+		pauseReason string
+		observed    Generation
+		want        bool
+	}{
+		{name: "completed deletion", state: FulfillmentStateDeleting, observed: 3, want: true},
+		{name: "pending deletion", state: FulfillmentStateDeleting, observed: 2},
+		{name: "paused deletion", state: FulfillmentStateDeleting, pauseReason: "credentials expired", observed: 3},
+		{name: "failed deletion", state: FulfillmentStateFailed, observed: 3},
+		{name: "active resource", state: FulfillmentStateActive, observed: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := FulfillmentFromSnapshot(FulfillmentSnapshot{
+				State: tc.state, PauseReason: tc.pauseReason,
+				Generation: 3, ObservedGeneration: tc.observed,
+			})
+			if got := f.DeletionReconciled(); got != tc.want {
+				t.Fatalf("DeletionReconciled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestFulfillment_ApplyReconciliationResult(t *testing.T) {
 	f := FulfillmentFromSnapshot(FulfillmentSnapshot{
 		ID:         "f1",

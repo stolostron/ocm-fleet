@@ -23,9 +23,12 @@ const (
 )
 
 type extensionResourceHarness struct {
-	store     domain.Store
-	svc       *application.ExtensionResourceService
-	inventory *application.InventoryReportService
+	store       domain.Store
+	svc         *application.ExtensionResourceService
+	inventory   *application.InventoryReportService
+	maintenance *application.ManagedResourceMaintenance
+	cleanup     domain.DeleteManagedResourceCleanupWorkflow
+	signaler    domain.DeleteCleanupSignaler
 }
 
 func setupExtensionResourceService(t *testing.T) extensionResourceHarness {
@@ -57,7 +60,7 @@ func setupExtensionResourceService(t *testing.T) extensionResourceHarness {
 		t.Fatalf("RegisterCreateManagedResource: %v", err)
 	}
 	cleanupWf, err := reg.RegisterDeleteManagedResourceCleanup(&domain.DeleteManagedResourceCleanupWorkflowSpec{
-		Store: store,
+		Store: store, Now: func() time.Time { return fixed },
 	})
 	if err != nil {
 		t.Fatalf("RegisterDeleteManagedResourceCleanup: %v", err)
@@ -80,9 +83,12 @@ func setupExtensionResourceService(t *testing.T) extensionResourceHarness {
 	}
 
 	return extensionResourceHarness{
-		store:     store,
-		svc:       application.NewExtensionResourceService(store, createMRWf, nil, deleteMRWf, nil, nil),
-		inventory: application.NewInventoryReportService(store),
+		store:       store,
+		svc:         application.NewExtensionResourceService(store, createMRWf, nil, deleteMRWf, nil, nil),
+		inventory:   application.NewInventoryReportService(store),
+		maintenance: application.NewManagedResourceMaintenance(store, orchWf, cleanupWf, reg),
+		cleanup:     cleanupWf,
+		signaler:    reg,
 	}
 }
 

@@ -34,6 +34,102 @@ func TestCreateManagedResource_ReplayAfterCommit(t *testing.T) {
 	}
 }
 
+func TestCreateManagedResource_ReplayReadsCurrentIntent(t *testing.T) {
+	store, _ := setupStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	typeDef := seedLifecycleResourceType(t, store, now)
+	create := &domain.CreateManagedResourceWorkflowSpec{Store: store, Orchestration: &fakeOrchestrationWorkflow{}, Now: func() time.Time { return now }}
+	in := domain.CreateManagedResourceInput{RequestID: "current-create", ResourceType: typeDef.ResourceType(), Name: "records/current", TypeDef: typeDef, Spec: json.RawMessage(`{"values":{"message":"before"}}`)}
+	initial, err := create.Run(&stubRecord{ctx: ctx}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	update := &domain.UpdateManagedResourceWorkflowSpec{Store: store, Orchestration: &fakeOrchestrationWorkflow{}}
+	changed, err := update.Run(&stubRecord{ctx: ctx}, domain.UpdateManagedResourceInput{ResourceType: in.ResourceType, Name: in.Name, Spec: json.RawMessage(`{"values":{"message":"after"}}`), UpdateSpec: true, Etag: initial.Etag()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := create.Run(&stubRecord{ctx: ctx}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.Resource.UID() != changed.Resource.UID() || replayed.Intent.Version != changed.Intent.Version || string(replayed.Intent.Spec) != string(changed.Intent.Spec) {
+		t.Fatal("a creation decision must identify the current incarnation without retaining a historical resource response")
+	}
+}
+
+func TestCreateManagedResource_RejectedAttemptExpires(t *testing.T) {
+	store, _ := setupStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	typeDef := seedLifecycleResourceType(t, store, now)
+	create := &domain.CreateManagedResourceWorkflowSpec{Store: store, Orchestration: &fakeOrchestrationWorkflow{}, Now: func() time.Time { return now }}
+	in := domain.CreateManagedResourceInput{RequestID: "occupied-create", ResourceType: typeDef.ResourceType(), Name: "records/retention", TypeDef: typeDef, Spec: json.RawMessage(`{}`)}
+	occupied, err := create.Run(&stubRecord{ctx: ctx}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.RequestID = "rejected-create"
+	if _, err := create.Run(&stubRecord{ctx: ctx}, in); !errors.Is(err, domain.ErrAlreadyExists) {
+		t.Fatalf("conflicting create: %v", err)
+	}
+	cleanup := &domain.DeleteManagedResourceCleanupWorkflowSpec{Store: store}
+	if _, err := cleanup.DeleteManagedResourceAndFulfillment().Run(ctx, domain.DeleteManagedResourceCleanupInput{ResourceType: in.ResourceType, Name: in.Name, FulfillmentID: occupied.Fulfillment.ID()}); err != nil {
+		t.Fatal(err)
+	}
+	// Advancing an injected clock tests the documented bound without a sleep.
+	now = now.Add(31 * 24 * time.Hour)
+	if _, err := create.Run(&stubRecord{ctx: ctx}, in); err != nil {
+		t.Fatalf("an expired rejection must not reserve the nonce forever: %v", err)
+	}
+}
+
+func TestManagedResourceCleanup_RecoversWithoutRepeatingTheSignal(t *testing.T) {
+	store, _ := setupStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	typeDef := seedLifecycleResourceType(t, store, now)
+	create := &domain.CreateManagedResourceWorkflowSpec{Store: store, Now: func() time.Time { return now }}
+	created, err := create.PersistManagedResource().Run(ctx, domain.CreateManagedResourceInput{RequestID: "cleanup-recovery", ResourceType: typeDef.ResourceType(), Name: "records/cleanup-recovery", TypeDef: typeDef, Spec: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleteSpec := &domain.DeleteManagedResourceWorkflowSpec{Store: store}
+	if _, err := deleteSpec.MutateToDeleting().Run(ctx, domain.DeleteManagedResourceInput{ResourceType: typeDef.ResourceType(), Name: created.Resource.Name(), Etag: created.Etag(), ExpectedUID: created.Resource.UID()}); err != nil {
+		t.Fatal(err)
+	}
+	// No target has been provisioned. Finish the real delivery cleanup and
+	// persist completion, with no cleanup workflow consuming the signal.
+	orch := domain.NewOrchestrationWorkflowSpec(store, nil, domain.StrategyFactory{Store: store}, &stubRegistry{})
+	if _, err := orch.CleanupDeliveryData().Run(ctx, created.Fulfillment.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := orch.PersistAndCompleteReconciliation().Run(ctx, domain.PersistAndCompleteInput{ReconciledGen: created.Fulfillment.Generation() + 1, Result: domain.ReconciliationResult{FulfillmentID: created.Fulfillment.ID(), State: domain.FulfillmentStateDeleting}}); err != nil {
+		t.Fatal(err)
+	}
+	cleanup := &domain.DeleteManagedResourceCleanupWorkflowSpec{Store: store, Now: func() time.Time { return now }}
+	// This record fails on Await, proving completed deletion is read from
+	// durable state rather than requiring another signal or delivery pass.
+	if _, err := cleanup.Run(&noSignalRecord{stubRecord: stubRecord{ctx: ctx}}, domain.DeleteManagedResourceCleanupInput{ResourceType: typeDef.ResourceType(), Name: created.Resource.Name(), FulfillmentID: created.Fulfillment.ID()}); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := store.BeginReadOnly(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.RollbackOnExit()
+	if _, err := tx.ExtensionResources().Get(ctx, typeDef.ResourceType().FullName(created.Resource.Name())); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("completed deletion was not removed: %v", err)
+	}
+}
+
+type noSignalRecord struct{ stubRecord }
+
+func (r *noSignalRecord) Await(string) (any, error) {
+	return nil, errors.New("no cleanup signal is available")
+}
+
 func TestManagedResource_ReplaysCannotChangeReplacement(t *testing.T) {
 	store, _ := setupStore(t)
 	ctx := context.Background()
@@ -59,8 +155,8 @@ func TestManagedResource_ReplaysCannotChangeReplacement(t *testing.T) {
 	if _, err := cleanup.DeleteManagedResourceAndFulfillment().Run(ctx, cleanupIn); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := create.Run(&stubRecord{ctx: ctx}, in); err != nil {
-		t.Fatalf("successful request replay: %v", err)
+	if _, err := create.Run(&stubRecord{ctx: ctx}, in); !errors.Is(err, domain.ErrCreationRetired) {
+		t.Fatalf("replay of a retired incarnation must report absence: %v", err)
 	}
 	if _, err := create.Run(&stubRecord{ctx: ctx}, losing); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("failed request replay: %v", err)

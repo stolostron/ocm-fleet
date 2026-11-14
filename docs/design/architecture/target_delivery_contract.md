@@ -191,6 +191,13 @@ fulfillments would preserve that identity; recreation under the same name would
 use a new nonce. The identity must come from signed content, so an RM-assigned
 fulfillment or delivery ID cannot substitute for it.
 
+The Create request ID can supply this nonce, avoiding a second client-generated
+identity for the same creation attempt. A fresh logical attempt needs a fresh
+nonce, including after a definitive rejection. IDs for subsequent mutation
+requests identify those individual operations; the resource's creation nonce
+remains unchanged. RM-side retry decisions alone do not establish this security
+property: the nonce must still be bound to signed intent and checked by verifiers.
+
 With this approach, final deletion revokes that resource instance's
 authorization. Before acknowledging deletion, the verifier durably retains the
 revoked nonce or its scoped hash as a tombstone and rejects further creation

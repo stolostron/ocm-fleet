@@ -24,7 +24,7 @@ func TestDynamicManagedUpdate_HTTPAndConditionalDelete(t *testing.T) {
 	if created.Code != http.StatusOK {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())
 	}
-	updated := request(http.MethodPatch, "/update-http?update_mask=spec&request_id=edcdbbe3-1f9b-4694-9264-91946152338a", `{"spec":{"name":"update-http","nodes":[{"role":"control-plane"},{"role":"worker"}]}}`)
+	updated := request(http.MethodPatch, "/update-http?update_mask=spec", `{"spec":{"name":"update-http","nodes":[{"role":"control-plane"},{"role":"worker"}]}}`)
 	if updated.Code != http.StatusOK {
 		t.Fatalf("update: %d %s", updated.Code, updated.Body.String())
 	}

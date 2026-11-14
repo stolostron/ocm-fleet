@@ -80,11 +80,23 @@ The detailed status shows the binding and generation-specific conditions.
 
 The controller first persists its finalizer, then records a create UUID and the
 original spec in Kubernetes status. Only then does it call Fleet. Every retry
-uses that UUID and original payload until Fleet definitively records success or
-`AlreadyExists`. A source spec edit, timeout, deletion, or controller restart does
-not change the unresolved request. Even a Fleet `GET` returning 404 is
+uses that UUID and original payload until Fleet definitively records acceptance
+or `AlreadyExists`. The Create request ID is the creation nonce for this attempt.
+A source spec edit, timeout, deletion, or controller restart does not change the
+unresolved request. Even a Fleet `GET` returning 404 is
 insufficient to finalize while a create is unresolved: the original request
-could still arrive later.
+could still arrive later. If Kubernetes deletion starts with an unresolved
+Create, the controller finishes resolving it first. A retry can be the first
+request Fleet executes, so this can create a resource that is immediately deleted.
+For providers with external effects this can start real provisioning. Unavailable
+Fleet APIs or unusable credentials can keep the Kubernetes finalizer pending.
+There is no creation-cancellation operation in this implementation.
+
+An accepted Create replay returns the current incarnation. If that incarnation
+has already been deleted, Fleet returns `NotFound` with a `google.rpc.ErrorInfo`
+reason of `CREATION_RETIRED` in domain `open-cluster-management.io`. This specific
+result also resolves the attempt. An ordinary Create `NotFound`, such as an
+unavailable resource type, does not resolve it.
 
 Fleet names include a digest of cluster ID, namespace, name, and Kubernetes UID.
 Name alignment permits initial binding within this reserved range; the controller
@@ -118,17 +130,41 @@ interpreted as readiness of a newly edited spec.
 ## Fleet changes and boundaries
 
 Fleet now provides managed-resource `Update`, whole-spec field masks, conditional
-update/delete using etags, durable mutation receipts, and observed-generation
-status. Intent, derived strategies, generation, and the receipt commit atomically.
-Write transactions serialize competing aggregate reads in PostgreSQL; SQLite
-already serializes writers. A reconciliation that finishes after a newer edit
-retains delivery history for cleanup while preserving newer lifecycle and
-credentials. Cleanup is fenced by fulfillment identity.
+update/delete using etags, compact creation decisions, and observed-generation
+status. Intent and derived strategies commit atomically. Write transactions
+serialize competing aggregate reads in PostgreSQL; SQLite already serializes
+writers. A reconciliation that finishes after a newer edit retains delivery
+history for cleanup while preserving newer lifecycle and credentials. Cleanup
+is fenced by fulfillment identity.
 
-Receipts survive resource deletion. They currently have no expiry or garbage
-collector: expiring a create receipt without a coordinated retry horizon would
-permit a sufficiently late request to recreate a deleted resource. This is an
-explicit storage tradeoff, not an exactly-once external side-effect guarantee.
+Creation decisions are part of the extension-resource repository. They contain
+only the request ID/nonce, request fingerprint, accepted resource UID (if any),
+and retention deadline. Accepted identities remain while their incarnation is
+live. Rejected attempts remain for **30 days after the decision**; accepted
+attempts remain for **30 days after final deletion**. Retries do not extend these
+deadlines. A periodic collector removes expired decisions in bounded batches;
+Create also checks expiry when processing a retry. A request processed after the
+window may create again. This bounds replay protection; it cannot fence an
+arbitrarily delayed request. Clients must use a fresh UUID for each new logical
+creation attempt and preserve the original payload while its outcome is unknown.
+The name remains reusable with a fresh nonce during retention.
+
+Update and Delete do not retain mutation receipts or expose `request_id`.
+After an ambiguous write, clients read current state and retry with a fresh etag.
+Before scheduling a write without a caller etag, Fleet captures an internal etag
+so a replay cannot overwrite a newer mutation. Such a write can also return a
+concurrency conflict. A server maintenance pass runs at startup and every 30
+seconds, finding current generation gaps and unfinished deletions with paginated
+queries. It restarts durable work independently of the original conditional
+mutation, including after its activity retries are exhausted. Completed deletion
+reconciliation is durable, so cleanup recovery does not require repeating an
+external delete or recovering an old signal. Maintenance can notify a waiting
+cleanup workflow again from the persisted completion state.
+
+These are RM-side retry guarantees. The nonce is not yet bound to signed creation
+evidence or enforced by target-side verifiers; that security mechanism and its
+retention agreement remain separate work. External side effects still depend on
+the provider's own durable execution and idempotency contracts.
 
 Ownership is a convention over a reserved name range and recorded UID. It is
 not a server-enforced owner reference, lease, or field-ownership mechanism.

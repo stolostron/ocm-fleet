@@ -28,13 +28,13 @@ import (
 // and Fleet confirms absence of the bound resource incarnation.
 const Finalizer = "records.open-cluster-management.io/fleet-cleanup"
 
-// Fleet is the remote managed-resource API. Conditional mutations and durable
-// create receipts are required server contracts, not client-side assumptions.
+// Fleet is the remote managed-resource API. Conditional mutations and retained
+// creation decisions are required server contracts, not client-side assumptions.
 type Fleet interface {
 	Get(context.Context, string) (fleet.Record, error)
 	Create(context.Context, string, string, fleet.Spec) (fleet.Record, error)
-	Update(context.Context, fleet.Record, string, fleet.Spec) (fleet.Record, error)
-	Delete(context.Context, fleet.Record, string) error
+	Update(context.Context, fleet.Record, fleet.Spec) (fleet.Record, error)
+	Delete(context.Context, fleet.Record) error
 }
 
 // Reconciler has no process-local lifecycle state. Fresh Kubernetes reads and
@@ -156,7 +156,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 		return r.observe(ctx, &record, current, false, "Deleting", "Waiting for Fleet deletion before recreating intent")
 	}
 	if !maps.Equal(current.Spec.Values, record.Spec.Values) {
-		updated, err := r.fleet.Update(ctx, current, uuid.NewString(), fleet.Spec{Values: record.Spec.Values})
+		updated, err := r.fleet.Update(ctx, current, fleet.Spec{Values: record.Spec.Values})
 		if err != nil {
 			return r.failed(ctx, &record, err)
 		}
@@ -170,6 +170,14 @@ func (r *Reconciler) resolveCreate(ctx context.Context, record *api.FleetRecord)
 		return r.blocked(ctx, record, "InvalidBinding", "The unresolved create has no persisted spec snapshot")
 	}
 	created, err := r.fleet.Create(ctx, record.Status.FleetName, record.Status.CreateRequestID, fleet.Spec{Values: record.Status.CreateSpec.Values})
+	if fleet.IsCreationRetired(err) {
+		// A retained accepted decision can outlive its incarnation. This is
+		// a definitive Create result, unlike absence observed by an ordinary
+		// Get while the Create is still unresolved. A route-level 404 is not
+		// classified as Fleet NotFound by the client.
+		created = fleet.Record{}
+		err = nil
+	}
 	if fleet.IsAlreadyExists(err) {
 		// Name alignment permits initial adoption within this controller's
 		// reserved name range. Once bound, every later UID must match.
@@ -197,7 +205,7 @@ func (r *Reconciler) delete(ctx context.Context, record *api.FleetRecord, curren
 	// Reissuing Delete is safe and refreshes credentials on a paused delete.
 	// An in-flight delete at this generation requires no additional mutation.
 	if current.State != "DELETING" || current.PauseReason != "" {
-		if err := r.fleet.Delete(ctx, current, uuid.NewString()); err != nil && !fleet.IsNotFound(err) {
+		if err := r.fleet.Delete(ctx, current); err != nil && !fleet.IsNotFound(err) {
 			return r.failed(ctx, record, err)
 		}
 	}

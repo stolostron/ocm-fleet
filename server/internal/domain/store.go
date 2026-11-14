@@ -36,7 +36,6 @@ type Tx interface {
 	Deliveries() DeliveryRepository
 	Inventory() InventoryRepository
 	ExtensionResources() ExtensionResourceRepository
-	ManagedResourceMutations() ManagedResourceMutationRepository
 	SignerEnrollments() SignerEnrollmentRepository
 	ResourceIdentities() ResourceIdentityRepository
 	// Queries provides the read model query surface over extension

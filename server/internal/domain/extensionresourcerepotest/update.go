@@ -72,23 +72,3 @@ func runUpdateTests(t *testing.T, factory Factory) {
 		t.Fatalf("stale HEAD must fail CAS: %v", err)
 	}
 }
-
-func runMutationReceiptTests(t *testing.T, factory Factory) {
-	ctx := context.Background()
-	tx := factory(t)
-	defer tx.RollbackOnExit()
-	repo := tx.ManagedResourceMutations()
-	if _, err := repo.Get(ctx, "missing"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("missing receipt: %v", err)
-	}
-	receipt := domain.ManagedResourceMutationReceipt{RequestID: "persisted-request", Fingerprint: "canonical-fingerprint", AlreadyExists: true}
-	if err := repo.Create(ctx, receipt); err != nil {
-		t.Fatal(err)
-	}
-	got, err := repo.Get(ctx, receipt.RequestID)
-	if err != nil || got.Fingerprint != receipt.Fingerprint || !got.AlreadyExists {
-		t.Fatalf("receipt round trip: %+v, %v", got, err)
-	}
-	// The ledger has no resource foreign key: even failed creates and
-	// completed deletions must retain their original request identity.
-}

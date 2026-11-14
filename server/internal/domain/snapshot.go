@@ -232,6 +232,15 @@ type ExtensionResourceTypeSnapshot struct {
 	UpdatedAt    time.Time
 }
 
+// ManagedResourceCreationSnapshot is the persistence DTO for a creation
+// decision. It deliberately contains neither intent nor delivery credentials.
+type ManagedResourceCreationSnapshot struct {
+	RequestID   string
+	Fingerprint string
+	UID         ExtensionResourceUID
+	RetainUntil time.Time
+}
+
 // ManagedStateSnapshot is the persistence DTO for [ManagedState].
 type ManagedStateSnapshot struct {
 	CurrentVersion IntentVersion
@@ -1026,5 +1035,26 @@ func (r *ExtensionResource) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*r = *ExtensionResourceFromSnapshot(s)
+	return nil
+}
+
+// Snapshot returns the persisted creation decision without resource payloads.
+func (c ManagedResourceCreation) Snapshot() ManagedResourceCreationSnapshot {
+	return ManagedResourceCreationSnapshot{RequestID: c.requestID, Fingerprint: c.fingerprint, UID: c.uid, RetainUntil: c.retainUntil}
+}
+
+// ManagedResourceCreationFromSnapshot rehydrates a persisted creation decision.
+func ManagedResourceCreationFromSnapshot(s ManagedResourceCreationSnapshot) ManagedResourceCreation {
+	return ManagedResourceCreation{requestID: s.RequestID, fingerprint: s.Fingerprint, uid: s.UID, retainUntil: s.RetainUntil}
+}
+
+func (c ManagedResourceCreation) MarshalJSON() ([]byte, error) { return json.Marshal(c.Snapshot()) }
+
+func (c *ManagedResourceCreation) UnmarshalJSON(data []byte) error {
+	var s ManagedResourceCreationSnapshot
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	*c = ManagedResourceCreationFromSnapshot(s)
 	return nil
 }

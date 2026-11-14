@@ -41,12 +41,8 @@ func (h *dynamicHandler) doUpdate(ctx context.Context, req proto.Message) (proto
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid name: %v", err)
 	}
-	requestID, err := readRequestID(msg)
-	if err != nil {
-		return nil, err
-	}
 	in := application.UpdateExtensionResourceInput{
-		RequestID: requestID, ResourceType: h.cfg.ResourceType, Name: name,
+		ResourceType: h.cfg.ResourceType, Name: name,
 		Etag:               domain.Etag(resource.Get(h.descs.Resource.Fields().ByName("etag")).String()),
 		UserSignature:      msg.Get(h.descs.UpdateRequest.Fields().ByName("user_signature")).Bytes(),
 		ExpectedGeneration: domain.Generation(msg.Get(h.descs.UpdateRequest.Fields().ByName("expected_generation")).Int()),

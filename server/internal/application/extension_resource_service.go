@@ -179,6 +179,15 @@ func (s *ExtensionResourceService) Update(ctx context.Context, in UpdateExtensio
 	if in.UpdateSpec && len(in.Spec) == 0 {
 		return domain.ExtensionResourceView{}, fmt.Errorf("%w: spec is required", domain.ErrInvalidArgument)
 	}
+	// Bind even an unconditional API update to the incarnation and state read
+	// before scheduling. A worker replay must not overwrite newer intent.
+	if in.Etag == "" {
+		current, err := s.Get(ctx, in.ResourceType, in.Name)
+		if err != nil {
+			return domain.ExtensionResourceView{}, err
+		}
+		in.Etag = current.Etag()
+	}
 	if in.RequestID == "" {
 		in.RequestID = uuid.NewString()
 	}
@@ -270,9 +279,13 @@ func (s *ExtensionResourceService) Delete(ctx context.Context, in DeleteExtensio
 	// custom Deployment materializes a resource the addon also manages.
 	// Those must fail here rather than retry forever in mr-mutate-to-deleting.
 	fullName := rt.FullName(name)
-	er, err := tx.ExtensionResources().Get(ctx, fullName)
+	view, err := tx.ExtensionResources().GetView(ctx, fullName)
 	if err != nil {
 		return domain.ExtensionResourceView{}, err
+	}
+	er := &view.Resource
+	if in.Etag == "" {
+		in.Etag = view.Etag()
 	}
 	if er.Managed() == nil {
 		return domain.ExtensionResourceView{}, fmt.Errorf(

@@ -22,6 +22,7 @@ type registeredWorkflows struct {
 	resumeMRWf    domain.ResumeManagedResourceWorkflow
 	authMethodSvc *application.AuthMethodService
 	provenanceSvc *domain.ProvenanceService
+	maintenance   *application.ManagedResourceMaintenance
 }
 
 // registerWorkflows registers every production workflow before Start on the
@@ -89,6 +90,7 @@ func registerWorkflows(
 	if err != nil {
 		return out, fmt.Errorf("register delete-managed-resource: %w", err)
 	}
+	out.maintenance = application.NewManagedResourceMaintenance(store, orchWf, mrCleanupWf, reg)
 
 	provSpec := &domain.ProvisionIdPWorkflowSpec{
 		AuthMethods:      authMethodRepo,

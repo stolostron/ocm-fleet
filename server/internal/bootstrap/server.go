@@ -55,6 +55,7 @@ type Server struct {
 	dynamicHTTPConn   *grpc.ClientConn
 	kubeIndexing      *kubernetesInProcessIndexing
 	indexReplayDone   <-chan struct{}
+	maintenanceDone   <-chan struct{}
 	addonCloseHooks   []func(context.Context) error // reverse-order add-on closers
 	shutdownGrace     time.Duration
 	serveErrCh        chan error
@@ -424,6 +425,14 @@ func Start(ctx context.Context, cfg Config, logger *slog.Logger, opts ...Option)
 			return fail(err)
 		}
 	}
+	srv.maintenanceDone = startManagedResourceMaintenance(appCtx, wfs.maintenance, logger)
+	cleanups = append(cleanups, func() {
+		select {
+		case <-srv.maintenanceDone:
+		case <-time.After(o.shutdownGrace):
+			logger.Error("managed resource maintenance join timed out")
+		}
+	})
 
 	go func() {
 		logger.Info("gRPC server listening", "addr", grpcEP.Bind, "dial", grpcEP.Dial)
@@ -534,6 +543,13 @@ func (s *Server) shutdown() error {
 
 	// Cancel app-owned work and join producers.
 	s.appCancel()
+	if s.maintenanceDone != nil {
+		select {
+		case <-s.maintenanceDone:
+		case <-time.After(s.shutdownGrace):
+			join(fmt.Errorf("managed resource maintenance join timed out"))
+		}
+	}
 
 	// Close addon hooks in reverse registration order. Each hook should
 	// observe appCtx cancellation and join its in-flight work.

@@ -27,7 +27,8 @@ func Run(t *testing.T, factory Factory) {
 	t.Run("Views", func(t *testing.T) { runViewTests(t, factory) })
 	t.Run("Inventory", func(t *testing.T) { runInventoryTests(t, factory) })
 	t.Run("Update", func(t *testing.T) { runUpdateTests(t, factory) })
-	t.Run("MutationReceipts", func(t *testing.T) { runMutationReceiptTests(t, factory) })
+	t.Run("CreationDecisions", func(t *testing.T) { runCreationDecisionTests(t, factory) })
+	t.Run("ManagedResourceWork", func(t *testing.T) { runManagedResourceWorkTests(t, factory) })
 }
 
 // ---------------------------------------------------------------------------

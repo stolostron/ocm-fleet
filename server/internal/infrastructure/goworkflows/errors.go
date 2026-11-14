@@ -18,6 +18,7 @@ var domainErrorKinds = []struct {
 	{"fleet.stale_generation", domain.ErrStaleGeneration},
 	{"fleet.already_exists", domain.ErrAlreadyExists},
 	{"fleet.not_found", domain.ErrNotFound},
+	{"fleet.creation_retired", domain.ErrCreationRetired},
 	{"fleet.invalid_argument", domain.ErrInvalidArgument},
 	{"fleet.unimplemented", domain.ErrUnimplemented},
 	{"fleet.auth_expired", domain.ErrAuthExpired},

@@ -61,9 +61,6 @@ func (t *storeTx) Inventory() domain.InventoryRepository    { return &InventoryR
 func (t *storeTx) ExtensionResources() domain.ExtensionResourceRepository {
 	return &ExtensionResourceRepo{DB: t.tx, forUpdate: t.writable}
 }
-func (t *storeTx) ManagedResourceMutations() domain.ManagedResourceMutationRepository {
-	return &ManagedResourceMutationRepo{DB: t.tx}
-}
 func (t *storeTx) SignerEnrollments() domain.SignerEnrollmentRepository {
 	return &SignerEnrollmentRepo{DB: t.tx}
 }

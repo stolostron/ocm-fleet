@@ -487,20 +487,42 @@ reconciliation may contribute delivery history needed for cleanup, but must not
 restore superseded lifecycle, credentials, or provenance. Cleanup itself belongs
 to the original fulfillment identity.
 
-Create requests need durable identities in addition to names. A timeout can leave
-a request unresolved even while a read reports absence; the create might still
-arrive or finish later. Retrying the same request must resolve the original
-result, including after resource deletion. Remembering an AlreadyExists result
-also matters: that retry must not create a new incarnation after the existing
-resource is deleted. Mutation receipts therefore commit with the mutation and
-survive its lifecycle. Any retention policy needs a coordinated retry horizon
-or a durable fence before old create receipts can be discarded.
+Create requests need durable identities in addition to names. The Create
+request ID can also serve as the creation nonce: one logical attempt has one
+identity, and a new attempt uses a fresh nonce. A timeout can leave an attempt
+unresolved while a read reports absence; it might still arrive or finish later.
+Fleet serializes acceptance or definitive name-conflict rejection against other
+copies of that attempt. The decision commits before its response and survives
+the incarnation's deletion. A rejected attempt therefore remains rejected if the
+resource that occupied the name is subsequently deleted. This does not reserve
+the name against a fresh attempt.
+
+Creation decisions are compact state owned by the resource repository, not full
+historical resource responses. Accepted decisions identify their incarnation;
+replays can read its current state or explicitly report that it was retired.
+Rejected and retired decisions need a documented retention window. Forgetting
+them permits sufficiently late replay, so bounded storage gives bounded replay
+protection unless expired attempts can be independently rejected. Live accepted
+identities remain for the resource lifetime. Retention at the RM is distinct from
+signed creation authority and target-side revocation; see the
+[target delivery contract](architecture/target_delivery_contract.md#option-signed-creation-nonce).
+
+Updates and deletes need no ledger of every mutation to achieve controller
+convergence. A conditional activity replay may encounter its own stale etag and
+fail safely. Current generation gaps and unfinished deletion must remain durable
+and discoverable, so recovery dispatches current work without depending on that
+original mutation succeeding again. A committed deletion reconciliation also
+provides a durable cleanup predicate; a lost or consumed notification must not
+strand cleanup after a workflow failure. Recovery can notify an existing cleanup
+listener again or let a restarted listener read the committed completion state.
 
 A Kubernetes controller can use a finalizer, a persisted unresolved-create record,
 and UID-qualified names to implement this contract without a general Fleet owner
 reference API. A reserved name range provides initial ownership by convention;
-recording Fleet's UID fences later replacements. This is suitable where that
-range and the controller's source state are protected. Server-enforced ownership,
+recording Fleet's UID fences later replacements. Without creation cancellation,
+finalization must resolve any outstanding Create first, even when retrying it
+might instantiate a resource that will immediately be deleted. This is suitable
+where that range and the controller's source state are protected. Server-enforced ownership,
 ownership transfer, and orphan discovery remain separate capabilities.
 
 Generation-aware status distinguishes accepted intent from completed execution.

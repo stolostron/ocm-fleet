@@ -28,8 +28,8 @@ type UpdateManagedResourceInput struct {
 }
 
 // UpdateManagedResourceWorkflowSpec atomically records conditional intent and
-// durably hands its generation to orchestration. The mutation receipt makes
-// retries safe even when a commit succeeded but its activity result was lost.
+// hands its generation to orchestration. Current generation gaps also remain
+// discoverable by maintenance if replay encounters its own now-stale etag.
 type UpdateManagedResourceWorkflowSpec struct {
 	Store         Store
 	Orchestration OrchestrationWorkflow
@@ -40,7 +40,6 @@ type UpdateManagedResourceWorkflowSpec struct {
 func (s *UpdateManagedResourceWorkflowSpec) Name() string { return "update-managed-resource" }
 
 func (s *UpdateManagedResourceWorkflowSpec) Run(record Record, input UpdateManagedResourceInput) (ExtensionResourceView, error) {
-	input.RequestID = mutationRequestID(record, input.RequestID)
 	view, err := RunActivity(record, s.MutateSpec(), input)
 	if err != nil {
 		return ExtensionResourceView{}, err
@@ -53,29 +52,14 @@ func (s *UpdateManagedResourceWorkflowSpec) Run(record Record, input UpdateManag
 }
 
 // MutateSpec checks freshness while holding the aggregate's write lock and
-// persists the intent, strategies, and request receipt in one transaction.
+// persists the intent and strategies in one transaction.
 func (s *UpdateManagedResourceWorkflowSpec) MutateSpec() Activity[UpdateManagedResourceInput, ExtensionResourceView] {
 	return NewActivity("mr-update-spec", func(ctx context.Context, in UpdateManagedResourceInput) (ExtensionResourceView, error) {
-		fingerprint, err := mutationFingerprint(struct {
-			Operation string
-			Input     UpdateManagedResourceInput
-			Actor     *FederatedIdentity
-		}{"update", withoutMutationAuth(in), mutationActor(in.Auth)})
-		if err != nil {
-			return ExtensionResourceView{}, TerminalError(err)
-		}
 		tx, err := s.Store.Begin(ctx)
 		if err != nil {
 			return ExtensionResourceView{}, err
 		}
 		defer tx.RollbackOnExit()
-		receipt, err := loadMutationReceipt(ctx, tx, in.RequestID, fingerprint)
-		if err != nil {
-			return ExtensionResourceView{}, err
-		}
-		if receipt != nil {
-			return receipt.result()
-		}
 		er, err := tx.ExtensionResources().Get(ctx, in.ResourceType.FullName(in.Name))
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
@@ -175,9 +159,6 @@ func (s *UpdateManagedResourceWorkflowSpec) MutateSpec() Activity[UpdateManagedR
 			}
 		}
 		view = ExtensionResourceView{Resource: *er, Intent: &intent, Fulfillment: f}
-		if err := tx.ManagedResourceMutations().Create(ctx, ManagedResourceMutationReceipt{RequestID: in.RequestID, Fingerprint: fingerprint, View: view}); err != nil {
-			return ExtensionResourceView{}, err
-		}
 		return view, tx.Commit()
 	})
 }
@@ -205,9 +186,4 @@ func (s *UpdateManagedResourceWorkflowSpec) now() time.Time {
 		return s.Now()
 	}
 	return time.Now()
-}
-
-func withoutMutationAuth(in UpdateManagedResourceInput) UpdateManagedResourceInput {
-	in.Auth = DeliveryAuth{}
-	return in
 }

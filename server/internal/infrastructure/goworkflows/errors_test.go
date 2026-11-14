@@ -12,7 +12,7 @@ import (
 )
 
 func TestDomainErrorSurvivesWorkflowSerialization(t *testing.T) {
-	for _, kind := range []error{domain.ErrStaleGeneration, domain.ErrAlreadyExists, domain.ErrNotFound, domain.ErrInvalidArgument} {
+	for _, kind := range []error{domain.ErrStaleGeneration, domain.ErrAlreadyExists, domain.ErrNotFound, domain.ErrCreationRetired, domain.ErrInvalidArgument} {
 		t.Run(kind.Error(), func(t *testing.T) {
 			encoded := encodeDomainError(domain.TerminalError(fmt.Errorf("mutation: %w", kind)))
 			data, err := json.Marshal(workflow.NewError(encoded))

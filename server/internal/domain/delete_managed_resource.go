@@ -71,28 +71,6 @@ func (s *DeleteManagedResourceWorkflowSpec) MutateToDeleting() Activity[DeleteMa
 		}
 		defer tx.RollbackOnExit()
 
-		fingerprint, err := mutationFingerprint(struct {
-			Operation string
-			Type      ResourceType
-			Name      ResourceName
-			Etag      Etag
-			Actor     *FederatedIdentity
-		}{"delete", in.ResourceType, in.Name, in.Etag, mutationActor(in.Auth)})
-		if err != nil {
-			return managedResourceMutationResult{}, TerminalError(err)
-		}
-		receipt, err := loadMutationReceipt(ctx, tx, in.RequestID, fingerprint)
-		if err != nil {
-			return managedResourceMutationResult{}, err
-		}
-		if receipt != nil {
-			view, err := receipt.result()
-			if err != nil {
-				return managedResourceMutationResult{}, err
-			}
-			return managedResourceMutationResult{View: view, FulfillmentID: view.Fulfillment.ID(), MyGen: view.Fulfillment.Generation()}, nil
-		}
-
 		fullName := in.ResourceType.FullName(in.Name)
 		er, err := tx.ExtensionResources().Get(ctx, fullName)
 		if err != nil {
@@ -138,20 +116,13 @@ func (s *DeleteManagedResourceWorkflowSpec) MutateToDeleting() Activity[DeleteMa
 		}
 
 		view := ExtensionResourceView{Resource: *er, Intent: &intent, Fulfillment: f}
-		if err := tx.ManagedResourceMutations().Create(ctx, ManagedResourceMutationReceipt{RequestID: in.RequestID, Fingerprint: fingerprint, View: view}); err != nil {
-			return managedResourceMutationResult{}, err
-		}
 		if err := tx.Commit(); err != nil {
 			probe.Error(err)
 			return managedResourceMutationResult{}, fmt.Errorf("commit: %w", err)
 		}
 
 		return managedResourceMutationResult{
-			View: ExtensionResourceView{
-				Resource:    *er,
-				Intent:      &intent,
-				Fulfillment: f,
-			},
+			View:          view,
 			FulfillmentID: managed.FulfillmentID(),
 			MyGen:         f.Generation(),
 		}, nil
@@ -215,7 +186,6 @@ func (s *DeleteManagedResourceWorkflowSpec) StartCleanup() Activity[DeleteManage
 // immediately; the actual row deletion happens asynchronously in the
 // cleanup workflow.
 func (s *DeleteManagedResourceWorkflowSpec) Run(record Record, input DeleteManagedResourceInput) (ExtensionResourceView, error) {
-	input.RequestID = mutationRequestID(record, input.RequestID)
 	_, probe := s.deleteObserver().DeleteManagedResourceStarted(record.Context(), input.ResourceType, input.Name)
 	defer probe.End()
 

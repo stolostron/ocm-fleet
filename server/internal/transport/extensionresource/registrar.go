@@ -382,12 +382,8 @@ func (h *dynamicHandler) doDelete(ctx context.Context, req proto.Message) (proto
 		return nil, status.Errorf(codes.InvalidArgument, "invalid name: %v", err)
 	}
 
-	requestID, err := readRequestID(req.ProtoReflect())
-	if err != nil {
-		return nil, err
-	}
 	etag := domain.Etag(req.ProtoReflect().Get(h.descs.DeleteRequest.Fields().ByName("etag")).String())
-	view, err := h.resources.Delete(ctx, application.DeleteExtensionResourceInput{RequestID: requestID, ResourceType: h.cfg.ResourceType, Name: resourceName, Etag: etag})
+	view, err := h.resources.Delete(ctx, application.DeleteExtensionResourceInput{ResourceType: h.cfg.ResourceType, Name: resourceName, Etag: etag})
 	if err != nil {
 		return nil, dynamicapi.ToStatusError(err)
 	}

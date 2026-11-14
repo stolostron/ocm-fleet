@@ -268,6 +268,9 @@ func (r *Registry) RegisterDeleteDeploymentCleanup(spec *domain.DeleteDeployment
 func (r *Registry) RegisterDeleteManagedResourceCleanup(spec *domain.DeleteManagedResourceCleanupWorkflowSpec) (domain.DeleteManagedResourceCleanupWorkflow, error) {
 	invokers := make(map[string]activityInvoker)
 	opts := r.activityOptions()
+	if err := registerActivity(r.Worker, invokers, spec.CleanupRequired(), opts); err != nil {
+		return nil, err
+	}
 
 	if err := registerActivity(r.Worker, invokers, spec.DeleteManagedResourceAndFulfillment(), opts); err != nil {
 		return nil, err
