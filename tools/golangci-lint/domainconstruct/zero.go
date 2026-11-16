@@ -29,6 +29,7 @@ type zeroChecker struct {
 	contexts    map[*ssa.BasicBlock]flowContext
 	equalities  map[*ssa.Function][]*ssa.BinOp
 	mutations   map[mutationQuery]mutationKind
+	reads       map[ssa.Value]storageRead
 	stores      map[ssa.Value][]storageWrite
 	zeroStorage map[valueVisit]bool
 	reported    map[zeroReport]bool

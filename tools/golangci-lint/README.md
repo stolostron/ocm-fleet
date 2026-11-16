@@ -391,12 +391,24 @@ findings on one line.
 Comparing an invalid-zero domain type to zero is a separate convention finding,
 even when the operand is trusted valid. This includes `id == ""`, named zero
 constants, zero switch cases, and direct `string(id) == ""` or `len(id) == 0`
-checks. Remove redundant checks or represent absence explicitly. Primitive DTO
+checks. Required values should establish validity through construction or checked
+decoding. Remove redundant checks when that contract holds, repair a broken
+construction or decoding boundary, or represent absence explicitly. Primitive DTO
 checks, valid-zero types, nil pointer comparisons, and an approved constructor
 inspecting its own representation are allowed. An absence guard does not replace
 a constructor's full invariant checks. Narrowing conversions such as
 `uint8(id) == 0` are ordinary representation tests: they can be true for a valid,
 nonzero value and are not treated as checks for an absent domain value.
+
+A successful scalar field guard still establishes a nonzero fact for zero-flow
+analysis. That fact follows the exact field through aggregate returns and copies
+when the storage is unchanged at the copy or use point. Writes to the field or
+its containing value, possible alias writes, mutating calls, and deferred effects
+prevent reuse unless the existing analysis proves they leave it unchanged. A
+copy retains the state at its read point; checking a later version of its source
+does not validate an earlier zero copy. This uses the same unchanged-storage
+proof as repeated scalar reads. Construction, serialization, and zero-comparison
+findings remain independent: nonzero does not establish all domain invariants.
 
 Results paired with an error need a successful error check before use; forwarding
 the result and its matching error is also allowed. This includes pointer results:
@@ -500,6 +512,8 @@ later paths cannot change the selected finding, its certainty, or its provenance
 Boolean refinement uses a per-function comparison index, and mutation
 reachability is reused for the same call, storage field, range, and flow point;
 neither shortcut caches assumptions from a different branch.
+Storage read locations and positions are memoized from immutable SSA; their
+truth and unchanged-storage proofs remain specific to each branch and observation.
 
 Argument and receiver positions are resolved only after a finding survives
 deduplication. They share the per-position expression cache used for diagnostic

@@ -147,7 +147,7 @@ func TestCheck(t *testing.T) { _ = value.ID("fixture | rule: fake; quoted") }
   await assert.doesNotReject(audit());
 });
 
-test("domain audit includes serialization policy and plain snapshot findings", async (t) => {
+test("domain audit keeps serialization and comparison findings after a field guard", async (t) => {
   const { directory, lint, issues, format } = await fixture(t, {
     domain: true,
   });
@@ -155,7 +155,10 @@ test("domain audit includes serialization policy and plain snapshot findings", a
     join(directory, "main.go"),
     `package lintfixture
 
-import "encoding/json"
+import (
+    "encoding/json"
+    "errors"
+)
 
 //domain:constructors NewID
 type ID string
@@ -166,6 +169,12 @@ func Decode(raw []byte) error {
 	var m struct { ID ID }
 	return json.Unmarshal(raw, &m)
 }
+func GuardedDecode(raw []byte) (*struct { ID ID }, error) {
+    var m struct { ID ID }
+    if err := json.Unmarshal(raw, &m); err != nil { return nil, err }
+    if m.ID == "" { return nil, errors.New("empty ID") }
+    return &m, nil
+}
 
 //domain:snapshot
 type Snapshot struct { ID ID }
@@ -175,20 +184,29 @@ type Snapshot struct { ID ID }
   await assert.rejects(lint(), { code: 1 });
   const raw = await issues();
   const findings = raw.map(domainFinding);
-  assert.equal(findings.length, 3);
+  assert.equal(findings.length, 5, JSON.stringify(findings));
   assert.deepEqual(findings.map((finding) => finding.Rule).sort(), [
     "domainserialization.snapshot-domain-value",
     "domainserialization.unsupported-codec",
     "domainserialization.unsupported-codec",
+    "domainserialization.unsupported-codec",
+    "domainzero.zero-comparison",
   ]);
   for (const finding of findings) {
     assert.equal(finding.Certainty, "known");
-    assert.equal(finding.Category, "serialization");
+    assert.equal(
+      finding.Category,
+      finding.Operation === "comparison" ? "zero-comparison" : "serialization",
+    );
   }
   const decode = findings.find((finding) => finding.Operation === "decode");
   assert.equal(decode.Value, "&m");
   assert.equal(decode.Path, "ID");
   assert.ok(raw.some((issue) => issue.Text.includes('; value: "&m"; type:')));
+  assert.equal(
+    findings.find((finding) => finding.Operation === "comparison").Message,
+    "zero check on required lintfixture.ID; validity should be established by construction or checked decoding",
+  );
 });
 
 test("domain audit decodes explicit metadata independently of wording and whitespace", async () => {
@@ -319,6 +337,10 @@ func Copy() value.ID { return value.Fixed }
   assert.equal(comparison[0].Category, "zero-comparison");
   assert.equal(comparison[0].Reason, "zero-check-on-required-value");
   assert.equal(comparison[0].Value, "id");
+  assert.equal(
+    comparison[0].Message,
+    "zero check on required value.ID; validity should be established by construction or checked decoding",
+  );
   const mutation = findings.find(
     (finding) => domainFinding(finding)?.Rule === "domainzero.invalid-zero",
   );

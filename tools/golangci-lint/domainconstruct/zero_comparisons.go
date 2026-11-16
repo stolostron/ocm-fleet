@@ -31,7 +31,7 @@ func (c *zeroChecker) checkZeroComparisons() {
 						Rule: "domainzero.zero-comparison", Certainty: diagnostic.Known,
 						Operation: "comparison", Value: expressionText(c.pass.Fset, value), Type: typeIdentity(p.typ),
 						Reason: "zero-check-on-required-value", Pos: pos,
-						Message: "zero comparison for " + p.name + " is unnecessary; remove the check or represent absence explicitly",
+						Message: "zero check on required " + p.name + "; validity should be established by construction or checked decoding",
 					}).Diagnostic())
 				}
 			}

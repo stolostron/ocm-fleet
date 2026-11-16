@@ -345,6 +345,9 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 	if !context.possible || !c.interestingType(t) {
 		return nil
 	}
+	if c.storageReadFact(location, t, point, context) == notZero {
+		return nil
+	}
 	if c.validZeroStorage(location, t) {
 		return nil
 	}
@@ -365,7 +368,12 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 			return nil
 		}
 	}
+	return c.memoryHistoryProblem(location, t, point, use, context, values, seen)
+}
 
+// Guard facts describe the observation above. Once an intervening effect rules
+// out that proof, tracing earlier storage must not reapply it before the effect.
+func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point, use flowPoint, context flowContext, values map[valueVisit]bool, seen map[memoryVisit]bool) *zeroProblem {
 	visit := memoryVisit{point, location.root, pathKey(location.path)}
 	if seen[visit] {
 		return nil
@@ -431,7 +439,7 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 				if c.iteratorInitializes(call.Common(), location, t, before, context) {
 					return nil
 				}
-				prior := c.memoryAtProblem(location, t, before, use, context, values, seen)
+				prior := c.memoryHistoryProblem(location, t, before, use, context, values, seen)
 				if prior == nil && !storageHasDomainContract(location, t) {
 					prior = c.conditionalProblem(t, reasonInputMayBeZero).step("source", location.root.Pos(), "raw storage "+c.storageName(location.root, location.path)+" has no domain construction contract")
 				}
@@ -449,7 +457,7 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 			continue
 		}
 		end := flowPoint{predecessor, len(predecessor.Instrs)}
-		if alternatives.add(c.memoryAtProblem(location, t, end, use, edge, values, seen)) {
+		if alternatives.add(c.memoryHistoryProblem(location, t, end, use, edge, values, seen)) {
 			break
 		}
 	}
