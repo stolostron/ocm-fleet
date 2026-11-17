@@ -1,0 +1,88 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: fleetrecords.records.open-cluster-management.io
+spec:
+  group: records.open-cluster-management.io
+  scope: Namespaced
+  names:
+    plural: fleetrecords
+    singular: fleetrecord
+    kind: FleetRecord
+    shortNames: [frec]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Synced
+          type: string
+          jsonPath: '.status.conditions[?(@.type=="Synced")].status'
+        - name: Ready
+          type: string
+          jsonPath: '.status.conditions[?(@.type=="Ready")].status'
+        - name: Fleet
+          type: string
+          jsonPath: .status.fleetName
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            apiVersion: { type: string }
+            kind: { type: string }
+            metadata: { type: object }
+            spec:
+              type: object
+              properties:
+                values:
+                  type: object
+                  maxProperties: 32
+                  x-kubernetes-validations:
+                    - rule: "self.all(k, k.size() >= 1 && k.size() <= 128)"
+                      message: Keys must have between 1 and 128 characters
+                  additionalProperties:
+                    type: string
+                    maxLength: 1024
+            status:
+              type: object
+              properties:
+                fleetName: { type: string }
+                fleetUID: { type: string }
+                createRequestID: { type: string }
+                createConfirmed: { type: boolean }
+                createSpec:
+                  description: Original spec for resolving an ambiguous create, including during deletion
+                  type: object
+                  properties:
+                    values:
+                      type: object
+                      maxProperties: 32
+                      additionalProperties:
+                        type: string
+                        maxLength: 1024
+                observedGeneration: { type: integer, format: int64, minimum: 0 }
+                fleetGeneration: { type: integer, format: int64, minimum: 0 }
+                fleetObservedGeneration:
+                  { type: integer, format: int64, minimum: 0 }
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    type: object
+                    required:
+                      [type, status, reason, message, lastTransitionTime]
+                    properties:
+                      type: { type: string }
+                      status: { type: string, enum: ["True", "False", Unknown] }
+                      reason: { type: string }
+                      message: { type: string }
+                      observedGeneration:
+                        { type: integer, format: int64, minimum: 0 }
+                      lastTransitionTime: { type: string, format: date-time }

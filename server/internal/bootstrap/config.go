@@ -33,12 +33,14 @@ const (
 	AddonKind       AddonName = "kind"
 	AddonKubernetes AddonName = "kubernetes"
 	AddonScripted   AddonName = "scripted"
+	AddonRecord     AddonName = "record"
 )
 
 var knownAddons = map[AddonName]struct{}{
 	AddonKind:       {},
 	AddonKubernetes: {},
 	AddonScripted:   {},
+	AddonRecord:     {},
 }
 
 // Database is the selected persistence backend. Values are produced only by

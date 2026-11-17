@@ -1,0 +1,17 @@
+FROM golang:1.26.10 AS builder
+WORKDIR /src
+# The server module is a test dependency, referenced by a local replacement.
+# Its manifest is sufficient when building only the controller entry point.
+COPY server/go.mod server/go.sum ./server/
+COPY controllers/record/go.mod controllers/record/go.sum ./controllers/record/
+WORKDIR /src/controllers/record
+RUN go mod download
+COPY controllers/record/ ./
+RUN CGO_ENABLED=0 go build -trimpath -o /fleet-record-controller ./cmd/fleet-record-controller
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /fleet-record-controller /usr/local/bin/fleet-record-controller
+USER 65532:65532
+ENTRYPOINT ["fleet-record-controller"]
