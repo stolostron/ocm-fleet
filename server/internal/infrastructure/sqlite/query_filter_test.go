@@ -27,6 +27,7 @@ import (
 // transport/extensionresource (layering: infrastructure → domain only).
 type staticQuerySchemas map[domain.ResourceType]domain.ResourceQuerySchema
 
+//domain:presence
 func (s staticQuerySchemas) GetResourceQuerySchema(_ context.Context, rt domain.ResourceType) (domain.ResourceQuerySchema, bool, error) {
 	schema, ok := s[rt]
 	return schema, ok, nil

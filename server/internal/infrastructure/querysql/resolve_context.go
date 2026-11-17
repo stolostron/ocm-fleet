@@ -15,9 +15,10 @@ type resolveSchema struct {
 	provider domain.QuerySchemaProvider
 
 	fetched bool
-	schema  domain.ResourceQuerySchema
-	ok      bool
-	err     error
+	// TODO: should probably use a pointer to avoid the invalid zero value
+	schema domain.ResourceQuerySchema
+	ok     bool
+	err    error
 }
 
 // newResolveContext builds a ResolveContext for schema validation /
@@ -76,6 +77,7 @@ func (ctx ResolveContext) ClassifyResourceContainer(segs []string) (ResourceCont
 	return classifyResourceContainer(segs, ctx)
 }
 
+//domain:presence
 func (ctx ResolveContext) lookupSchema() (domain.ResourceQuerySchema, bool, error) {
 	if ctx.GuardedResourceType == nil || ctx.schema == nil || ctx.schema.provider == nil {
 		return domain.ResourceQuerySchema{}, false, nil

@@ -18,13 +18,15 @@ var contractsAnalyzer = &analysis.Analyzer{
 	Doc:        "derive error and construction contracts for domain zero analysis",
 	Run:        runContracts,
 	ResultType: reflect.TypeFor[*contractSet](),
-	FactTypes:  []analysis.Fact{new(functionContract), new(sentinelContract), new(boundaryFact)},
+	FactTypes:  []analysis.Fact{new(functionContract), new(sentinelContract), new(boundaryFact), new(presenceFact)},
 }
 
 type contractSet struct {
 	functions           map[*types.Func]*functionContract
 	boundaries          map[*types.Func]*boundaryFact
 	boundaryDiagnostics []analysis.Diagnostic
+	presences           map[*types.Func]bool
+	presenceDiagnostics []analysis.Diagnostic
 	sentinels           map[*types.Var]bool
 	writes              map[*types.Var][]token.Pos
 }
@@ -65,6 +67,7 @@ func runContracts(pass *analysis.Pass) (any, error) {
 		set: &contractSet{
 			functions:  make(map[*types.Func]*functionContract),
 			boundaries: make(map[*types.Func]*boundaryFact),
+			presences:  make(map[*types.Func]bool),
 			sentinels:  make(map[*types.Var]bool),
 			writes:     make(map[*types.Var][]token.Pos),
 		},
@@ -72,6 +75,7 @@ func runContracts(pass *analysis.Pass) (any, error) {
 		values: make(map[*types.Var]ast.Expr),
 	}
 	b.collectBoundaries()
+	b.collectPresences()
 	for _, file := range pass.Files {
 		for _, declaration := range file.Decls {
 			switch declaration := declaration.(type) {
@@ -172,6 +176,8 @@ func runContracts(pass *analysis.Pass) (any, error) {
 			b.set.sentinels[imported.Object.(*types.Var)] = true
 		case *boundaryFact:
 			b.set.boundaries[imported.Object.(*types.Func).Origin()] = fact
+		case *presenceFact:
+			b.set.presences[imported.Object.(*types.Func).Origin()] = true
 		}
 	}
 	return b.set, nil

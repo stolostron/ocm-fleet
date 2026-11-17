@@ -415,14 +415,46 @@ the result and its matching error is also allowed. This includes pointer results
 `nil` remains valid optional absence, but a failed result may instead contain a
 non-nil pointer to an invalid value. Interface results retain concrete payload
 types visible in the producing function, including across packages. Checking
-the error makes those successful values usable without defensive validation.
+the error makes those successful values usable without defensive validation,
+subject to any declared presence guard.
+
+An API returning `(T, bool)` or `(T, bool, error)` can declare boolean presence:
+
+```go
+type ResourceLookup interface {
+    // Lookup returns the resource's ID, if present.
+    //
+    //domain:presence
+    Lookup(name string) (ResourceID, bool, error)
+}
+```
+
+`//domain:presence` takes no arguments and applies only to those two result
+shapes. The first result must be valid when the second result is true and the
+optional error is nil. On absence or failure, that payload is inert and may be
+zero, boxed, or point to invalid storage. Callers must establish both guards
+before consuming a required domain value. Forwarding the value with its matching
+presence and error results is allowed. A type whose zero is valid does not need
+a presence check merely to use that zero.
+
+Declare the contract separately on interface methods and concrete functions or
+methods. Facts follow the Go declaration across packages and statically resolved
+calls, including method values and expressions. The checker does not infer
+presence from a method name, result name, signature alone, or an implementation
+of an unannotated interface. Booleans such as `created` and `changed` retain their
+ordinary meaning. Invalid signatures, duplicate markers, and marker arguments
+produce `domainzero.invalid-presence-policy` findings, including in packages
+without protected domain types. Arbitrary function parameters and relationships
+between separately stored fields do not acquire a presence contract.
+
 Boolean comparisons retain their relationships, including repeated reads of
 unchanged table fields and `wantErr` assertions followed by a terminating testing call. The standard
 `testing.TB` interface has the same termination contract; a nonfatal assertion
 does not establish success. Returns inside iterator range loops follow the same
 result/error rules as ordinary returns.
 
-A zero payload requires a provably non-nil error. The checker recognizes branch
+Outside a declared absence path, a zero payload requires a provably non-nil error.
+The checker recognizes branch
 conditions, `errors.New`, `fmt.Errorf`, and `errors.Join` when local argument
 contents establish its nilness. It infers non-nil package sentinels from their
 initialization and checks for writes and address escapes; reassigning or exposing
@@ -488,8 +520,9 @@ inherit that contract. Copies made before mutation retain their state, and a
 later explicit zero assignment remains invalid. Length relationships beyond the
 simple helper contracts above are not inferred. Error factories whose non-nil
 contract cannot be derived can produce uncertain findings.
-A returned boolean is not automatically treated as an absence marker: use
-optional pointers for ordinary domain results.
+A returned boolean is not automatically treated as an absence marker; use
+`domain:presence` for the supported optional-result signatures or return an
+optional pointer.
 
 For a justified case beyond these limits, use a narrow `nolint:domainzero` with
 a local explanation of how initialization or the error contract is guaranteed.

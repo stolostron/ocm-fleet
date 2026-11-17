@@ -17,9 +17,10 @@ also acceptable during construction.
 Accepting a domain object means it is valid. You do not need to redundantly validate or re-parse it because the type communicates what "valid" means already.
 
 Types are never "empty" unless "empty" has semantic meaning for the type.
-Outside constructor options, optional domain values use pointers: `nil` means
-absent, and a supplied value must be valid. Required arguments are positional;
-see [constructors.md](./constructors.md).
+Outside constructor options, optional domain arguments and fields use pointers:
+`nil` means absent, and a supplied value must be valid. Optional results can also
+use an explicit boolean presence contract, as described below. Required arguments
+are positional; see [constructors.md](./constructors.md).
 
 **Value objects** are the simplest and most preferred. A value is defined
 entirely by its data — two values with the same fields are equal. Values have
@@ -78,7 +79,14 @@ valid value, such as an empty `AliasSet`. Do not add a universal `IsZero()` or
 
 Temporary zero storage is fine if initialized before use, as are zero payloads
 returned with a non-nil error. A successful required result must be valid.
-For an optional result, return a pointer so absence is explicit.
+For an optional result, return a pointer or declare `//domain:presence` on a
+`(T, bool)` or `(T, bool, error)` API. The latter's value must be valid when the
+presence indicator is true and its error, if any, is nil. Otherwise the payload
+is inert and may be zero; callers must check both indicators before using it.
+Declare that contract on both interface methods and their implementations.
+An unrelated boolean, such as whether an entry was created, grants no absence
+exemption. See the [linter guidance](../../tools/golangci-lint/README.md#zero-value-flow)
+for supported flow analysis.
 The same rule applies to `var value T`, `new(T)`, empty struct literals, and
 scalar zero conversions; changing storage syntax does not change validity.
 
@@ -89,8 +97,9 @@ It does not relax construction rules for other values. A valid-zero struct
 cannot contain required fields whose zeros are invalid; nil optional pointers
 and empty containers are fine.
 
-Check a constructor's error before using its result, and a map lookup's or
-channel receive's `ok` before using a required domain value. These checks
+Check a constructor's error before using its result, and a map lookup's, channel
+receive's, or declared optional result's `ok` before using a required domain value.
+These checks
 establish whether a value was produced; receivers still trust the value itself.
 Do not add `IsZero()` checks to compensate for unchecked construction.
 Comparisons to an invalid zero, including `id == ""`, indicate a redundant

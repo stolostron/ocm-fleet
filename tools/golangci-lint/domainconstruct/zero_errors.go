@@ -9,10 +9,19 @@ import (
 )
 
 func (c *zeroChecker) callContract(call *ssa.CallCommon) *functionContract {
+	if function := callObject(call); function != nil {
+		return c.contracts.functions[function.Origin()]
+	}
+	return nil
+}
+
+func callObject(call *ssa.CallCommon) *types.Func {
+	if call.IsInvoke() {
+		return call.Method
+	}
 	if function := call.StaticCallee(); function != nil {
-		if object, ok := function.Object().(*types.Func); ok {
-			return c.contracts.functions[object.Origin()]
-		}
+		object, _ := function.Object().(*types.Func)
+		return object
 	}
 	return nil
 }

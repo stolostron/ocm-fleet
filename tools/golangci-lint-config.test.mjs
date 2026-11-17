@@ -736,6 +736,115 @@ func Compare(valid value.ID) bool {
   await assert.doesNotReject(audit());
 });
 
+test("domain presence contracts check imported APIs, interfaces, both guards, and declarations", async (t) => {
+  const { directory, lint, issues, format } = await fixture(t, {
+    domain: true,
+  });
+  await mkdir(join(directory, "value"));
+  await writeFile(
+    join(directory, "value/id.go"),
+    `package value
+
+import "errors"
+
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) (ID, error) {
+  if raw == "" { return "", errors.New("empty ID") }
+  return ID(raw), nil
+}
+
+type Provider interface {
+  //domain:presence
+  Lookup(string, bool) (ID, bool, error)
+}
+
+//domain:presence
+func Lookup(raw string, found bool) (ID, bool, error) {
+  if !found { return "", false, nil }
+  id, err := NewID(raw)
+  return id, true, err
+}
+
+func GetOrCreate(id ID) (ID, bool, error) { return id, false, nil }
+`,
+  );
+  const valid = `package lintfixture
+
+import "github.com/stolostron/ocm-fleet/lintfixture/value"
+
+func accept(value.ID) {}
+
+func Checked(provider value.Provider) {
+  id, ok, err := provider.Lookup("present", true)
+  if err != nil || !ok { return }
+  accept(id)
+}
+
+//domain:presence
+func Forward(raw string, found bool) (value.ID, bool, error) {
+  return value.Lookup(raw, found)
+}
+
+func Created(id value.ID) {
+  existing, _, err := value.GetOrCreate(id)
+  if err == nil { accept(existing) }
+}
+`;
+  await writeFile(
+    join(directory, "main.go"),
+    `${valid}
+
+func UncheckedPresence(provider value.Provider) {
+  id, _, err := provider.Lookup("present", true)
+  if err == nil { accept(id) }
+}
+
+func UncheckedError() {
+  id, ok, _ := value.Lookup("present", true)
+  if ok { accept(id) }
+}
+
+//domain:presence
+func InvalidPresent() (value.ID, bool) { return "", true }
+
+//domain:presence extra
+func InvalidPolicy() (int, bool) { return 0, false }
+`,
+  );
+  await format();
+  await assert.rejects(lint(), { code: 1 });
+  const findings = (await issues()).map(domainFinding);
+  assert.equal(findings.length, 4, JSON.stringify(findings));
+  assert.deepEqual(findings.map((finding) => finding.Reason).sort(), [
+    "invalid-presence",
+    "unchecked-error",
+    "unchecked-presence",
+    "zero-value",
+  ]);
+  const presence = findings.find(
+    (finding) => finding.Reason === "unchecked-presence",
+  );
+  assert.equal(presence.Rule, "domainzero.invalid-zero");
+  assert.equal(presence.Certainty, "possible");
+  assert.equal(presence.Operation, "argument");
+  assert.equal(presence.Value, 'provider.Lookup("present", true)');
+  assert.equal(
+    presence.Type,
+    "github.com/stolostron/ocm-fleet/lintfixture/value.ID",
+  );
+  assert.ok(presence.Provenance.some((step) => step.Kind === "source"));
+  assert.equal(
+    findings.find((finding) => finding.Reason === "invalid-presence").Rule,
+    "domainzero.invalid-presence-policy",
+  );
+
+  await writeFile(join(directory, "main.go"), valid);
+  await format();
+  await assert.doesNotReject(lint());
+});
+
 test("formatting preserves registration comments and produces lint-clean, stable imports", async (t) => {
   const { directory, lint } = await fixture(t);
   // A local dependency reproduces third-party import grouping without downloads.

@@ -262,41 +262,54 @@ func (c *zeroChecker) tupleProblem(value *ssa.Extract, t types.Type, context flo
 			guardIndex, success, reason = 1, notZero, reasonUncheckedReceive
 		}
 	}
-	if guardIndex < 0 {
+	if call, ok := value.Tuple.(*ssa.Call); ok {
+		if guardIndex >= 0 && !c.tupleGuardChecked(value.Tuple, guardIndex, success, context) {
+			return c.uncheckedCallResult(call, value.Index, t, reason)
+		}
+		if value.Index == 0 && c.contracts.hasPresence(callObject(&call.Call)) &&
+			!c.tupleGuardChecked(value.Tuple, 1, notZero, context) {
+			return c.uncheckedCallResult(call, value.Index, t, reasonUncheckedPresence)
+		}
 		return nil
 	}
-	if references := value.Tuple.Referrers(); references != nil {
-		for _, reference := range *references {
-			if guard, ok := reference.(*ssa.Extract); ok && guard.Index == guardIndex {
-				if c.valueTruth(guard, context, make(map[ssa.Value]bool)) == success {
-					return nil
-				}
-			}
-		}
-	}
-	if _, call := value.Tuple.(*ssa.Call); call {
-		if problem := c.failedResultProblem(t, reason, make(map[types.Type]bool)); problem != nil {
-			return problem
-		}
-		call := value.Tuple.(*ssa.Call)
-		if fact := c.callContract(&call.Call); fact != nil {
-			for _, rule := range fact.Payloads {
-				if rule.Result == value.Index {
-					for _, boxed := range rule.Types {
-						if problem := c.payloadProblem(boxed, reason); problem != nil {
-							return problem
-						}
-					}
-				}
-			}
-		}
+	if guardIndex < 0 || c.tupleGuardChecked(value.Tuple, guardIndex, success, context) {
 		return nil
 	}
 	return c.conditionalProblem(t, reason)
 }
 
-// Error payloads may contain a non-nil pointer to an invalid value. Optional
-// absence does not make an unchecked failure payload valid.
+func (c *zeroChecker) tupleGuardChecked(tuple ssa.Value, index int, success truth, context flowContext) bool {
+	if references := tuple.Referrers(); references != nil {
+		for _, reference := range *references {
+			if guard, ok := reference.(*ssa.Extract); ok && guard.Index == index &&
+				c.valueTruth(guard, context, make(map[ssa.Value]bool)) == success {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (c *zeroChecker) uncheckedCallResult(call *ssa.Call, result int, t types.Type, reason zeroReason) *zeroProblem {
+	if problem := c.failedResultProblem(t, reason, make(map[types.Type]bool)); problem != nil {
+		return problem
+	}
+	if fact := c.callContract(&call.Call); fact != nil {
+		for _, rule := range fact.Payloads {
+			if rule.Result == result {
+				for _, boxed := range rule.Types {
+					if problem := c.payloadProblem(boxed, reason); problem != nil {
+						return problem
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// Inert failure or absence payloads may contain a non-nil pointer to an invalid
+// value. Optional absence does not make an unchecked payload valid.
 func (c *zeroChecker) failedResultProblem(t types.Type, reason zeroReason, seen map[types.Type]bool) *zeroProblem {
 	if seen[t] {
 		return nil

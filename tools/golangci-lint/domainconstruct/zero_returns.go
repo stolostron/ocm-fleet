@@ -3,6 +3,7 @@ package domainconstruct
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 
 	"golang.org/x/tools/go/ssa"
 )
@@ -14,6 +15,14 @@ func (c *zeroChecker) checkResults(results []ssa.Value, point flowPoint, context
 			return
 		}
 	}
+	function := point.block.Parent()
+	for function.Synthetic == "range-over-func yield" {
+		function = function.Parent()
+	}
+	if object, _ := function.Object().(*types.Func); c.contracts.hasPresence(object) &&
+		len(results) >= function.Signature.Results().Len() && !c.assume(&success, results[1], notZero) {
+		return
+	}
 	for _, result := range results {
 		if !isErrorType(result.Type()) {
 			if problem := c.problem(result, nil, result.Type(), point, success, make(map[valueVisit]bool)); problem != nil {
@@ -24,7 +33,7 @@ func (c *zeroChecker) checkResults(results []ssa.Value, point flowPoint, context
 }
 
 // SSA lowers a return inside an iterator loop into stores to the enclosing
-// function's result slots. Check the matching result/error pair together, just
+// function's result slots. Check the matching result and guards together, just
 // as for an ordinary return, instead of treating its failure payload as a write
 // to caller-owned domain state.
 func (c *zeroChecker) checkYieldReturn(store *ssa.Store, point flowPoint, context flowContext) bool {

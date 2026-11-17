@@ -42,6 +42,8 @@ import (
 // surface with no caller.
 type QuerySchemaProvider interface {
 	// GetResourceQuerySchema returns rt's query schema, if known.
+	//
+	//domain:presence
 	GetResourceQuerySchema(ctx context.Context, rt ResourceType) (ResourceQuerySchema, bool, error)
 
 	// ListResourceQuerySchemas returns every currently known resource

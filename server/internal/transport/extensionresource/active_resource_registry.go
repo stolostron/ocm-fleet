@@ -400,6 +400,8 @@ func (r *ActiveResourceRegistry) GetByGRPCServiceName(grpcServiceName string) (d
 
 // GetResourceQuerySchema implements [domain.QuerySchemaProvider].
 // Returns the DefaultVersion's query schema (versionless lookup).
+//
+//domain:presence
 func (r *ActiveResourceRegistry) GetResourceQuerySchema(_ context.Context, rt domain.ResourceType) (domain.ResourceQuerySchema, bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

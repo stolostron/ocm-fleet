@@ -30,7 +30,7 @@ func (c *serializationChecker) checkBoxedCalls() {
 				if node == nil {
 					continue
 				}
-				object := serializationCallObject(call.Common())
+				object := callObject(call.Common())
 				c.callPosition = node.Lparen
 				for _, boundary := range c.contracts.boundariesFor(object, c.policies) {
 					for _, index := range boundary.Results {

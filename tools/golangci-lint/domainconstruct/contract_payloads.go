@@ -48,7 +48,7 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 			rules = append(rules, payloadRule{Result: index})
 		}
 	}
-	if !hasError || len(rules) == 0 {
+	if !hasError && !b.set.hasPresence(object) || len(rules) == 0 {
 		return nil
 	}
 	environment := make(map[*types.Var][]payloadType)

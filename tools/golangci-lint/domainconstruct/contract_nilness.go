@@ -170,6 +170,9 @@ func (e *nilnessEvaluator) statement(statement ast.Stmt, state nilnessEnv) []nil
 func (e *nilnessEvaluator) converted(expression ast.Expr, target types.Type, state nilnessEnv) truth {
 	actual := e.builder.pass.TypesInfo.TypeOf(expression)
 	if target != nil && actual != nil {
+		if basic, ok := target.Underlying().(*types.Basic); ok && basic.Info()&types.IsBoolean != 0 {
+			return e.condition(expression, state)
+		}
 		if _, boxed := target.Underlying().(*types.Interface); boxed &&
 			actual != types.Typ[types.UntypedNil] {
 			if _, alreadyInterface := actual.Underlying().(*types.Interface); !alreadyInterface {
@@ -279,10 +282,16 @@ func (e *nilnessEvaluator) condition(expression ast.Expr, state nilnessEnv) trut
 			}
 		}
 	}
-	return unknown
+	return e.expression(expression, state)
 }
 
 func (e *nilnessEvaluator) refine(expression ast.Expr, value truth, state nilnessEnv) {
+	if variable, ok := expressionObject(e.builder.pass.TypesInfo, expression).(*types.Var); ok {
+		if basic, ok := variable.Type().Underlying().(*types.Basic); ok && basic.Info()&types.IsBoolean != 0 &&
+			!variable.IsField() && (variable.Pkg() == nil || variable.Parent() != variable.Pkg().Scope()) {
+			state[variable] = value
+		}
+	}
 	if unary, ok := ast.Unparen(expression).(*ast.UnaryExpr); ok && unary.Op == token.NOT {
 		e.refine(unary.X, opposite(value), state)
 	}

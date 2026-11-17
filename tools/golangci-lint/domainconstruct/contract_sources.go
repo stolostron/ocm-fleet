@@ -147,14 +147,15 @@ func (e *sourceEvaluator) statement(statement ast.Stmt, state sourceState) []sou
 			} else if call, ok := ast.Unparen(statement.Results[0]).(*ast.CallExpr); ok {
 				values[index] = e.call(call, index, state)
 			}
-			// Only successful returns contribute domain values. Known failure
-			// payloads remain inert even after instantiation.
-			if isErrorType(e.signature.Results().At(index).Type()) {
+			// Only present, successful returns contribute domain values. Known
+			// failure and absence payloads remain inert after instantiation.
+			presence := index == 1 && e.builder.set.hasPresence(e.object)
+			if presence || isErrorType(e.signature.Results().At(index).Type()) {
 				actual := state.errors[e.signature.Results().At(index)]
 				if expression != nil {
 					actual = nilness.converted(expression, e.signature.Results().At(index).Type(), state.errors)
 				}
-				if actual == notZero {
+				if presence && actual == isZero || !presence && actual == notZero {
 					return nil
 				}
 			}

@@ -18,6 +18,7 @@ const (
 	reasonSourcePermitsZero zeroReason = "source-permits-zero"
 	reasonConversion        zeroReason = "conversion-may-produce-zero"
 	reasonUncheckedError    zeroReason = "unchecked-error"
+	reasonUncheckedPresence zeroReason = "unchecked-presence"
 	reasonUncheckedLookup   zeroReason = "unchecked-map-lookup"
 	reasonUncheckedReceive  zeroReason = "unchecked-receive"
 	reasonUncheckedAssert   zeroReason = "unchecked-assertion"
@@ -37,6 +38,8 @@ func (reason zeroReason) description() string {
 		return "conversion may produce zero without validation"
 	case reasonUncheckedError:
 		return "result is used before its error is checked"
+	case reasonUncheckedPresence:
+		return "result may be absent; check its presence indicator"
 	case reasonUncheckedLookup:
 		return "map lookup may return zero when the key is absent; check ok"
 	case reasonUncheckedReceive:

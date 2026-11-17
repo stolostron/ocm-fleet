@@ -8,17 +8,6 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-func serializationCallObject(call *ssa.CallCommon) *types.Func {
-	if call.IsInvoke() {
-		return call.Method
-	}
-	if function := call.StaticCallee(); function != nil {
-		object, _ := function.Object().(*types.Func)
-		return object
-	}
-	return nil
-}
-
 func serializationArgument(call *ssa.CallCommon, index int) ssa.Value {
 	if index == -1 && call.IsInvoke() {
 		return call.Value
@@ -37,7 +26,7 @@ func serializationArgumentIndex(call *ssa.CallCommon, index int) int {
 // valid domain value; its success contract is considered separately below.
 func (c *zeroChecker) decodingArgument(call *ssa.CallCommon, index int) bool {
 	output := false
-	for _, boundary := range c.contracts.boundariesFor(serializationCallObject(call), c.policies) {
+	for _, boundary := range c.contracts.boundariesFor(callObject(call), c.policies) {
 		for _, input := range boundary.Encode {
 			if serializationArgumentIndex(call, input) == index {
 				return false // An input/output parameter consumes its prior state.
@@ -57,7 +46,7 @@ func (c *zeroChecker) decodingArgument(call *ssa.CallCommon, index int) bool {
 // envelope cannot provide the same guarantee. Failure can leave partial writes.
 func (c *zeroChecker) decoderInitializes(instruction ssa.CallInstruction, location address, before flowPoint, context flowContext) bool {
 	call := instruction.Common()
-	for _, boundary := range c.contracts.boundariesFor(serializationCallObject(call), c.policies) {
+	for _, boundary := range c.contracts.boundariesFor(callObject(call), c.policies) {
 		if len(boundary.Decode) == 0 || !c.decodingSucceeded(instruction, boundary.ErrorResult, context) {
 			continue
 		}
@@ -97,7 +86,7 @@ func (c *zeroChecker) decodingSucceeded(instruction ssa.CallInstruction, errorIn
 
 func (c *zeroChecker) decoderMayInvalidate(instruction ssa.CallInstruction, storage mutationTarget, before flowPoint, context flowContext) bool {
 	call := instruction.Common()
-	for _, boundary := range c.contracts.boundariesFor(serializationCallObject(call), c.policies) {
+	for _, boundary := range c.contracts.boundariesFor(callObject(call), c.policies) {
 		if len(boundary.Decode) == 0 || c.decodingSucceeded(instruction, boundary.ErrorResult, context) {
 			continue
 		}

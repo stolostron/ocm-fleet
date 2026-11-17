@@ -113,6 +113,9 @@ func runZero(pass *analysis.Pass) (any, error) {
 		comparisons: make(map[token.Pos]bool),
 		expressions: make(map[token.Pos]sourceExpression),
 	}
+	for _, finding := range c.contracts.presenceDiagnostics {
+		pass.Report(finding)
+	}
 	c.checkZeroComparisons()
 	for object, positions := range c.contracts.writes {
 		if object.Pkg() != pass.Pkg && c.contracts.sentinels[object] {
