@@ -9,8 +9,11 @@ import (
 
 // DeleteManagedResourceInput identifies the managed resource to delete.
 type DeleteManagedResourceInput struct {
+	RequestID    string
 	ResourceType ResourceType
 	Name         ResourceName
+	ExpectedUID  ExtensionResourceUID
+	Etag         Etag
 	// Auth is persisted so background remove/retry passes use delete-time
 	// auth rather than stale create-time auth.
 	Auth    DeliveryAuth
@@ -74,6 +77,9 @@ func (s *DeleteManagedResourceWorkflowSpec) MutateToDeleting() Activity[DeleteMa
 			probe.Error(err)
 			return managedResourceMutationResult{}, err
 		}
+		if !in.ExpectedUID.IsZero() && er.UID() != in.ExpectedUID {
+			return managedResourceMutationResult{}, TerminalError(fmt.Errorf("%w: resource incarnation changed", ErrStaleGeneration))
+		}
 		managed := er.Managed()
 		if managed == nil {
 			probe.Error(ErrInvalidArgument)
@@ -94,24 +100,29 @@ func (s *DeleteManagedResourceWorkflowSpec) MutateToDeleting() Activity[DeleteMa
 			return managedResourceMutationResult{}, err
 		}
 
+		current := ExtensionResourceView{Resource: *er, Intent: &intent, Fulfillment: f}
+		if in.Etag != "" && in.Etag != current.Etag() {
+			return managedResourceMutationResult{}, TerminalError(fmt.Errorf("%w: etag mismatch", ErrStaleGeneration))
+		}
 		// Delete retries read auth from fulfillment state, not the RPC context.
-		f.TransitionToDeleting(in.Auth)
+		// An unpaused deletion already has a durable owner; duplicate requests
+		// do not create an endless stream of new generations.
+		if f.State() != FulfillmentStateDeleting || f.Paused() {
+			f.TransitionToDeleting(in.Auth)
+		}
 		if err := tx.Fulfillments().Update(ctx, f); err != nil {
 			probe.Error(err)
 			return managedResourceMutationResult{}, fmt.Errorf("update fulfillment: %w", err)
 		}
 
+		view := ExtensionResourceView{Resource: *er, Intent: &intent, Fulfillment: f}
 		if err := tx.Commit(); err != nil {
 			probe.Error(err)
 			return managedResourceMutationResult{}, fmt.Errorf("commit: %w", err)
 		}
 
 		return managedResourceMutationResult{
-			View: ExtensionResourceView{
-				Resource:    *er,
-				Intent:      &intent,
-				Fulfillment: f,
-			},
+			View:          view,
 			FulfillmentID: managed.FulfillmentID(),
 			MyGen:         f.Generation(),
 		}, nil
@@ -146,7 +157,22 @@ func (s *DeleteManagedResourceWorkflowSpec) LoadFulfillment() Activity[Fulfillme
 // completion.
 func (s *DeleteManagedResourceWorkflowSpec) StartCleanup() Activity[DeleteManagedResourceCleanupInput, struct{}] {
 	return NewActivity("mr-start-delete-cleanup", func(ctx context.Context, input DeleteManagedResourceCleanupInput) (struct{}, error) {
-		_, err := s.Cleanup.Start(ctx, input)
+		tx, err := s.Store.BeginReadOnly(ctx)
+		if err != nil {
+			return struct{}{}, err
+		}
+		defer tx.RollbackOnExit()
+		_, err = tx.Fulfillments().Get(ctx, input.FulfillmentID)
+		if errors.Is(err, ErrNotFound) {
+			return struct{}{}, nil
+		}
+		if err != nil {
+			return struct{}{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return struct{}{}, err
+		}
+		_, err = s.Cleanup.Start(ctx, input)
 		if errors.Is(err, ErrAlreadyRunning) {
 			return struct{}{}, nil
 		}

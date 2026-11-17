@@ -200,8 +200,8 @@ func runResourceFieldFilterTests(t *testing.T, factory Factory) {
 		seedInventoryType(t, tx, conflictType)
 		conflictUID := domain.NewExtensionResourceUID()
 		conflictName := domain.ResourceName("nodes/broken-node")
-		conflict := domain.NewExtensionResource(conflictUID, conflictType, conflictName, fixedTime)
-		if err := tx.ExtensionResources().Create(ctx, conflict); err != nil {
+		conflict := domain.NewExtensionResource(conflictUID, conflictType, conflictName, "create-"+conflictUID.String(), nil, fixedTime)
+		if _, err := tx.ExtensionResources().Create(ctx, conflict); err != nil {
 			t.Fatalf("seed conflicting-type resource: %v", err)
 		}
 		conflictObs := json.RawMessage(`{"capacity":{"cpu":"unknown"}}`)

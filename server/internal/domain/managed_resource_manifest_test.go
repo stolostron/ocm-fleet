@@ -161,13 +161,13 @@ func seedIntent(t *testing.T, store domain.Store, rt domain.ResourceType, name d
 	}
 
 	er := domain.NewExtensionResource(
-		erUID, rt, name, now,
+		erUID, rt, name, "create-"+erUID.String(), nil, now,
 		domain.WithManagedState(fID),
 	)
 	if _, err := er.RecordIntent(spec, now); err != nil {
 		t.Fatalf("RecordIntent: %v", err)
 	}
-	if err := tx.ExtensionResources().Create(context.Background(), er); err != nil {
+	if _, err := tx.ExtensionResources().Create(context.Background(), er); err != nil {
 		t.Fatalf("Create extension resource: %v", err)
 	}
 

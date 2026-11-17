@@ -60,14 +60,14 @@ func SeedCoreFixtures(t *testing.T, tx domain.Tx) Fixture {
 	seedFulfillment(t, tx, fID, fixedTime)
 	managedUID := domain.NewExtensionResourceUID()
 	managedName := domain.ResourceName("clusters/managed")
-	managed := domain.NewExtensionResource(managedUID, managedType, managedName, fixedTime,
+	managed := domain.NewExtensionResource(managedUID, managedType, managedName, "create-"+managedUID.String(), nil, fixedTime,
 		domain.WithManagedState(fID),
 		domain.WithExtensionLabels(map[string]string{"team": "platform"}),
 	)
 	if _, err := managed.RecordIntent(json.RawMessage(`{"provider":"aws","region":"us-east-1"}`), fixedTime); err != nil {
 		t.Fatalf("record intent for managed fixture: %v", err)
 	}
-	if err := tx.ExtensionResources().Create(ctx, managed); err != nil {
+	if _, err := tx.ExtensionResources().Create(ctx, managed); err != nil {
 		t.Fatalf("seed managed extension resource: %v", err)
 	}
 
@@ -75,8 +75,8 @@ func SeedCoreFixtures(t *testing.T, tx domain.Tx) Fixture {
 	seedInventoryType(t, tx, invType)
 	invUID := domain.NewExtensionResourceUID()
 	invName := domain.ResourceName("nodes/node-1")
-	inv := domain.NewExtensionResource(invUID, invType, invName, fixedTime)
-	if err := tx.ExtensionResources().Create(ctx, inv); err != nil {
+	inv := domain.NewExtensionResource(invUID, invType, invName, "create-"+invUID.String(), nil, fixedTime)
+	if _, err := tx.ExtensionResources().Create(ctx, inv); err != nil {
 		t.Fatalf("seed inventory-only extension resource: %v", err)
 	}
 	obs := json.RawMessage(`{"capacity":{"cpu":8},"allocatable":{"cpu":6}}`)

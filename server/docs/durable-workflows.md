@@ -187,6 +187,19 @@ memworkflow implementation (internal/infrastructure/memworkflow)
 
 Important: workflow code must remain deterministic across engines. Orchestration should not call time/random/network directly; put those behind activities.
 
+Mutation workflows can carry a pinned target and a resolved API outcome through
+`ContinueAsNew` while retrying their progress handoff. Keep retries bounded per
+run, and preserve the original precondition instead of reapplying intent against
+fresh state. Starting another workflow is itself an activity side effect.
+
+In go-workflows, `client.GetWorkflowResult` stops at a continued execution; it
+does not wait for the continuation's eventual result. Update uses a small parent
+workflow awaiting a subworkflow future, which follows that chain. The parent
+keeps a bounded history and returns the final outcome after handoff. The memory
+adapter follows continuations within its existing execution handle. Continuations
+bound the history replayed by one execution; completed execution histories still
+follow the backend's existing retention policy. They do not bound total storage.
+
 ⸻
 
 Determinism and idempotency guidance (LLM should enforce)

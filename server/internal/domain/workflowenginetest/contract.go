@@ -68,6 +68,10 @@ type workflows struct {
 func Run(t *testing.T, infraFactory InfraFactory, registryFactory RegistryFactory) {
 	t.Helper()
 
+	t.Run("UpdateManagedResource", func(t *testing.T) {
+		runUpdateManagedResourceTests(t, infraFactory, registryFactory)
+	})
+
 	t.Run("CreateDeployment_StaticPlacement", func(t *testing.T) {
 		infra := infraFactory(t)
 		wfs := registerWorkflows(t, infra, registryFactory)

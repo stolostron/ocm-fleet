@@ -109,7 +109,7 @@ func setupIntegration(t *testing.T, opts ...domain.OrchestrationWorkflowOption) 
 
 	return integrationHarness{
 		store:       store,
-		resourceSvc: application.NewExtensionResourceService(store, createMRWf, nil, nil, nil),
+		resourceSvc: application.NewExtensionResourceService(store, createMRWf, nil, nil, nil, nil),
 	}
 }
 

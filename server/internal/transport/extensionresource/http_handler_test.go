@@ -130,8 +130,8 @@ func TestBuildHTTPHandler_InventoryOnlyUnsupportedVerbs404(t *testing.T) {
 	if managed.Descriptors.CreateRequest == nil {
 		t.Fatal("managed CreateRequest should be non-nil")
 	}
-	if len(managed.Desc.Methods) != 5 {
-		t.Fatalf("managed method count = %d, want 5", len(managed.Desc.Methods))
+	if len(managed.Desc.Methods) != 6 {
+		t.Fatalf("managed method count = %d, want 6", len(managed.Desc.Methods))
 	}
 	if len(svc.Desc.Methods) != 2 {
 		t.Fatalf("inventory-only method count = %d, want 2 (Get/List)", len(svc.Desc.Methods))

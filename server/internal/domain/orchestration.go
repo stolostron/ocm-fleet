@@ -628,7 +628,9 @@ func (s *OrchestrationWorkflowSpec) PersistAndCompleteReconciliation() Activity[
 			return false, fmt.Errorf("get fulfillment: %w", err)
 		}
 
-		fresh.ApplyReconciliationResult(in.Result)
+		// A completed older pass may still contribute its delivery history,
+		// but must not replace a newer lifecycle or credential decision.
+		fresh.MergeReconciliationResult(in.Result, in.ReconciledGen)
 		needsRestart := fresh.CompleteReconciliation(in.ReconciledGen, s.now())
 
 		if err := tx.Fulfillments().Update(ctx, fresh); err != nil {
@@ -641,7 +643,7 @@ func (s *OrchestrationWorkflowSpec) PersistAndCompleteReconciliation() Activity[
 		}
 		probe.Persisted(in.Result.State, needsRestart)
 
-		if in.Result.State == FulfillmentStateDeleting {
+		if in.Result.State == FulfillmentStateDeleting && !needsRestart {
 			if err := s.CleanupSignaler.SignalDeleteCleanupComplete(ctx, in.Result.FulfillmentID, DeleteCleanupCompleteEvent{
 				FulfillmentID: in.Result.FulfillmentID,
 			}); err != nil {
