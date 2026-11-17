@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
+	"github.com/stolostron/ocm-fleet/server/pkg/optional"
 )
 
 // edgeKey identifies a unique edge in the diff map.
@@ -37,10 +38,10 @@ type gvrState struct {
 // pendingDelete is one queued watch delete awaiting flush.
 // Name is the exact inventory resource name resolved at queue time from
 // the event (scope + metadata) or, failing that, from ReportedNames.
-// Flush skips the delete when Name is still empty.
+// Flush skips the delete when Name is still absent.
 type pendingDelete struct {
 	GVR  schema.GroupVersionResource
-	Name domain.ResourceName
+	Name optional.Optional[domain.ResourceName]
 }
 
 // pendingResync holds a failed LIST/resync mixed batch retained until it
@@ -492,14 +493,14 @@ func (w *Writer) flush(
 	deletedUIDs := make(map[string]schema.GroupVersionResource)
 	for uid, pending := range deletes {
 		// Name is normally filled by queueDelete; keep a ReportedNames
-		// fallback for empty Names that somehow reach flush.
-		name := pending.Name
-		if name == "" {
+		// fallback for absent Names that somehow reach flush.
+		name, ok := pending.Name.Get()
+		if !ok {
 			if st := w.gvrStates[pending.GVR]; st != nil {
-				name = st.ReportedNames[uid]
+				name, ok = st.ReportedNames[uid]
 			}
 		}
-		if name == "" {
+		if !ok {
 			w.logger.Warn("skipping delete; no acknowledged or queued resource name",
 				"uid", uid,
 				"gvr", pending.GVR.String())
@@ -807,7 +808,6 @@ func (w *Writer) queueDelete(gvr schema.GroupVersionResource, scope ObjectScope,
 		uid = string(obj.GetUID())
 		namespace = obj.GetNamespace()
 	}
-	name := domain.ResourceName("")
 	if sn, snErr := NewScopeNamespace(scope, namespace); snErr == nil {
 		if n, nameErr := ObjectResourceName(KubernetesObjectIdentity{
 			ClusterResourceName: w.clusterResourceName,
@@ -815,15 +815,15 @@ func (w *Writer) queueDelete(gvr schema.GroupVersionResource, scope ObjectScope,
 			ScopeNamespace:      sn,
 			UID:                 uid,
 		}); nameErr == nil {
-			name = n
+			return pendingDelete{GVR: gvr, Name: optional.Some(n)}
 		}
 	}
-	if name == "" {
-		if st := w.gvrStates[gvr]; st != nil {
-			name = st.ReportedNames[uid]
+	if st := w.gvrStates[gvr]; st != nil {
+		if name, ok := st.ReportedNames[uid]; ok {
+			return pendingDelete{GVR: gvr, Name: optional.Some(name)}
 		}
 	}
-	return pendingDelete{GVR: gvr, Name: name}
+	return pendingDelete{GVR: gvr}
 }
 
 // applyResyncSuccess commits in-memory membership and ReportedNames for a

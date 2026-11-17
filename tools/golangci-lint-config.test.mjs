@@ -845,6 +845,124 @@ func InvalidPolicy() (int, bool) { return 0, false }
   await assert.doesNotReject(lint());
 });
 
+test("canonical inline Optional permits absence and preserves payload, presence, and codec checks", async (t) => {
+  const { directory, lint, issues, format } = await fixture(t, {
+    domain: true,
+  });
+  await mkdir(join(directory, "server/pkg/optional"), { recursive: true });
+  await cp(
+    fileURLToPath(
+      new URL("../server/pkg/optional/optional.go", import.meta.url),
+    ),
+    join(directory, "server/pkg/optional/optional.go"),
+  );
+  await writeFile(
+    join(directory, "server/go.mod"),
+    "module github.com/stolostron/ocm-fleet/server\n\ngo 1.26.0\n",
+  );
+  await writeFile(
+    join(directory, "go.mod"),
+    "module github.com/stolostron/ocm-fleet/lintfixture\n\ngo 1.26.0\n\nrequire github.com/stolostron/ocm-fleet/server v0.0.0\n\nreplace github.com/stolostron/ocm-fleet/server => ./server\n",
+  );
+  await mkdir(join(directory, "value"));
+  await writeFile(
+    join(directory, "value/id.go"),
+    `package value
+
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) ID {
+  if raw == "" { panic("empty ID") }
+  return ID(raw)
+}
+
+type Optional[T any] struct {
+  Value T
+  Present bool
+}
+`,
+  );
+  const valid = `package lintfixture
+
+import (
+  "github.com/stolostron/ocm-fleet/lintfixture/value"
+  opt "github.com/stolostron/ocm-fleet/server/pkg/optional"
+)
+
+type Alias = opt.Optional[value.ID]
+
+func accept(value.ID) {}
+func acceptOptional(Alias) {}
+func acceptOther(value.Optional[value.ID]) {}
+
+func Checked(input Alias) {
+  id, ok := input.Get()
+  if ok { accept(id) }
+}
+
+func Absent() Alias {
+  var missing Alias
+  acceptOptional(missing)
+  entries := make([]Alias, 2)
+  for _, entry := range entries { acceptOptional(entry) }
+  return Alias{}
+}
+
+func Present() Alias { return opt.Some(value.NewID("present")) }
+`;
+  await writeFile(
+    join(directory, "main.go"),
+    `${valid.replace("import (", 'import (\n  "encoding/json"')}
+
+func Unchecked(input Alias) {
+  id, _ := input.Get()
+  accept(id)
+}
+
+func InvalidSome() {
+  var id value.ID
+  acceptOptional(opt.Some(id))
+}
+
+func ConstructorBypass() { _ = opt.Some[value.ID]("unchecked") }
+
+func Lookalike() { acceptOther(value.Optional[value.ID]{}) }
+
+func Serialize(input Alias) { _, _ = json.Marshal(input) }
+`,
+  );
+  await format();
+  await assert.rejects(lint(), { code: 1 });
+  const findings = (await issues()).map(domainFinding);
+  assert.equal(findings.length, 5, JSON.stringify(findings));
+  const zeroFindings = findings.filter(
+    (finding) => finding.Rule === "domainzero.invalid-zero",
+  );
+  assert.deepEqual(zeroFindings.map((finding) => finding.Reason).sort(), [
+    "unchecked-presence",
+    "zero-value",
+    "zero-value",
+  ]);
+  assert.ok(
+    findings.some(
+      (finding) => finding.Rule === "domainconstruct.constructor-bypass",
+    ),
+  );
+  const serialization = findings.find(
+    (finding) => finding.Rule === "domainserialization.unsupported-codec",
+  );
+  assert.equal(
+    serialization?.Type,
+    "github.com/stolostron/ocm-fleet/lintfixture.Alias",
+    JSON.stringify(findings),
+  );
+
+  await writeFile(join(directory, "main.go"), valid);
+  await format();
+  await assert.doesNotReject(lint());
+});
+
 test("formatting preserves registration comments and produces lint-clean, stable imports", async (t) => {
   const { directory, lint } = await fixture(t);
   // A local dependency reproduces third-party import grouping without downloads.

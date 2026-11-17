@@ -95,6 +95,8 @@ declarations, and misspelled directives are diagnostics, rather than silent
 exemptions. Imported callers receive policies through Go analysis facts.
 Generic containers propagate their concrete members' policies; generic type
 declarations do not yet accept domain directives of their own.
+The shared `server/pkg/optional.Optional[T]` has the explicit container contract
+described under [shared optional storage](#shared-optional-storage).
 
 The audit rejects unchecked conversions into a protected type, implicit constant
 construction in assignments/arguments/returns/containers, operators that produce
@@ -114,7 +116,7 @@ prove their validation logic correct.
 All equivalent zero storage forms are allowed by `domainconstruct`: `var value T`,
 `new(T)`, `T{}`, and scalar zero conversions. `domainzero` checks their consumption,
 including successful returns; there is no syntax-only exception for an error
-return. Optional nil pointers and type-only `reflect.TypeOf` observations are
+return. Shared optionals, optional nil pointers, and type-only `reflect.TypeOf` observations are
 allowed. `//domain:zero-valid` declares that zero supports ordinary domain use,
 such as an empty `AliasSet`; other nonzero literals still require construction.
 
@@ -357,7 +359,7 @@ consumers should use the explicit fields for decisions.
 unless its declaration includes `//domain:zero-valid`. This is a statement of
 domain meaning, not something the checker can infer from a representation.
 The checker rejects a valid-zero struct whose required fields recursively
-contain an invalid-zero value. Optional nil pointers and empty containers do
+contain an invalid-zero value. Shared optionals, optional nil pointers, and empty containers do
 not contradict that declaration.
 
 Temporary storage such as `var value ResourceID` is allowed. The checker follows
@@ -447,6 +449,41 @@ produce `domainzero.invalid-presence-policy` findings, including in packages
 without protected domain types. Arbitrary function parameters and relationships
 between separately stored fields do not acquire a presence contract.
 
+#### Shared optional storage
+
+The analyzer explicitly recognizes
+`github.com/stolostron/ocm-fleet/server/pkg/optional.Optional[T]`. Its absent zero
+is valid storage, including in fields, arrays, slices, and map values. Type and
+import aliases retain that identity. An unrelated type with the same name,
+representation, or methods receives ordinary analysis; a separately defined
+type does not acquire this contract merely by sharing Optional's underlying
+representation.
+
+`optional.Some(value)` consumes an already-valid T. The ordinary construction
+and zero rules still check its argument, including known imported generic
+factories that manufacture a present zero or convert raw input into T. This is
+not a blanket exemption for the payload or its constructors.
+
+`Get() (T, bool)` uses its declared `domain:presence` contract. Check its bool
+before consuming a T whose zero is invalid, or forward the pair through another
+declared presence API. Get returns exactly zero T on absence, so payloads with
+valid zeros, such as nil pointers and empty slices, retain that validity. Error
+guards on other APIs remain independent. The analyzer trusts this small shared
+implementation's contract; tests exercise its actual source across packages.
+
+Presence does not establish ownership or freeze T. Copies retain ordinary Go
+sharing, and the analyzer does not fully trace later writes through pointers or
+slice backing storage carried through nested generic wrappers. A presence check
+does not validate those mutations; callers must preserve T's invariants.
+
+Optional has no native JSON, text, or SQL serialization contract. Encoding its
+private fields would lose its value and presence; serialization boundaries
+report this even when T itself is serializable. Convert presence into an
+appropriate raw DTO. A snapshot cannot hide a protected T inside Optional.
+
+No general optional-type registration directive, arbitrary field relationship,
+or separate presence-method/unchecked-getter correlation is inferred.
+
 Boolean comparisons retain their relationships, including repeated reads of
 unchanged table fields and `wantErr` assertions followed by a terminating testing call. The standard
 `testing.TB` interface has the same termination contract; a nonfatal assertion
@@ -521,8 +558,8 @@ later explicit zero assignment remains invalid. Length relationships beyond the
 simple helper contracts above are not inferred. Error factories whose non-nil
 contract cannot be derived can produce uncertain findings.
 A returned boolean is not automatically treated as an absence marker; use
-`domain:presence` for the supported optional-result signatures or return an
-optional pointer.
+`domain:presence` for the supported optional-result signatures, return a shared
+`optional.Optional[T]`, or use an optional pointer where appropriate.
 
 For a justified case beyond these limits, use a narrow `nolint:domainzero` with
 a local explanation of how initialization or the error contract is guaranteed.

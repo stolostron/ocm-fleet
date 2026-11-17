@@ -335,6 +335,9 @@ func (problem *zeroProblem) afterUnknownMutation(pos token.Pos, operation, targe
 }
 
 func (c *zeroChecker) zeroType(t types.Type, path string) *zeroProblem {
+	if optionalPayload(t) != nil {
+		return nil
+	}
 	if _, pointer := types.Unalias(t).(*types.Pointer); pointer {
 		return nil
 	}

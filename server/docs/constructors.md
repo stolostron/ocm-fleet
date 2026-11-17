@@ -21,10 +21,14 @@
   programmer input. Go constants cannot call it. Retaining an actual domain
   constant needs a local, explained construction-lint exception and review;
   ordinary reads of that typed constant are copies.
-- Outside constructor options, express optional domain values with pointers.
-  `nil` means absent; a non-nil pointer must refer to a valid value. Do not use
-  an invalid zero value as an absence sentinel or require callers to discover
-  missing arguments with `IsZero()`.
+- Outside constructor options, use `optional.Optional[T]` from `pkg/optional`
+  for a value that may be absent. It stores T inline; its zero value is absent,
+  `optional.Some(value)` requires a valid T, and `Get()` returns `(T, bool)`.
+  Use pointers where reference semantics are appropriate: `nil` can express
+  absence, and a supplied pointer must refer to a valid value. Optional results
+  can also use a declared boolean presence contract; see [domain.md](./domain.md).
+  Do not use an invalid T zero as an absence sentinel or require callers to
+  discover missing arguments with `IsZero()`.
 - Avoid exported parameter structs containing required domain values. They
   allow required fields to be silently omitted. Use positional arguments or a
   constructed domain value or command instead.

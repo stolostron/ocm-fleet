@@ -55,9 +55,11 @@ This layer makes the end to end use cases of an application testable, without an
 
 Application service methods accept **validated values and constructed commands**,
 never domain aggregates or entities. Required inputs are positional; optional
-domain values use pointers. Avoid exported parameter bags whose required domain
-fields can be omitted. See [constructors.md](./constructors.md) for constructor
-options and [domain.md](./domain.md) for boundary DTOs and hydration.
+value inputs use `optional.Optional[T]`, and pointer inputs can use nil for
+absence where reference semantics are appropriate. Avoid exported parameter
+bags whose required domain fields can be omitted. See
+[constructors.md](./constructors.md) for constructor options and
+[domain.md](./domain.md) for boundary DTOs and hydration.
 
 The transport layer constructs validated values and commands from raw protocol
 input; the application service receives these and internally loads, mutates,

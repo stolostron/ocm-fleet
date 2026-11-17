@@ -46,6 +46,9 @@ Shared, vendor-neutral infrastructure helpers may also live as siblings under `i
 
 ## Rules
 
+- Layer-neutral value utilities live under `pkg/` and may be used by any layer.
+  `pkg/optional` represents presence with inline value storage and has no domain,
+  infrastructure, or I/O dependencies.
 - Domain must not import from transport, application, or infrastructure
 - Application must not import from transport or infrastructure
 - Infrastructure implements domain interfaces; it does not define new shared abstractions (only those it needs internally)

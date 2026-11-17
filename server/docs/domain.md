@@ -17,10 +17,12 @@ also acceptable during construction.
 Accepting a domain object means it is valid. You do not need to redundantly validate or re-parse it because the type communicates what "valid" means already.
 
 Types are never "empty" unless "empty" has semantic meaning for the type.
-Outside constructor options, optional domain arguments and fields use pointers:
-`nil` means absent, and a supplied value must be valid. Optional results can also
-use an explicit boolean presence contract, as described below. Required arguments
-are positional; see [constructors.md](./constructors.md).
+Outside constructor options, optional value arguments and fields use
+`optional.Optional[T]` from `pkg/optional`. Its zero value is absent, and a present
+T must be valid. Pointers remain appropriate for reference semantics, with nil
+available to express absence. Optional results can also use an explicit boolean
+presence contract, as described below. Required arguments are positional; see
+[constructors.md](./constructors.md).
 
 **Value objects** are the simplest and most preferred. A value is defined
 entirely by its data — two values with the same fields are equal. Values have
@@ -79,8 +81,27 @@ valid value, such as an empty `AliasSet`. Do not add a universal `IsZero()` or
 
 Temporary zero storage is fine if initialized before use, as are zero payloads
 returned with a non-nil error. A successful required result must be valid.
-For an optional result, return a pointer or declare `//domain:presence` on a
-`(T, bool)` or `(T, bool, error)` API. The latter's value must be valid when the
+For stored optional values, use the shared inline container:
+
+```go
+var name optional.Optional[domain.ResourceName] // Absent.
+name = optional.Some(validName)
+if value, ok := name.Get(); ok {
+    consume(value)
+}
+```
+
+`Some` copies an already-valid T and does not validate it. It can represent a
+present zero or nil when T permits that value; it cannot make an invalid domain
+zero valid. Copies retain T's ordinary shallow sharing semantics. The linter
+explicitly recognizes this shared type and permits its inactive private payload
+without granting the same permission to unrelated value/bool structs. Canonical
+type aliases retain this support. Construction and serialization rules remain
+separate; map presence into a raw DTO at serialization boundaries.
+
+For an optional result, return an `optional.Optional[T]`, use a pointer, or
+declare `//domain:presence` on a `(T, bool)` or `(T, bool, error)` API. The latter's
+value must be valid when the
 presence indicator is true and its error, if any, is nil. Otherwise the payload
 is inert and may be zero; callers must check both indicators before using it.
 Declare that contract on both interface methods and their implementations.
@@ -94,8 +115,8 @@ For types enrolled in the domain lint, zero is invalid unless the declaration
 includes `//domain:zero-valid`. Use that directive only when the zero state
 satisfies the type's documented invariants and supports its normal operations.
 It does not relax construction rules for other values. A valid-zero struct
-cannot contain required fields whose zeros are invalid; nil optional pointers
-and empty containers are fine.
+cannot contain required fields whose zeros are invalid; shared optionals, nil
+optional pointers, and empty containers are fine.
 
 Check a constructor's error before using its result, and a map lookup's, channel
 receive's, or declared optional result's `ok` before using a required domain value.

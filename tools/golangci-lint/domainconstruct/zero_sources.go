@@ -64,6 +64,15 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 			}
 			return nil
 		}
+		if payload := optionalPayload(t); payload != nil && len(source.Values) == 2 {
+			// The canonical fields are value and present. A false flag leaves
+			// the payload inert; a present or unknown flag requires valid T.
+			// This also checks imported generic factories that call Some.
+			if source.Values[1].Kind == sourceZero {
+				return nil
+			}
+			return c.sourceProblem(source.Values[0], call, result, nil, payload, point, context, seen)
+		}
 		if structure, ok := t.Underlying().(*types.Struct); ok {
 			for index, child := range source.Values {
 				if index < structure.NumFields() {

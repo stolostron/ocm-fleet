@@ -194,6 +194,15 @@ func (c *zeroChecker) rawValueProblem(value ssa.Value, path []int, target types.
 	if types.Identical(source, target) {
 		return nil
 	}
+	// A collection read can describe a prefix of a whole-array copy with a
+	// synthetic shorter array type. Its elements retain their domain contract;
+	// this does not authorize a conversion into a protected array type.
+	if targetArray, ok := target.(*types.Array); ok && c.policies.lookup(source) == nil {
+		if sourceArray, ok := source.Underlying().(*types.Array); ok &&
+			targetArray.Len() <= sourceArray.Len() && types.Identical(sourceArray.Elem(), targetArray.Elem()) {
+			return nil
+		}
+	}
 	reference := c.valueReference(value, path)
 	reason := reasonInputMayBeZero
 	entry := "enters this function"
@@ -268,6 +277,12 @@ func (c *zeroChecker) tupleProblem(value *ssa.Extract, t types.Type, context flo
 		}
 		if value.Index == 0 && c.contracts.hasPresence(callObject(&call.Call)) &&
 			!c.tupleGuardChecked(value.Tuple, 1, notZero, context) {
+			if optionalGet(callObject(&call.Call)) {
+				// Unlike an arbitrary presence API's inactive payload, Get
+				// returns exactly zero T on absence. Nil pointers and empty
+				// collections therefore retain their ordinary valid zeros.
+				return c.conditionalProblem(t, reasonUncheckedPresence)
+			}
 			return c.uncheckedCallResult(call, value.Index, t, reasonUncheckedPresence)
 		}
 		return nil
@@ -363,6 +378,11 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 	}
 	if c.validZeroStorage(location, t) {
 		return nil
+	}
+	if optionalPayload(t) != nil {
+		// Follow whole-value writes and generic factories, without inspecting
+		// the inactive private payload as an independently required field.
+		return c.memoryHistoryProblem(location, t, point, use, context, values, seen)
 	}
 	if array, ok := t.Underlying().(*types.Array); ok && c.policies.lookup(t) == nil {
 		view := collectionView{storage: location, element: array.Elem(), end: array.Len()}

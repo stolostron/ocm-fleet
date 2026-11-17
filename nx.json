@@ -50,6 +50,7 @@
     ],
     "goLintTool": [
       "goLintToolModule",
+      "{workspaceRoot}/server/pkg/optional/optional.go",
       "!{workspaceRoot}/tools/golangci-lint/**/project.json"
     ],
     "goLintToolBuild": [

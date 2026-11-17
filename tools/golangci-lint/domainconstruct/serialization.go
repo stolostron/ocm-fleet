@@ -236,6 +236,11 @@ func (c *serializationChecker) encodingProblem(t types.Type, codec string, seen 
 		return nil
 	}
 	seen[visit] = true
+	if optionalPayload(t) != nil {
+		// Private optional storage is not a wire representation. In
+		// particular, encoding/json would silently omit both private fields.
+		return &serializationProblem{typ: t, codec: codec}
+	}
 	if p := c.policies.lookup(t); p != nil {
 		if p.supports(codec) {
 			return nil
