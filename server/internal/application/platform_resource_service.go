@@ -38,15 +38,21 @@ func NewPlatformResourceService(store domain.Store, opts ...PlatformResourceServ
 	return s
 }
 
+// CreatePlatformResourceInput carries the fields needed to create or
+// claim a platform resource identity.
+type CreatePlatformResourceInput struct {
+	Name   domain.ResourceName
+	Labels map[string]string
+}
+
 // Create opens a read-write transaction, creates a new platform
 // resource identity, and commits. The repository's unique constraint
 // on resource_name surfaces [domain.ErrAlreadyExists] if the name is
 // already taken (per AIP-133: Create must not silently update an
-// existing resource). The required name is positional; options configure
-// initial state through [domain.NewPlatformResource].
+// existing resource).
 //
 // TODO: Probably remove this – we'll have user managed platform resource state in its own API
-func (s *PlatformResourceService) Create(ctx context.Context, name domain.ResourceName, opts ...domain.PlatformResourceOption) (*domain.PlatformResource, error) {
+func (s *PlatformResourceService) Create(ctx context.Context, in CreatePlatformResourceInput) (*domain.PlatformResource, error) {
 	tx, err := s.store.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
@@ -54,7 +60,7 @@ func (s *PlatformResourceService) Create(ctx context.Context, name domain.Resour
 	defer tx.RollbackOnExit()
 
 	now := s.now()
-	pr := domain.NewPlatformResource(name, now, opts...)
+	pr := domain.NewPlatformResource(in.Name, in.Labels, now)
 
 	if err := tx.ResourceIdentities().Create(ctx, pr); err != nil {
 		return nil, fmt.Errorf("create: %w", err)

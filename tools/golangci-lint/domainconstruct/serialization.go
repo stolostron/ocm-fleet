@@ -313,8 +313,7 @@ func (c *serializationChecker) snapshotProblem(t types.Type, seen map[types.Type
 		}
 		return c.snapshotProblem(shape.Elem(), seen)
 	case *types.Struct:
-		for index := range shape.NumFields() {
-			field := shape.Field(index)
+		for field := range shape.Fields() {
 			if problem := c.snapshotProblem(field.Type(), seen); problem != nil {
 				problem.path = fieldPath(field.Name(), problem.path)
 				return problem

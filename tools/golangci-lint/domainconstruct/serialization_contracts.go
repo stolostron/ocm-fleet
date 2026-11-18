@@ -92,7 +92,7 @@ func parseBoundary(signature *types.Signature, fields []string) (codecBoundary, 
 			return boundary, fmt.Errorf("use each boundary selector once with a nonempty comma-separated list")
 		}
 		seen[selector] = true
-		for _, value := range strings.Split(values, ",") {
+		for value := range strings.SplitSeq(values, ",") {
 			switch selector {
 			case "encode", "decode":
 				index := parameterIndex(signature, value)

@@ -18,7 +18,6 @@ const resolveContextTestRT = domain.ResourceType("kind.open-cluster-management.i
 
 type resolveContextSchemas map[domain.ResourceType]domain.ResourceQuerySchema
 
-//domain:presence
 func (s resolveContextSchemas) GetResourceQuerySchema(_ context.Context, rt domain.ResourceType) (domain.ResourceQuerySchema, bool, error) {
 	schema, ok := s[rt]
 	return schema, ok, nil
@@ -37,7 +36,6 @@ type countingResolveContextSchemas struct {
 	gets  int
 }
 
-//domain:presence
 func (c *countingResolveContextSchemas) GetResourceQuerySchema(ctx context.Context, rt domain.ResourceType) (domain.ResourceQuerySchema, bool, error) {
 	c.gets++
 	return c.inner.GetResourceQuerySchema(ctx, rt)
@@ -51,7 +49,6 @@ type errResolveContextSchemas struct {
 	err error
 }
 
-//domain:presence
 func (e errResolveContextSchemas) GetResourceQuerySchema(context.Context, domain.ResourceType) (domain.ResourceQuerySchema, bool, error) {
 	return domain.ResourceQuerySchema{}, false, e.err
 }

@@ -10,7 +10,6 @@ import (
 )
 
 type scanner interface {
-	//domain:boundary sql decode=dest
 	Scan(dest ...any) error
 }
 

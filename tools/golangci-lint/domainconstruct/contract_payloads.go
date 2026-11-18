@@ -165,8 +165,7 @@ func describePayload(t types.Type, seen map[types.Type]bool, depth int) payloadT
 		}}
 	case *types.Struct:
 		result := payloadType{Kind: payloadStruct}
-		for index := range t.NumFields() {
-			field := t.Field(index)
+		for field := range t.Fields() {
 			result.Fields = append(result.Fields, payloadField{field.Name(), describePayload(field.Type(), seen, depth+1)})
 		}
 		return result

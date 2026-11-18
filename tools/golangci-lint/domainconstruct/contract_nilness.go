@@ -24,8 +24,8 @@ func (e *nilnessEvaluator) function(body *ast.BlockStmt, initial nilnessEnv) tru
 	if environment == nil {
 		environment = make(nilnessEnv)
 	}
-	for index := range e.signature.Results().Len() {
-		environment[e.signature.Results().At(index)] = isZero
+	for result := range e.signature.Results().Variables() {
+		environment[result] = isZero
 	}
 	remaining := e.block(body.List, []nilnessEnv{environment})
 	if !e.complete || len(remaining) != 0 || len(e.returns) == 0 {

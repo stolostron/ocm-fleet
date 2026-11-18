@@ -2,6 +2,7 @@ package domainconstruct
 
 import (
 	"go/token"
+	"slices"
 
 	"golang.org/x/tools/go/ssa"
 )
@@ -84,8 +85,8 @@ func (c *zeroChecker) filledOnPaths(view collectionView, header, block *ssa.Basi
 	}
 	seen[block] = true
 	defer delete(seen, block)
-	for index := len(block.Instrs) - 1; index >= 0; index-- {
-		if store, ok := block.Instrs[index].(*ssa.Store); ok && assignments[store] {
+	for index, instruction := range slices.Backward(block.Instrs) {
+		if store, ok := instruction.(*ssa.Store); ok && assignments[store] {
 			return c.problem(store.Val, nil, view.element, flowPoint{block, index}, context, values) == nil
 		}
 	}

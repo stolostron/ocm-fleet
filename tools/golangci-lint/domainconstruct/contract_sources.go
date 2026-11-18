@@ -74,9 +74,9 @@ func (b *contractBuilder) inferSources(object *types.Func, declaration *ast.Func
 	if receiver := signature.Recv(); receiver != nil {
 		state.values[receiver] = valueSource{Kind: sourceParameter, Parameter: -1}
 	}
-	for index := range signature.Results().Len() {
-		state.values[signature.Results().At(index)] = valueSource{Kind: sourceZero}
-		state.errors[signature.Results().At(index)] = isZero
+	for result := range signature.Results().Variables() {
+		state.values[result] = valueSource{Kind: sourceZero}
+		state.errors[result] = isZero
 	}
 	remaining := e.block(declaration.Body.List, []sourceState{state})
 	if !e.complete || len(remaining) != 0 || len(e.returns) == 0 {

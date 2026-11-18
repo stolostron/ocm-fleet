@@ -12,12 +12,13 @@ import (
 
 func TestPlatformResourceService_CreatePrecreatesIdentity(t *testing.T) {
 	store := newStore(t)
-	svc := application.NewPlatformResourceService(store, application.WithPlatformResourceClock(platformResourceNow))
+	svc := application.NewPlatformResourceService(store)
 	ctx := context.Background()
 
-	pr, err := svc.Create(ctx, mustPlatformResourceName(t, "clusters/prod-us-east-1"),
-		domain.WithPlatformResourceLabels(map[string]string{"env": "prod", "region": "us-east-1"}),
-	)
+	pr, err := svc.Create(ctx, application.CreatePlatformResourceInput{
+		Name:   "clusters/prod-us-east-1",
+		Labels: map[string]string{"env": "prod", "region": "us-east-1"},
+	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -41,19 +42,21 @@ func TestPlatformResourceService_CreatePrecreatesIdentity(t *testing.T) {
 
 func TestPlatformResourceService_CreateRejectsExistingResource(t *testing.T) {
 	store := newStore(t)
-	svc := application.NewPlatformResourceService(store, application.WithPlatformResourceClock(platformResourceNow))
+	svc := application.NewPlatformResourceService(store)
 	ctx := context.Background()
 
-	_, err := svc.Create(ctx, mustPlatformResourceName(t, "clusters/prod-us-east-1"),
-		domain.WithPlatformResourceLabels(map[string]string{"env": "prod"}),
-	)
+	_, err := svc.Create(ctx, application.CreatePlatformResourceInput{
+		Name:   "clusters/prod-us-east-1",
+		Labels: map[string]string{"env": "prod"},
+	})
 	if err != nil {
 		t.Fatalf("first Create: %v", err)
 	}
 
-	_, err = svc.Create(ctx, mustPlatformResourceName(t, "clusters/prod-us-east-1"),
-		domain.WithPlatformResourceLabels(map[string]string{"env": "staging"}),
-	)
+	_, err = svc.Create(ctx, application.CreatePlatformResourceInput{
+		Name:   "clusters/prod-us-east-1",
+		Labels: map[string]string{"env": "staging"},
+	})
 	if !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("second Create err = %v, want %v", err, domain.ErrAlreadyExists)
 	}
@@ -61,12 +64,13 @@ func TestPlatformResourceService_CreateRejectsExistingResource(t *testing.T) {
 
 func TestPlatformResourceService_GetReturnsRepresentations(t *testing.T) {
 	store := newStore(t)
-	svc := application.NewPlatformResourceService(store, application.WithPlatformResourceClock(platformResourceNow))
+	svc := application.NewPlatformResourceService(store)
 	ctx := context.Background()
 
-	pr, err := svc.Create(ctx, mustPlatformResourceName(t, "clusters/prod"),
-		domain.WithPlatformResourceLabels(map[string]string{"env": "prod"}),
-	)
+	pr, err := svc.Create(ctx, application.CreatePlatformResourceInput{
+		Name:   "clusters/prod",
+		Labels: map[string]string{"env": "prod"},
+	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -78,7 +82,7 @@ func TestPlatformResourceService_GetReturnsRepresentations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	now := platformResourceNow()
+	now := time.Now().UTC()
 	rt := domain.ResourceType("kind.open-cluster-management.io/Cluster")
 	typeDef := domain.NewExtensionResourceType(rt, "v1alpha1", "clusters", now)
 	if err := tx.ExtensionResources().CreateType(ctx, typeDef); err != nil {
@@ -116,21 +120,27 @@ func TestPlatformResourceService_GetReturnsRepresentations(t *testing.T) {
 
 func TestPlatformResourceService_ListByCollection(t *testing.T) {
 	store := newStore(t)
-	svc := application.NewPlatformResourceService(store, application.WithPlatformResourceClock(platformResourceNow))
+	svc := application.NewPlatformResourceService(store)
 	ctx := context.Background()
 
 	// Create two resources in the same collection.
-	_, err := svc.Create(ctx, mustPlatformResourceName(t, "clusters/alpha"))
+	_, err := svc.Create(ctx, application.CreatePlatformResourceInput{
+		Name: "clusters/alpha",
+	})
 	if err != nil {
 		t.Fatalf("Create alpha: %v", err)
 	}
-	_, err = svc.Create(ctx, mustPlatformResourceName(t, "clusters/beta"))
+	_, err = svc.Create(ctx, application.CreatePlatformResourceInput{
+		Name: "clusters/beta",
+	})
 	if err != nil {
 		t.Fatalf("Create beta: %v", err)
 	}
 
 	// Create one in a different collection to verify isolation.
-	_, err = svc.Create(ctx, mustPlatformResourceName(t, "namespaces/default"))
+	_, err = svc.Create(ctx, application.CreatePlatformResourceInput{
+		Name: "namespaces/default",
+	})
 	if err != nil {
 		t.Fatalf("Create namespaces/default: %v", err)
 	}
@@ -154,17 +164,4 @@ func TestPlatformResourceService_ListByCollection(t *testing.T) {
 	if names[1] != "clusters/beta" {
 		t.Errorf("resources[1].Name = %q, want %q", names[1], "clusters/beta")
 	}
-}
-
-func mustPlatformResourceName(t *testing.T, raw string) domain.ResourceName {
-	t.Helper()
-	name, err := domain.ParseResourceName(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return name
-}
-
-func platformResourceNow() time.Time {
-	return time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 }

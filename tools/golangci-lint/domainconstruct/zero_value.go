@@ -581,8 +581,8 @@ func (c *zeroChecker) containsDomainType(t types.Type, seen map[types.Type]bool)
 		case *types.Map:
 			interesting = c.containsDomainType(t.Key(), seen) || c.containsDomainType(t.Elem(), seen)
 		case *types.Struct:
-			for index := range t.NumFields() {
-				interesting = c.containsDomainType(t.Field(index).Type(), seen) || interesting
+			for field := range t.Fields() {
+				interesting = c.containsDomainType(field.Type(), seen) || interesting
 			}
 		}
 	}

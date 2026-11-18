@@ -38,35 +38,53 @@ test("accepts formatted Go code with checked errors", async (t) => {
   await assert.doesNotReject(lint());
 });
 
-test("domain checks can be explicitly disabled or selected for a focused audit", async (t) => {
+test("standard lint checks domain types as they are enrolled", async (t) => {
   const { directory, lint, issues, format } = await fixture(t);
-  await writeFile(
-    join(directory, "main.go"),
-    `package lintfixture
+  const path = join(directory, "main.go");
+  const source = `package lintfixture
 
-// ID is constructed explicitly.
-//domain:constructors NewID
+import "encoding/json"
+
 type ID string
 
 func NewID(raw string) ID { return ID(raw) }
 func Check(raw string) ID { return ID(raw) }
 func Missing() ID { var id ID; return id }
-`,
+func Encode(id ID) ([]byte, error) { return json.Marshal(id) }
+`;
+  const expected = ["domainconstruct", "domainserialization", "domainzero"];
+  const reportedLinters = async () =>
+    [...new Set((await issues()).map((finding) => finding.FromLinter))].sort();
+
+  await writeFile(path, source);
+  await format();
+  await assert.doesNotReject(lint());
+
+  await writeFile(
+    path,
+    source.replace(
+      "type ID string",
+      "// ID is constructed explicitly.\n//domain:constructors NewID\ntype ID string",
+    ),
   );
   await format();
+  await assert.rejects(lint(), { code: 1 });
+  assert.deepEqual(await reportedLinters(), expected);
+
   await assert.doesNotReject(
-    lint({}, ["--disable=domainconstruct,domainzero,domainserialization"]),
+    lint({
+      args: ["--disable=domainconstruct,domainzero,domainserialization"],
+    }),
   );
   await assert.rejects(
-    lint({ args: ["--enable-only=domainconstruct,domainzero,domainserialization"] }),
+    lint({
+      args: ["--enable-only=domainconstruct,domainzero,domainserialization"],
+    }),
     {
       code: 1,
     },
   );
-  assert.deepEqual(
-    [...new Set((await issues()).map((finding) => finding.FromLinter))].sort(),
-    ["domainconstruct", "domainzero"],
-  );
+  assert.deepEqual(await reportedLinters(), expected);
 });
 
 test("domain audit loads construction policies across packages and includes tests", async (t) => {

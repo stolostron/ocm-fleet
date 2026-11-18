@@ -137,7 +137,10 @@ func (h *platformHandler) doCreate(ctx context.Context, req proto.Message) (prot
 		return nil, status.Errorf(codes.InvalidArgument, "invalid resource name: %v", err)
 	}
 
-	pr, err := h.resources.Create(ctx, resourceName, domain.WithPlatformResourceLabels(labels))
+	pr, err := h.resources.Create(ctx, application.CreatePlatformResourceInput{
+		Name:   resourceName,
+		Labels: labels,
+	})
 	if err != nil {
 		return nil, dynamicapi.ToStatusError(err)
 	}
@@ -293,7 +296,7 @@ func (h *platformHandler) resourceToMessage(pr *domain.PlatformResource) (proto.
 	relDesc := relsField.Message()
 	for _, rel := range pr.Relationships() {
 		relMsg := dynamicpb.NewMessage(relDesc)
-		relMsg.Set(relDesc.Fields().ByName("type"), protoreflect.ValueOfString(rel.Type().String()))
+		relMsg.Set(relDesc.Fields().ByName("type"), protoreflect.ValueOfString(string(rel.Type())))
 		relMsg.Set(relDesc.Fields().ByName("target_name"), protoreflect.ValueOfString(string(rel.TargetName())))
 		relMsg.Set(relDesc.Fields().ByName("source_service"), protoreflect.ValueOfString(string(rel.SourceService())))
 		if !rel.CreatedAt().IsZero() {

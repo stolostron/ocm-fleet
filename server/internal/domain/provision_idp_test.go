@@ -67,7 +67,6 @@ func TestProvisionIdPWorkflowSpec_Run(t *testing.T) {
 		t.Errorf("saved method ID = %q, want %q", savedMethod.ID(), "test-idp")
 	}
 
-	//nolint:domainzero // With this OIDC/static placement, provisionSyncRecord runs startFn before Run returns.
 	if startedInput.Name != "deployments/idp-trust-test-idp" {
 		t.Errorf("deployment Name = %q, want %q", startedInput.Name, "deployments/idp-trust-test-idp")
 	}

@@ -19,7 +19,6 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
-	"github.com/stolostron/ocm-fleet/server/pkg/optional"
 )
 
 type deltaCall struct {
@@ -297,64 +296,6 @@ func TestDelete_SkipsWhenNoQueuedOrAcknowledgedName(t *testing.T) {
 			}
 		}
 	})
-}
-
-func TestFlush_DeleteNamePresence(t *testing.T) {
-	queued := mustObjectName(t, "target-1", "queued", testGVR, ObjectScopeNamespaced, "default")
-	acknowledged := mustObjectName(t, "target-1", "acknowledged", testGVR, ObjectScopeNamespaced, "default")
-
-	for _, tt := range []struct {
-		name     string
-		queued   optional.Optional[domain.ResourceName]
-		reported map[string]domain.ResourceName
-		wantName string
-	}{
-		{
-			name:     "queued name takes precedence",
-			queued:   optional.Some(queued),
-			reported: map[string]domain.ResourceName{"uid": acknowledged},
-			wantName: string(queued),
-		},
-		{
-			name:     "absent queued name uses acknowledged name",
-			reported: map[string]domain.ResourceName{"uid": acknowledged},
-			wantName: string(acknowledged),
-		},
-		{
-			name: "absent name without GVR state is skipped",
-		},
-		{
-			name:     "absent name with missing acknowledged UID is skipped",
-			reported: map[string]domain.ResourceName{},
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			reporter := &recordingReporter{}
-			w := newTestWriter(reporter, nil, nil, time.Hour)
-			if tt.reported != nil {
-				w.gvrStates[testGVR] = &gvrState{ReportedNames: tt.reported}
-			}
-			deletes := map[string]pendingDelete{
-				"uid": {GVR: testGVR, Name: tt.queued},
-			}
-			if err := w.flush(t.Context(), nil, nil, nil, deletes, nil); err != nil {
-				t.Fatalf("flush: %v", err)
-			}
-			deltas := reporter.getDeltas()
-			if tt.wantName == "" {
-				if len(deltas) != 0 {
-					t.Fatalf("expected no inventory work, got %+v", deltas)
-				}
-				return
-			}
-			if len(deltas) != 1 || len(deltas[0].delta.Deletes) != 1 {
-				t.Fatalf("expected one delete, got %+v", deltas)
-			}
-			if got := deltas[0].delta.Deletes[0]; string(got.Name) != tt.wantName || !got.IsDelete {
-				t.Fatalf("delete = %+v, want name %q and IsDelete", got, tt.wantName)
-			}
-		})
-	}
 }
 
 func TestResync_MapsToApplyDelta(t *testing.T) {

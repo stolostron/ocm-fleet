@@ -1,13 +1,12 @@
 # Go lint tooling
 
 We build golangci-lint in this isolated Go module to host custom domain and
-architecture analyzers alongside the stock linters. The domain audit runs
-`domainconstruct`, `domainzero`, and `domainserialization` for explicitly
-annotated domain types. The shared configuration controls their participation
-in normal linting, verification, and editor diagnostics. Broader domain
-field-access checks remain follow-up work in the contributor effectiveness epic.
-
-The `mapcopy` plugin filters suggestions from Go's `mapsloop` analyzer.
+architecture analyzers alongside the stock linters. The shared configuration
+enables Go modernization checks, including the `mapcopy` plugin, and runs
+`domainconstruct`, `domainzero`, and `domainserialization` in normal linting,
+verification, and editor diagnostics. Domain types join these checks through
+declarations as they are migrated. Broader domain field-access checks remain
+follow-up work in the contributor effectiveness epic.
 
 ## VS Code diagnostics
 
@@ -64,10 +63,26 @@ independent of the English message.
 The target builds the tool and checks its configuration first. It includes test
 files and honors the shared generated-file policy. It selects `domainconstruct`,
 `domainzero`, and `domainserialization` with `--enable-only`, independently of
-their enablement in the shared config. Normal `lint`, `check`, `verify`, and
-VS Code diagnostics follow that shared configuration. Configured module plugins
-belong to golangci-lint's `standard` group; disabling them requires an explicit
-`disable` entry, because removing an `enable` entry alone leaves them active.
+their enablement in the shared config. Configured module plugins belong to
+golangci-lint's `standard` group.
+
+`domain:constructors` enrolls a type in construction and zero-value checks.
+Serialization checks apply to enrolled values at recognized codec calls,
+including inside unannotated envelopes. A `domain:boundary` declaration adds
+a custom serialization entry point. A `domain:snapshot` marker independently
+checks a snapshot for recursively plain data. The analyzers also validate
+directive declarations.
+
+Two checks can report with no directives. `domainzero` protects inferred
+non-nil error sentinels against reassignment and address-taking by other
+packages. `domainserialization` checks the shared `optional.Optional[T]` at
+codec boundaries, including when `T` is a plain type.
+
+Keep the linters enabled and enroll related types one at a time. Run the
+focused audit to see findings for the selected type, and fix its producers,
+callers, boundaries, and tests in the enrollment change. See
+[Adopting the domain linters](../../server/docs/domain.md#adopting-the-domain-linters)
+for the migration steps.
 
 Opt a type into construction checks in its declaration's doc comment:
 
@@ -587,9 +602,6 @@ justification as production code.
 Decode boundary data into plain DTOs and then parse or hydrate through the
 serialization root, as described in the [domain guidance](../../server/docs/domain.md).
 Decoding into a struct with domain fields does not establish their validity.
-
-The initial annotations cover values in the resource identity slice. Broader
-type enrollment and application cleanup follow review of the audit findings.
 
 ### Analysis performance
 

@@ -47,12 +47,12 @@
   root's compatibility-aware `FromSnapshot`; no separate scalar snapshot API is
   mandatory. These declarations do not permit encoding an invalid zero value.
 
-For example, a platform resource requires its name and creation time. Labels
-are optional:
+For example, an extension resource type requires its type, API version, collection ID, and
+creation time. `WithInventory` enables optional inventory reporting.
 
 ```go
-resource := domain.NewPlatformResource(name, now,
-    domain.WithPlatformResourceLabels(labels),
+extensionType := domain.NewExtensionResourceType(resourceType, version, collectionID, now,
+    domain.WithInventory(),
 )
 ```
 

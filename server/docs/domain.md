@@ -154,12 +154,11 @@ type createPlatformResourceRequest struct {
 }
 ```
 
-The transport adapter decodes the request, calls `ParseResourceName` on the
-raw name, and passes the resulting value positionally to
-`PlatformResourceService.Create`, with labels supplied through a creation
-option. An omitted or empty name is rejected during parsing. The service
-receives the constructed domain value, not the request DTO. This input mapping
-does not require a snapshot or serialization methods on `ResourceName`.
+In this example, the transport adapter decodes the request and calls
+`ParseResourceName` on the raw name. Parsing rejects an omitted or empty name.
+The adapter passes the constructed name positionally to a creation service
+and supplies labels through a creation option. This input mapping uses the
+existing domain constructor directly.
 
 Parse untrusted data into valid domain objects; hydrate directly only from
 trusted persisted state. A DTO's name or location does not establish that
@@ -365,8 +364,8 @@ Checked decoding of a declared native domain root establishes its validity;
 checked decoding of an ordinary envelope cannot guarantee that required fields
 were present. Boundary declarations and current static-analysis limits are
 documented in the [lint tooling guide](../../tools/golangci-lint/README.md#serialization-contracts).
-The migration of existing types and snapshots is incremental; opt in only after
-testing round trips, rejected input, and historical state where applicable.
+Existing types and snapshots are migrated incrementally. Declare a native codec
+after testing round trips, rejected input, and historical state where applicable.
 
 ### Zero-value returns
 
@@ -380,7 +379,10 @@ writing `return Foo{}, err` alone does not establish that.
 ## Adding a new aggregate
 
 1. Define the private-field struct in its source file with accessor methods.
-2. Add a `NewFoo(...)` constructor for the creation path.
+2. Add a `NewFoo(...)` constructor for the creation path. List the approved
+   construction and restoration functions in the type's `//domain:constructors`
+   declaration. List aggregate methods there when they need to write its
+   protected state.
 3. Add the plain-data `FooSnapshot` to `snapshot.go`, marked `//domain:snapshot`,
    with nested DTOs where useful.
 4. Add `Snapshot()` and `FooFromSnapshot()` at the root. Add encoding adapters
@@ -403,13 +405,25 @@ workaround must explain locally why normal construction and transitions are
 unsuitable and why the manufactured state is legitimate. Tests are not a
 blanket exception to encapsulation or hydration rules.
 
-The migration is incremental. `RelationshipType`, `AliasRef`,
-`NewPlatformResource`, and `AliasSet.Get` in
-[resource_identity.go](../internal/domain/resource_identity.go)
-illustrate the intended representation, construction, and optional results.
-The `domainconstruct` and `domainzero` audits check explicitly annotated types,
-including the defined scalars in that file. They check construction and follow
-local zero-value flow, respectively; see the [lint tooling guide](../../tools/golangci-lint/README.md#domain-construction-audit)
-for their scope and current limits.
-Unannotated primitive definitions and older parameter bags still need review
-before being used as templates for new code.
+## Adopting the domain linters
+
+The domain linters run in normal verification. New types MUST follow the domain modeling policy. Enroll existing types as you work through each related area of the model.
+
+1. Choose a type and identify its invariants, construction and restoration
+   paths, and any legitimate absence. Identify the boundaries that use it,
+   including storage, workflows, and test fixtures.
+2. Add `//domain:constructors` to a checked domain value or aggregate, or
+   `//domain:snapshot` to a plain snapshot. Add presence or codec declarations
+   where the reviewed contract calls for them. Run
+   `npx nx run server:lint:domain` to find affected uses.
+3. Fix the findings and test the invariants in the same change as enrollment.
+   Include the relevant producers, consumers, and adapters. For a confirmed
+   analyzer error, add a regression case and correct the analyzer. Use a
+   narrow exception only when the site has a justified contract.
+4. Run `npx nx run server:verify` before moving to the next related type.
+   Add tests for supported stored or wire formats when the affected type
+   crosses those boundaries.
+
+The [lint tooling guide](../../tools/golangci-lint/README.md#domain-audits)
+describes the report, the checks that run independently of enrollment, and
+the limits of static analysis.

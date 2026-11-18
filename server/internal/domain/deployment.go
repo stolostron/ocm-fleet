@@ -2,7 +2,6 @@ package domain
 
 import (
 	"database/sql/driver"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -12,10 +11,7 @@ import (
 // DeploymentUID is the opaque, stable identifier for a deployment
 // instance. Generated once at creation time and never changes. The
 // underlying type is [uuid.UUID] so structural validity is encoded
-// in the type system. The nil UUID is invalid; parsing and hydration reject it.
-//
-//domain:constructors NewDeploymentUID ParseDeploymentUID
-//domain:serialization json text sql
+// in the type system.
 type DeploymentUID uuid.UUID
 
 // NewDeploymentUID generates a new random [DeploymentUID].
@@ -23,14 +19,11 @@ func NewDeploymentUID() DeploymentUID {
 	return DeploymentUID(uuid.New())
 }
 
-// ParseDeploymentUID parses a string into a non-nil [DeploymentUID].
+// ParseDeploymentUID parses a string into a [DeploymentUID].
 func ParseDeploymentUID(s string) (DeploymentUID, error) {
 	u, err := uuid.Parse(s)
 	if err != nil {
 		return DeploymentUID{}, fmt.Errorf("deployment uid: %w", err)
-	}
-	if u == uuid.Nil {
-		return DeploymentUID{}, fmt.Errorf("deployment uid: %w: must not be nil", ErrInvalidArgument)
 	}
 	return DeploymentUID(u), nil
 }
@@ -41,42 +34,16 @@ func (u DeploymentUID) String() string { return uuid.UUID(u).String() }
 // MarshalText implements [encoding.TextMarshaler] for JSON string encoding.
 func (u DeploymentUID) MarshalText() ([]byte, error) { return uuid.UUID(u).MarshalText() }
 
-// UnmarshalText implements [encoding.TextUnmarshaler] with checked restoration.
+// UnmarshalText implements [encoding.TextUnmarshaler] for JSON string decoding.
 func (u *DeploymentUID) UnmarshalText(data []byte) error {
-	value, err := ParseDeploymentUID(string(data))
-	if err != nil {
-		return err
-	}
-	*u = value
-	return nil
-}
-
-// UnmarshalJSON restores a required UID. A JSON null is invalid; optional UIDs
-// use pointers so the enclosing representation can express absence.
-func (u *DeploymentUID) UnmarshalJSON(data []byte) error {
-	var raw string
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	return u.UnmarshalText([]byte(raw))
+	return (*uuid.UUID)(u).UnmarshalText(data)
 }
 
 // Value implements [driver.Valuer] for SQL persistence.
 func (u DeploymentUID) Value() (driver.Value, error) { return uuid.UUID(u).String(), nil }
 
 // Scan implements [sql.Scanner] for SQL hydration.
-func (u *DeploymentUID) Scan(src any) error {
-	var raw uuid.UUID
-	if err := raw.Scan(src); err != nil {
-		return fmt.Errorf("deployment uid: %w", err)
-	}
-	value, err := ParseDeploymentUID(raw.String())
-	if err != nil {
-		return err
-	}
-	*u = value
-	return nil
-}
+func (u *DeploymentUID) Scan(src any) error { return (*uuid.UUID)(u).Scan(src) }
 
 // IsZero returns true when the UID is the zero (nil) UUID.
 func (u DeploymentUID) IsZero() bool { return uuid.UUID(u) == uuid.Nil }

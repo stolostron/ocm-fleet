@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"go/types"
 	"reflect"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -209,8 +210,8 @@ func (c *checker) approved(p *policy, ancestors []ast.Node) bool {
 	if p.functions == nil {
 		return false
 	}
-	for i := len(ancestors) - 1; i >= 0; i-- {
-		switch function := ancestors[i].(type) {
+	for _, ancestor := range slices.Backward(ancestors) {
+		switch function := ancestor.(type) {
 		case *ast.FuncLit:
 			// A returned closure must not inherit permission to manufacture values.
 			return false
@@ -233,8 +234,8 @@ func (c *checker) constantObservation(expr ast.Expr, ancestors []ast.Node) bool 
 	if _, conversion := ast.Unparen(expr).(*ast.CallExpr); conversion {
 		return false
 	}
-	for i := len(ancestors) - 1; i >= 0; i-- {
-		switch parent := ancestors[i].(type) {
+	for _, ancestor := range slices.Backward(ancestors) {
+		switch parent := ancestor.(type) {
 		case *ast.ParenExpr:
 			continue
 		case *ast.BinaryExpr:
