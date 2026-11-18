@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -304,9 +305,7 @@ func nodeResourceName(nodeName string) domain.ResourceName {
 
 func mapNodeDelta(clusterName domain.ResourceName, node *corev1.Node, now time.Time) (domain.InventoryDeltaReport, error) {
 	labels := map[string]string{}
-	for k, v := range node.Labels {
-		labels[k] = v
-	}
+	maps.Copy(labels, node.Labels)
 	conds, err := mapKubeNodeConditions(node.Status.Conditions)
 	if err != nil {
 		return domain.InventoryDeltaReport{}, err

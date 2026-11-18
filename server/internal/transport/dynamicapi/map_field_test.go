@@ -16,7 +16,7 @@ import (
 )
 
 func TestMapField_StringString_AppendsFieldAndEntry(t *testing.T) {
-	parent := &descriptorpb.DescriptorProto{Name: proto.String("Widget")}
+	parent := &descriptorpb.DescriptorProto{Name: new("Widget")}
 	parts := dynamicapi.MapField(
 		"test.v1.Widget",
 		"labels",
@@ -257,7 +257,7 @@ func TestMapField_Deterministic(t *testing.T) {
 
 func buildMapTestFile(t *testing.T) protoreflect.FileDescriptor {
 	t.Helper()
-	widget := &descriptorpb.DescriptorProto{Name: proto.String("Widget")}
+	widget := &descriptorpb.DescriptorProto{Name: new("Widget")}
 	dynamicapi.AppendMapField(widget, dynamicapi.MapField(
 		"test.v1.Widget",
 		"labels",
@@ -267,9 +267,9 @@ func buildMapTestFile(t *testing.T) protoreflect.FileDescriptor {
 		"",
 	))
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:        proto.String("test/map_widget.proto"),
-		Package:     proto.String("test.v1"),
-		Syntax:      proto.String("proto3"),
+		Name:        new("test/map_widget.proto"),
+		Package:     new("test.v1"),
+		Syntax:      new("proto3"),
 		MessageType: []*descriptorpb.DescriptorProto{widget},
 	}
 	fd, err := protodesc.NewFile(fdp, nil)
@@ -282,14 +282,14 @@ func buildMapTestFile(t *testing.T) protoreflect.FileDescriptor {
 func buildMapOfMessageTestFile(t *testing.T) protoreflect.FileDescriptor {
 	t.Helper()
 	condition := &descriptorpb.DescriptorProto{
-		Name: proto.String("Condition"),
+		Name: new("Condition"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("status", 1),
 			dynamicapi.StringField("reason", 2),
 			dynamicapi.StringField("message", 3),
 		},
 	}
-	widget := &descriptorpb.DescriptorProto{Name: proto.String("Widget")}
+	widget := &descriptorpb.DescriptorProto{Name: new("Widget")}
 	dynamicapi.AppendMapField(widget, dynamicapi.MapField(
 		"test.v1.Widget",
 		"conditions",
@@ -299,9 +299,9 @@ func buildMapOfMessageTestFile(t *testing.T) protoreflect.FileDescriptor {
 		".test.v1.Condition",
 	))
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:        proto.String("test/map_condition.proto"),
-		Package:     proto.String("test.v1"),
-		Syntax:      proto.String("proto3"),
+		Name:        new("test/map_condition.proto"),
+		Package:     new("test.v1"),
+		Syntax:      new("proto3"),
 		MessageType: []*descriptorpb.DescriptorProto{condition, widget},
 	}
 	files := new(protoregistry.Files)

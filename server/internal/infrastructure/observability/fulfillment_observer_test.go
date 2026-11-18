@@ -3,6 +3,7 @@ package observability_test
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"testing"
 
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
@@ -173,13 +174,7 @@ func TestFulfillmentRunProbe_DispatchCycle_FullLifecycle(t *testing.T) {
 		"dispatch cycle completed",
 	}
 	for _, want := range wantContains {
-		found := false
-		for _, msg := range messages {
-			if msg == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(messages, want)
 		if !found {
 			t.Errorf("expected log message %q, got messages: %v", want, messages)
 		}
@@ -243,13 +238,7 @@ func TestAcquireLockProbe_FullLifecycle(t *testing.T) {
 		"acquire lock completed",
 	}
 	for _, want := range wantContains {
-		found := false
-		for _, msg := range messages {
-			if msg == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(messages, want)
 		if !found {
 			t.Errorf("expected log message %q, got messages: %v", want, messages)
 		}

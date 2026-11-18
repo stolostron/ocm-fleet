@@ -26,7 +26,7 @@ func TestOpenWithPragmas_BusyTimeoutAppliedToEveryConnection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	connections := make([]*sql.Conn, 0, 2)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		conn, err := db.Conn(ctx)
 		if err != nil {
 			t.Fatalf("open connection %d: %v", i+1, err)

@@ -71,7 +71,7 @@ func TestCompileFilter_ConcurrentSharedCompiler(t *testing.T) {
 	const goroutines = 32
 	var wg sync.WaitGroup
 	errCh := make(chan error, goroutines)
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

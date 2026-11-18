@@ -278,8 +278,7 @@ func startWorkflow[I, O any](
 		for {
 			record := newRecord(instanceID, ctx, signals)
 			val, err := run(record, input)
-			var can *domain.ContinueAsNewError
-			if errors.As(err, &can) {
+			if can, ok := errors.AsType[*domain.ContinueAsNewError](err); ok {
 				input = can.Input.(I)
 				continue
 			}
@@ -305,7 +304,6 @@ func newRecord(id string, ctx context.Context, signals []signalBinding) *baseRec
 	unmarshalers := make(map[string]func([]byte) (any, error), len(signals))
 
 	for _, s := range signals {
-		s := s
 		sigs[s.name] = func() (any, error) {
 			select {
 			case data := <-s.ch:

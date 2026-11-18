@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -339,12 +340,7 @@ func findProwJobByName(jobs []prowJob, name string) *prowJob {
 }
 
 func contains(list []string, want string) bool {
-	for _, item := range list {
-		if item == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, want)
 }
 
 // ciOperatorConfig is the subset of openshift/release ci-operator config

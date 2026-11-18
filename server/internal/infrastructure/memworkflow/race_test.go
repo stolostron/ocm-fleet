@@ -175,9 +175,7 @@ func TestConcurrentStartAfterComplete(t *testing.T) {
 	errs := make(chan error, goroutines*iterations)
 
 	for g := range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range iterations {
 				exec, err := orchWf.Start(ctx, fID)
 				if errors.Is(err, domain.ErrAlreadyRunning) {
@@ -192,7 +190,7 @@ func TestConcurrentStartAfterComplete(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

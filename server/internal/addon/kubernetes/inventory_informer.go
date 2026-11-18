@@ -649,11 +649,9 @@ func (m *InformerManager) Reconcile(ctx context.Context, desired []DiscoveredAPI
 // startInformer runs informer.Run in a tracked goroutine so StopAll can
 // wait for it after cancellation.
 func (m *InformerManager) startInformer(informer *GenericInformer, ctx context.Context) {
-	m.informerWG.Add(1)
-	go func() {
-		defer m.informerWG.Done()
+	m.informerWG.Go(func() {
 		informer.Run(ctx)
-	}()
+	})
 }
 
 // StopAll cancels all running ordinary informers and waits for every tracked

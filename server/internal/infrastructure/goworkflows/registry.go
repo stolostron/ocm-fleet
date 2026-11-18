@@ -158,8 +158,7 @@ func (r *Registry) RegisterOrchestration(spec *domain.OrchestrationWorkflowSpec)
 			domain.FulfillmentEventSignal.Name: port,
 		}
 		val, err := spec.Run(record, fulfillmentID)
-		var can *domain.ContinueAsNewError
-		if errors.As(err, &can) {
+		if can, ok := errors.AsType[*domain.ContinueAsNewError](err); ok {
 			return val, workflow.ContinueAsNew(ctx, can.Input.(domain.FulfillmentID))
 		}
 		return val, err

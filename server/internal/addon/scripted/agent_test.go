@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"testing"
 	"time"
@@ -1049,9 +1050,7 @@ func (r *recordingDelayRecorder) getDelays() map[domain.DeliveryID]scripted.Dela
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make(map[domain.DeliveryID]scripted.DelayRecord, len(r.delays))
-	for k, v := range r.delays {
-		out[k] = v
-	}
+	maps.Copy(out, r.delays)
 	return out
 }
 
@@ -1187,7 +1186,7 @@ func TestAgent_DelayRecorder_BoundedNormalLatency(t *testing.T) {
 		Raw:          raw,
 	}}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		gen := domain.Generation(i + 1)
 		deliveryID := domain.DeliveryID(fmt.Sprintf("test-%d", i))
 		err := agent.Deliver(

@@ -24,7 +24,7 @@ func TestFulfillmentSnapshot_RoundTrip(t *testing.T) {
 		StatusReason:             "all good",
 		Auth:                     DeliveryAuth{Token: "tok"},
 		Provenance:               &Provenance{Sig: Signature{Signer: FederatedIdentity{Subject: "u1", Issuer: "iss"}}},
-		AttestationRef:           &AttestationRef{RelationRef: ptrTo(ResourceType("test.open-cluster-management.io/K8s"))},
+		AttestationRef:           &AttestationRef{RelationRef: new(ResourceType("test.open-cluster-management.io/K8s"))},
 		Generation:               gen,
 		ObservedGeneration:       5,
 		ActiveWorkflowGen:        &gen,
@@ -679,5 +679,3 @@ func assertEq[T comparable](t *testing.T, field string, got, want T) {
 		t.Errorf("%s = %v, want %v", field, got, want)
 	}
 }
-
-func ptrTo[T any](v T) *T { return &v }

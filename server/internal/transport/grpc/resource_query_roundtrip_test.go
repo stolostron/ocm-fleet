@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -316,13 +317,7 @@ func TestResourceQuery_RoundTripAllResponseFields(t *testing.T) {
 	// --- inventory of envelope + body keys ---
 	_ = responseEnvelopeFields // documented; exercised in envelope_* subtests
 	for key := range body.Fields {
-		known := false
-		for _, want := range responseBodyKeys {
-			if key == want {
-				known = true
-				break
-			}
-		}
+		known := slices.Contains(responseBodyKeys, key)
 		if !known {
 			t.Errorf("unexpected Struct field %q (update responseBodyKeys / round-trip coverage)", key)
 		}

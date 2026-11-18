@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -2377,7 +2378,7 @@ func TestOrchestration_DeliveryOutputs_ReplayAfterTransientFailure_ErrAlreadyExi
 	// successful retry).
 	const maxAttempts = 3
 	var lastErr error
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := range maxAttempts {
 		events := make(chan domain.FulfillmentEvent, 16)
 		deliveryAgent.events = events
 		wf := newTestWorkflow(store, deliveryAgent, events, func(wf *domain.OrchestrationWorkflowSpec) {
@@ -2389,8 +2390,7 @@ func TestOrchestration_DeliveryOutputs_ReplayAfterTransientFailure_ErrAlreadyExi
 		if lastErr == nil {
 			break
 		}
-		var canErr *domain.ContinueAsNewError
-		if !errors.As(lastErr, &canErr) {
+		if _, ok := errors.AsType[*domain.ContinueAsNewError](lastErr); !ok {
 			t.Fatalf("attempt %d: unexpected non-ContinueAsNew error: %v", attempt+1, lastErr)
 		}
 	}
@@ -2816,8 +2816,7 @@ func TestOrchestration_AsyncDeliveryFailure_ConvergesViaRetry(t *testing.T) {
 		if lastErr == nil {
 			break
 		}
-		var canErr *domain.ContinueAsNewError
-		if !errors.As(lastErr, &canErr) {
+		if _, ok := errors.AsType[*domain.ContinueAsNewError](lastErr); !ok {
 			t.Fatalf("attempt %d: unexpected non-ContinueAsNew error: %v", attempt+1, lastErr)
 		}
 	}
@@ -3079,10 +3078,5 @@ func TestOrchestration_StaticTarget_LateRegistration(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func contains(ss []string, s string) bool {
-	for _, v := range ss {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ss, s)
 }

@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -82,7 +82,7 @@ var qrbFixedTime = time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 // (,"r00",…,"rN") between the primary role and qrbRolesLateValue.
 var qrbRolesFillerMiddle = func() string {
 	var b strings.Builder
-	for i := 0; i < qrbRolesListLen-2; i++ {
+	for i := range qrbRolesListLen - 2 {
 		fmt.Fprintf(&b, `,"r%02d"`, i)
 	}
 	return b.String()
@@ -135,7 +135,7 @@ func seedQRBPlatformOnly(t *testing.T, db *sql.DB) {
 		n := min(qrbChunk, qrbPlatformOnlyCount-start)
 		placeholders := make([]string, n)
 		args := make([]any, 0, n*4)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			idx := start + i
 			env := "prod"
 			if idx%2 == 0 {
@@ -168,7 +168,7 @@ func seedQRBClusters(t *testing.T, db *sql.DB) {
 		labels := make([]string, n)
 		specs := make([]string, n)
 		fulfillmentIDs := make([]string, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			idx := start + i
 			uids[i] = domain.NewExtensionResourceUID().String()
 			resourceIDs[i] = fmt.Sprintf("cluster-%08d", idx)
@@ -180,7 +180,7 @@ func seedQRBClusters(t *testing.T, db *sql.DB) {
 		{
 			placeholders := make([]string, n)
 			args := make([]any, 0, n*9)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				placeholders[i] = "(?, ?, ?, ?, ?, ?, '{}', ?, ?)"
 				args = append(args, uids[i], qrbClusterService, qrbClusterType, qrbClusterCollection,
 					resourceIDs[i], labels[i], createdAt, createdAt)
@@ -194,7 +194,7 @@ func seedQRBClusters(t *testing.T, db *sql.DB) {
 		{
 			placeholders := make([]string, n)
 			args := make([]any, 0, n*3)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				placeholders[i] = "(?, 1, ?)"
 				args = append(args, uids[i], fulfillmentIDs[i])
 			}
@@ -207,7 +207,7 @@ func seedQRBClusters(t *testing.T, db *sql.DB) {
 		{
 			placeholders := make([]string, n)
 			args := make([]any, 0, n*3)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				placeholders[i] = "(?, 1, ?, ?)"
 				args = append(args, uids[i], specs[i], createdAt)
 			}
@@ -220,7 +220,7 @@ func seedQRBClusters(t *testing.T, db *sql.DB) {
 		{
 			placeholders := make([]string, n)
 			args := make([]any, 0, n*3)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				placeholders[i] = "(?, 'active', ?, ?)"
 				args = append(args, fulfillmentIDs[i], createdAt, createdAt)
 			}
@@ -251,7 +251,7 @@ func seedQRBNodes(t *testing.T, db *sql.DB) {
 		invLabels := make([]string, n)
 		observations := make([]string, n)
 		conditions := make([]string, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			idx := start + i
 			uids[i] = domain.NewExtensionResourceUID().String()
 			resourceIDs[i] = fmt.Sprintf("node-%08d", idx)
@@ -283,7 +283,7 @@ func seedQRBNodes(t *testing.T, db *sql.DB) {
 		{
 			placeholders := make([]string, n)
 			args := make([]any, 0, n*9)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				placeholders[i] = "(?, ?, ?, ?, ?, '{}', '{}', ?, ?)"
 				args = append(args, uids[i], qrbNodeService, qrbNodeType, qrbNodeCollection,
 					resourceIDs[i], createdAt, createdAt)
@@ -297,7 +297,7 @@ func seedQRBNodes(t *testing.T, db *sql.DB) {
 		{
 			placeholders := make([]string, n)
 			args := make([]any, 0, n*6)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				placeholders[i] = "(?, ?, ?, ?, ?, ?)"
 				args = append(args, uids[i], observations[i], invLabels[i], conditions[i], createdAt, createdAt)
 			}
@@ -319,7 +319,7 @@ func seedQRBAliasesAndRelationships(t *testing.T, db *sql.DB) {
 		{
 			placeholders := make([]string, n)
 			args := make([]any, 0, n*5)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				idx := start + i
 				placeholders[i] = "('ext-id', 'source-id', ?, ?, ?, 1, ?)"
 				args = append(args, fmt.Sprintf("ext-%08d", idx), qrbPlatformOnlyCollection,
@@ -334,7 +334,7 @@ func seedQRBAliasesAndRelationships(t *testing.T, db *sql.DB) {
 		{
 			placeholders := make([]string, n)
 			args := make([]any, 0, n*4)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				idx := start + i
 				placeholders[i] = "(?, ?, 'depends-on', ?, ?, 'bench.open-cluster-management.io', ?)"
 				args = append(args, qrbPlatformOnlyCollection, fmt.Sprintf("asset-%08d", idx),
@@ -547,7 +547,7 @@ type qrbTimings struct {
 
 func (r qrbTimings) stats() (mean, p50, p95, minD, maxD time.Duration) {
 	sorted := append([]time.Duration(nil), r.durations...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	slices.Sort(sorted)
 	var sum time.Duration
 	for _, d := range sorted {
 		sum += d
@@ -579,7 +579,7 @@ func timeQueryResources(t *testing.T, db *sql.DB, scenario string, req domain.Qu
 		return page, time.Since(start), err
 	}
 
-	for i := 0; i < qrbWarmupRounds; i++ {
+	for i := range qrbWarmupRounds {
 		if _, _, err := runOnce(); err != nil {
 			t.Fatalf("%s warmup %d: %v", scenario, i, err)
 		}
@@ -587,7 +587,7 @@ func timeQueryResources(t *testing.T, db *sql.DB, scenario string, req domain.Qu
 
 	durs := make([]time.Duration, qrbRounds)
 	var lastPage domain.QueryResourcesPage
-	for round := 0; round < qrbRounds; round++ {
+	for round := range qrbRounds {
 		page, d, err := runOnce()
 		if err != nil {
 			t.Fatalf("%s round %d: %v", scenario, round, err)

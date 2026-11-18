@@ -2,6 +2,7 @@ package querysql
 
 import (
 	"fmt"
+	"strings"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 
@@ -125,9 +126,10 @@ func appendLiteralTail(resolved, names []string, from int) []string {
 // joinDotted joins root with names using ".", skipping the separator
 // when names is empty.
 func joinDotted(root string, names []string) string {
-	s := root
+	var s strings.Builder
+	s.WriteString(root)
 	for _, n := range names {
-		s += "." + n
+		s.WriteString("." + n)
 	}
-	return s
+	return s.String()
 }

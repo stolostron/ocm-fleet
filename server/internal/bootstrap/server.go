@@ -145,8 +145,8 @@ func Start(ctx context.Context, cfg Config, logger *slog.Logger, opts ...Option)
 
 	var cleanups []func()
 	cleanup := func() {
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			cleanups[i]()
+		for _, cleanup := range slices.Backward(cleanups) {
+			cleanup()
 		}
 	}
 	fail := func(err error) (*Server, error) {

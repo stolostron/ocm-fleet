@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"testing"
 
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
@@ -278,10 +279,5 @@ func collectMessages(records []slog.Record) []string {
 }
 
 func containsMessage(messages []string, want string) bool {
-	for _, m := range messages {
-		if m == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(messages, want)
 }

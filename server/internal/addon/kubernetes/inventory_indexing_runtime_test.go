@@ -109,9 +109,8 @@ func TestIndexingRuntime_EnsureIndexerReadinessAndIdempotent(t *testing.T) {
 // TestManagedIndexer_DoesNotRetainCredentialBytes locks the registry entry
 // shape: handoff credential bytes must not be stored on managedIndexer.
 func TestManagedIndexer_DoesNotRetainCredentialBytes(t *testing.T) {
-	typ := reflect.TypeOf(managedIndexer{})
-	for i := 0; i < typ.NumField(); i++ {
-		f := typ.Field(i)
+	typ := reflect.TypeFor[managedIndexer]()
+	for f := range typ.Fields() {
 		if f.Type.Kind() == reflect.Slice && f.Type.Elem().Kind() == reflect.Uint8 {
 			t.Errorf("managedIndexer must not retain credential bytes; found []byte field %q", f.Name)
 		}
@@ -589,7 +588,7 @@ func TestIndexingRuntime_UnexpectedExitRestartBudgetExhausted(t *testing.T) {
 
 	// maxUnexpectedRestartAttempts successful crash→restart cycles, then one
 	// more crash that must not restart.
-	for i := 0; i < maxUnexpectedRestartAttempts; i++ {
+	for i := range maxUnexpectedRestartAttempts {
 		h.mu.Lock()
 		before := 0
 		if e := h.entries["pm-budget"]; e != nil {
@@ -931,7 +930,7 @@ func TestIndexingRuntime_JoinInFlightEnsureIndexer(t *testing.T) {
 
 	// Second caller is waiting on readyWait; release readiness.
 	close(unblock)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := <-errCh; err != nil {
 			t.Fatalf("EnsureIndexer: %v", err)
 		}

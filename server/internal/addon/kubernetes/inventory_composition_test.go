@@ -256,8 +256,7 @@ func TestStopIndexer_LeavesInventory(t *testing.T) {
 	dyn, disc := fakeClientsForPodsAndConfigMaps(t)
 	createPod(t, dyn, "uid-web", "web")
 
-	runCtx, cancelRun := context.WithCancel(context.Background())
-	defer cancelRun()
+	runCtx := t.Context()
 
 	cfg := IndexConfig{
 		Schema: IndexSchema{Entries: map[schema.GroupVersionResource]SchemaEntry{
@@ -324,8 +323,7 @@ func TestEnsureIndexer_IndexesTarget(t *testing.T) {
 	dyn, disc := fakeClientsForPodsAndConfigMaps(t)
 	createPod(t, dyn, "uid-a", "pod-a")
 
-	runCtx, cancelRun := context.WithCancel(context.Background())
-	defer cancelRun()
+	runCtx := t.Context()
 
 	cfg := IndexConfig{
 		Schema: IndexSchema{Entries: map[schema.GroupVersionResource]SchemaEntry{
@@ -369,8 +367,7 @@ func TestRemoveGVR_LeavesPersistedCollection(t *testing.T) {
 	}}
 	w := NewWriter("clusters/prod", reporter, NoopEdgeSink{}, schema.Entries, time.Hour, slog.New(slog.DiscardHandler))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go w.Run(ctx)
 
 	pod := makePod("uid-pod", "web", "default", "1")
@@ -431,8 +428,7 @@ func TestResync_RemovesAbsentReportedNamesFromStore(t *testing.T) {
 	}}
 	w := NewWriter("clusters/prod", reporter, NoopEdgeSink{}, schema.Entries, time.Hour, slog.New(slog.DiscardHandler))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go w.Run(ctx)
 
 	pod1 := makePod("uid-1", "keep", "default", "1")
@@ -495,8 +491,7 @@ func TestWriter_PersistsKubeLabelsAsLocalLabels(t *testing.T) {
 	}}
 	w := NewWriter("clusters/prod", reporter, NoopEdgeSink{}, schema.Entries, time.Hour, slog.New(slog.DiscardHandler))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go w.Run(ctx)
 
 	labeled := makePod("uid-labeled", "web", "default", "1")
@@ -637,8 +632,7 @@ func TestStartupList_DoesNotDeleteDBOnlyRows(t *testing.T) {
 	}
 
 	w := NewWriter("clusters/prod", reporter, NoopEdgeSink{}, schema.Entries, time.Hour, slog.New(slog.DiscardHandler))
-	runCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	runCtx := t.Context()
 	go w.Run(runCtx)
 
 	live := makePod("uid-live", "live", "default", "1")
@@ -670,8 +664,7 @@ func TestServeStyleComposition_EnsureIndexerIndexesTarget(t *testing.T) {
 	dyn, disc := fakeClientsForPodsAndConfigMaps(t)
 	createPod(t, dyn, "uid-node-standin", "web")
 
-	runCtx, cancelRun := context.WithCancel(context.Background())
-	defer cancelRun()
+	runCtx := t.Context()
 
 	cfg := IndexConfig{
 		Schema: IndexSchema{Entries: map[schema.GroupVersionResource]SchemaEntry{

@@ -43,7 +43,7 @@ func (l *observerLogger) Warn(message string) {
 	})
 }
 
-func (l *observerLogger) Warnf(format string, args ...interface{}) {
+func (l *observerLogger) Warnf(format string, args ...any) {
 	l.Warn(fmt.Sprintf(format, args...))
 }
 
@@ -55,7 +55,7 @@ func (l *observerLogger) Error(message string) {
 	})
 }
 
-func (l *observerLogger) Errorf(format string, args ...interface{}) {
+func (l *observerLogger) Errorf(format string, args ...any) {
 	l.Error(fmt.Sprintf(format, args...))
 }
 
@@ -83,7 +83,7 @@ func (l *observerInfoLogger) Info(message string) {
 	})
 }
 
-func (l *observerInfoLogger) Infof(format string, args ...interface{}) {
+func (l *observerInfoLogger) Infof(format string, args ...any) {
 	l.Info(fmt.Sprintf(format, args...))
 }
 

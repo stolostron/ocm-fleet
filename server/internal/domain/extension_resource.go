@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/google/uuid"
@@ -539,9 +540,7 @@ func WithExtensionLabels(labels map[string]string) ExtensionResourceOption {
 			return
 		}
 		cp := make(map[string]string, len(labels))
-		for k, v := range labels {
-			cp[k] = v
-		}
+		maps.Copy(cp, labels)
 		r.labels = cp
 	}
 }
@@ -637,9 +636,7 @@ func (r *ExtensionResource) SetLabels(labels map[string]string, now time.Time) {
 		labels = map[string]string{}
 	} else {
 		copied := make(map[string]string, len(labels))
-		for k, v := range labels {
-			copied[k] = v
-		}
+		maps.Copy(copied, labels)
 		labels = copied
 	}
 	r.labels = labels
