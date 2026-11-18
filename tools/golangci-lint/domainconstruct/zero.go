@@ -133,7 +133,7 @@ func runZero(pass *analysis.Pass) (any, error) {
 	for object, p := range c.policies {
 		if object.Pkg() == pass.Pkg && p != nil && p.fact.ZeroValid {
 			if structure, ok := object.Type().Underlying().(*types.Struct); ok {
-				if problem := c.zeroFields(structure, ""); problem != nil {
+				if problem := c.zeroFields(structure, "", wholeValue); problem != nil {
 					pass.Report((diagnostic.Finding{
 						Rule: "domainzero.invalid-zero-policy", Certainty: diagnostic.Known,
 						Operation: "declaration", Value: object.Name(), Type: typeIdentity(p.typ), Path: problem.path,
@@ -174,8 +174,13 @@ func runZero(pass *analysis.Pass) (any, error) {
 }
 
 func (c *zeroChecker) checkInstruction(instruction ssa.Instruction, point flowPoint, context flowContext) {
-	check := func(value ssa.Value, operation string) {
-		if problem := c.problem(value, nil, value.Type(), point, context, make(map[valueVisit]bool)); problem != nil {
+	check := func(value ssa.Value, operation string, mode valueUse) {
+		if mode == outputStorage {
+			return
+		}
+		useContext := context
+		useContext.use = mode
+		if problem := c.problem(value, nil, value.Type(), point, useContext, make(map[valueVisit]bool)); problem != nil {
 			use := zeroUse{pos: instructionPosition(instruction, point)}
 			if call, ok := instruction.(ssa.CallInstruction); ok {
 				use.call = call.Common()
@@ -185,27 +190,28 @@ func (c *zeroChecker) checkInstruction(instruction ssa.Instruction, point flowPo
 	}
 	switch instruction := instruction.(type) {
 	case ssa.CallInstruction:
-		if typeOnlyCall(instruction.Common()) {
+		call := instruction.Common()
+		if typeOnlyCall(call) {
 			return
 		}
 		if c.checkCollectionBuiltin(instruction, point, context) {
 			return
 		}
-		if !instruction.Common().IsInvoke() || !c.decodingArgument(instruction.Common(), -1) {
-			check(instruction.Common().Value, "receiver")
+		receiverUse := wholeValue
+		if call.IsInvoke() {
+			receiverUse = c.argumentUse(call, -1)
 		}
-		for index, argument := range instruction.Common().Args {
-			if !c.decodingArgument(instruction.Common(), index) {
-				check(argument, "argument")
-			}
+		check(call.Value, "receiver", receiverUse)
+		for index, argument := range call.Args {
+			check(argument, "argument", c.argumentUse(call, index))
 		}
 	case *ssa.Return:
 		c.checkResults(instruction.Results, point, context, instructionPosition(instruction, point))
 	case *ssa.MapUpdate:
-		check(instruction.Key, "map-key")
-		check(instruction.Value, "map-value")
+		check(instruction.Key, "map-key", wholeValue)
+		check(instruction.Value, "map-value", wholeValue)
 	case *ssa.Send:
-		check(instruction.X, "send")
+		check(instruction.X, "send", wholeValue)
 	case *ssa.Select:
 		for _, state := range instruction.States {
 			if state.Dir == types.SendOnly {
@@ -215,7 +221,7 @@ func (c *zeroChecker) checkInstruction(instruction ssa.Instruction, point flowPo
 			}
 		}
 	case *ssa.Lookup:
-		check(instruction.Index, "map-key")
+		check(instruction.Index, "map-key", wholeValue)
 	case *ssa.BinOp:
 		if c.comparisons[instruction.Pos()] {
 			return
@@ -227,16 +233,16 @@ func (c *zeroChecker) checkInstruction(instruction ssa.Instruction, point flowPo
 			}
 			// Comparing pointers observes identity or absence, not domain state.
 			if _, pointer := operand.Type().Underlying().(*types.Pointer); !pointer {
-				check(operand, "operand")
+				check(operand, "operand", wholeValue)
 			}
 		}
 	case *ssa.Convert:
 		if !c.representationConversion(instruction.X.Type(), instruction.Type(), point) {
-			check(instruction.X, "conversion")
+			check(instruction.X, "conversion", wholeValue)
 		}
 	case *ssa.ChangeType:
 		if !types.Identical(instruction.Type(), instruction.X.Type()) && !c.representationConversion(instruction.X.Type(), instruction.Type(), point) {
-			check(instruction.X, "conversion")
+			check(instruction.X, "conversion", wholeValue)
 		}
 	case *ssa.Store:
 		if c.checkYieldReturn(instruction, point, context) {
@@ -244,7 +250,7 @@ func (c *zeroChecker) checkInstruction(instruction ssa.Instruction, point flowPo
 		}
 		if address, ok := c.collectionAddress(instruction.Addr); ok {
 			if !c.freshStorage(address.root) {
-				check(instruction.Val, "assignment")
+				check(instruction.Val, "assignment", wholeValue)
 			}
 		}
 	}
@@ -335,7 +341,7 @@ func (problem *zeroProblem) afterUnknownMutation(pos token.Pos, operation, targe
 		operation+" may modify "+target+"; nonzero initialization afterward is unproven")
 }
 
-func (c *zeroChecker) zeroType(t types.Type, path string) *zeroProblem {
+func (c *zeroChecker) zeroType(t types.Type, path string, use valueUse) *zeroProblem {
 	if optionalPayload(t) != nil {
 		return nil
 	}
@@ -345,21 +351,25 @@ func (c *zeroChecker) zeroType(t types.Type, path string) *zeroProblem {
 	if p := c.policies.lookup(t); p != nil && !p.fact.ZeroValid {
 		return &zeroProblem{name: p.name, typ: p.typ, path: path, reason: reasonZeroValue}
 	}
+	use = c.useForType(t, use)
 	switch t := t.Underlying().(type) {
 	case *types.Struct:
-		return c.zeroFields(t, path)
+		return c.zeroFields(t, path, use)
 	case *types.Array:
 		if t.Len() != 0 {
-			return c.zeroType(t.Elem(), path+"[0]")
+			return c.zeroType(t.Elem(), path+"[0]", use)
 		}
 	}
 	return nil
 }
 
-func (c *zeroChecker) zeroFields(structure *types.Struct, path string) *zeroProblem {
+func (c *zeroChecker) zeroFields(structure *types.Struct, path string, use valueUse) *zeroProblem {
 	for i := range structure.NumFields() {
+		if !use.includesField(structure, i) {
+			continue
+		}
 		field := structure.Field(i)
-		if problem := c.zeroType(field.Type(), fieldPath(path, field.Name())); problem != nil {
+		if problem := c.zeroType(field.Type(), fieldPath(path, field.Name()), use); problem != nil {
 			return problem
 		}
 	}

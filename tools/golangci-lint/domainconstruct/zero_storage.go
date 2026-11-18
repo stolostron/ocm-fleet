@@ -59,7 +59,7 @@ func (c *zeroChecker) validZeroStorage(location address, t types.Type) bool {
 	if valid, found := c.zeroStorage[visit]; found {
 		return valid
 	}
-	valid := c.zeroType(t, "") == nil && c.onlyZeroStores(location, t, make(map[valueVisit]bool))
+	valid := c.zeroType(t, "", wholeValue) == nil && c.onlyZeroStores(location, t, make(map[valueVisit]bool))
 	if c.zeroStorage == nil {
 		c.zeroStorage = make(map[valueVisit]bool)
 	}

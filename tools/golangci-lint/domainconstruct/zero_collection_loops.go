@@ -10,7 +10,7 @@ import (
 // break into its exit and must write every element on every back edge. Error
 // checks after an assignment are evaluated at the back edge, so early returns
 // on parse failure do not invalidate a successful fill.
-func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicBlock, seen map[valueVisit]bool) bool {
+func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicBlock, use valueUse, seen map[valueVisit]bool) bool {
 	if len(exit.Preds) != 1 || len(header.Instrs) == 0 {
 		return false
 	}
@@ -69,6 +69,7 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 	}
 	for _, backEdge := range backEdges {
 		context := c.contextAt(backEdge).clone()
+		context.use = use
 		c.assumeEdge(&context, backEdge, header)
 		if !c.filledOnPaths(view, header, backEdge, assignments, context, seen, make(map[*ssa.BasicBlock]bool)) {
 			return false

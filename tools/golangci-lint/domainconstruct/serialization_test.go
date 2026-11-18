@@ -13,7 +13,7 @@ func TestSerialization(t *testing.T) {
 		"serialization", "serializationpolicy")
 }
 
-func TestDecoderInitialization(t *testing.T) {
+func TestSerializationFlow(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), domainconstruct.ZeroAnalyzer, "decodeflow")
 }
 

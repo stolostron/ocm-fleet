@@ -6,7 +6,6 @@ import (
 	"go/token"
 	"go/types"
 	"reflect"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
@@ -273,7 +272,7 @@ func (c *serializationChecker) encodingProblem(t types.Type, codec string, seen 
 			if !field.Exported() {
 				continue
 			}
-			if codec == "json" && strings.Split(reflect.StructTag(shape.Tag(index)).Get("json"), ",")[0] == "-" {
+			if codec == "json" && jsonFieldIgnored(shape.Tag(index)) {
 				continue
 			}
 			if problem := c.encodingProblem(field.Type(), codec, seen); problem != nil {
@@ -283,6 +282,10 @@ func (c *serializationChecker) encodingProblem(t types.Type, codec string, seen 
 		}
 	}
 	return nil
+}
+
+func jsonFieldIgnored(tag string) bool {
+	return reflect.StructTag(tag).Get("json") == "-"
 }
 
 func (c *serializationChecker) snapshotProblem(t types.Type, seen map[types.Type]bool) *serializationProblem {

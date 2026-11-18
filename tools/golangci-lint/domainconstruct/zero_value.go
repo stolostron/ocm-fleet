@@ -31,6 +31,7 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 	if !context.possible || !c.interestingType(t) {
 		return nil
 	}
+	context.use = c.useForType(t, context.use)
 	visit := valueVisit{value, pathKey(path), t}
 	if seen[visit] {
 		return nil
@@ -58,7 +59,7 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 			case notZero:
 				return nil
 			case isZero:
-				return c.zeroType(t, "").step("source", value.Pos(), "value is zero on this path")
+				return c.zeroType(t, "", context.use).step("source", value.Pos(), "value is zero on this path")
 			}
 		}
 	}
@@ -82,7 +83,7 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 		if problem := c.callResultProblem(value, 0, path, t, point, context, seen); problem != nil {
 			return problem
 		}
-		if problem := c.rawValueProblem(value, path, t, point); problem != nil {
+		if problem := c.rawValueProblem(value, path, t, point, context.use); problem != nil {
 			return problem
 		}
 		if problem := c.pointerStorageProblem(value, path, t, point, context, seen); problem != nil {
@@ -90,7 +91,7 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 		}
 		return c.collectionProblem(value, point, context, seen)
 	case *ssa.Parameter, *ssa.FreeVar:
-		if problem := c.rawValueProblem(value, path, t, point); problem != nil {
+		if problem := c.rawValueProblem(value, path, t, point, context.use); problem != nil {
 			return problem
 		}
 		return c.pointerStorageProblem(value, path, t, point, context, seen)
@@ -98,7 +99,7 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 		return c.elementProblem(value.X, value.Index, path, t, point, context, seen)
 	case *ssa.Const:
 		if zeroConstant(value) {
-			return c.zeroType(t, "")
+			return c.zeroType(t, "", context.use)
 		}
 		return nil
 	case *ssa.Phi:
@@ -116,7 +117,7 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 	case *ssa.ChangeType:
 		return c.problem(value.X, path, t, point, context, seen)
 	case *ssa.Convert:
-		return c.conditionalProblem(t, reasonConversion)
+		return c.conditionalProblem(t, reasonConversion, context.use)
 	case *ssa.ChangeInterface:
 		return c.problem(value.X, path, value.X.Type(), point, context, seen)
 	case *ssa.Field:
@@ -131,8 +132,8 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 				return c.memoryAtProblem(location, t, instructionPoint(value), point, context, seen, make(map[memoryVisit]bool))
 			}
 		}
-		if value.Op == token.ARROW && c.zeroType(t, "") != nil {
-			return c.conditionalProblem(t, reasonUncheckedReceive)
+		if value.Op == token.ARROW {
+			return c.conditionalProblem(t, reasonUncheckedReceive, context.use)
 		}
 	case *ssa.Alloc, *ssa.FieldAddr, *ssa.IndexAddr:
 		if index, ok := value.(*ssa.IndexAddr); ok {
@@ -157,13 +158,13 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 			if problem := c.callResultProblem(call, value.Index, path, t, point, context, seen); problem != nil {
 				return problem
 			}
-			if problem := c.rawValueProblem(value, path, t, point); problem != nil {
+			if problem := c.rawValueProblem(value, path, t, point, context.use); problem != nil {
 				return problem
 			}
 			return c.pointerStorageProblem(value, path, t, point, context, seen)
 		}
 	case *ssa.Lookup:
-		return c.conditionalProblem(t, reasonUncheckedLookup)
+		return c.conditionalProblem(t, reasonUncheckedLookup, context.use)
 	}
 	return nil
 }
@@ -183,7 +184,7 @@ func (c *zeroChecker) pointerStorageProblem(value ssa.Value, path []int, t types
 
 // Domain-typed inputs carry a validity contract. Raw data only acquires that
 // contract through construction, even when a conversion gives it a domain name.
-func (c *zeroChecker) rawValueProblem(value ssa.Value, path []int, target types.Type, point flowPoint) *zeroProblem {
+func (c *zeroChecker) rawValueProblem(value ssa.Value, path []int, target types.Type, point flowPoint, use valueUse) *zeroProblem {
 	source := projectedType(value.Type(), path)
 	if source == nil {
 		return nil
@@ -229,7 +230,7 @@ func (c *zeroChecker) rawValueProblem(value ssa.Value, path []int, target types.
 			return nil // Validation and compatibility are this constructor's contract.
 		}
 	}
-	return c.conditionalProblem(target, reason).withValue(reference.expression).step("source", value.Pos(), detail)
+	return c.conditionalProblem(target, reason, use).withValue(reference.expression).step("source", value.Pos(), detail)
 }
 
 func projectedType(source types.Type, path []int) types.Type {
@@ -273,7 +274,7 @@ func (c *zeroChecker) tupleProblem(value *ssa.Extract, t types.Type, context flo
 	}
 	if call, ok := value.Tuple.(*ssa.Call); ok {
 		if guardIndex >= 0 && !c.tupleGuardChecked(value.Tuple, guardIndex, success, context) {
-			return c.uncheckedCallResult(call, value.Index, t, reason)
+			return c.uncheckedCallResult(call, value.Index, t, reason, context.use)
 		}
 		if value.Index == 0 && c.contracts.hasPresence(callObject(&call.Call)) &&
 			!c.tupleGuardChecked(value.Tuple, 1, notZero, context) {
@@ -281,16 +282,16 @@ func (c *zeroChecker) tupleProblem(value *ssa.Extract, t types.Type, context flo
 				// Unlike an arbitrary presence API's inactive payload, Get
 				// returns exactly zero T on absence. Nil pointers and empty
 				// collections therefore retain their ordinary valid zeros.
-				return c.conditionalProblem(t, reasonUncheckedPresence)
+				return c.conditionalProblem(t, reasonUncheckedPresence, context.use)
 			}
-			return c.uncheckedCallResult(call, value.Index, t, reasonUncheckedPresence)
+			return c.uncheckedCallResult(call, value.Index, t, reasonUncheckedPresence, context.use)
 		}
 		return nil
 	}
 	if guardIndex < 0 || c.tupleGuardChecked(value.Tuple, guardIndex, success, context) {
 		return nil
 	}
-	return c.conditionalProblem(t, reason)
+	return c.conditionalProblem(t, reason, context.use)
 }
 
 func (c *zeroChecker) tupleGuardChecked(tuple ssa.Value, index int, success truth, context flowContext) bool {
@@ -309,8 +310,8 @@ func (c *zeroChecker) tupleGuardChecked(tuple ssa.Value, index int, success trut
 	return false
 }
 
-func (c *zeroChecker) uncheckedCallResult(call *ssa.Call, result int, t types.Type, reason zeroReason) *zeroProblem {
-	if problem := c.failedResultProblem(t, reason, make(map[types.Type]bool)); problem != nil {
+func (c *zeroChecker) uncheckedCallResult(call *ssa.Call, result int, t types.Type, reason zeroReason, use valueUse) *zeroProblem {
+	if problem := c.failedResultProblem(t, reason, use, make(map[types.Type]valueUse)); problem != nil {
 		return problem
 	}
 	if fact := c.callContract(&call.Call); fact != nil {
@@ -329,28 +330,34 @@ func (c *zeroChecker) uncheckedCallResult(call *ssa.Call, result int, t types.Ty
 
 // Inert failure or absence payloads may contain a non-nil pointer to an invalid
 // value. Optional absence does not make an unchecked payload valid.
-func (c *zeroChecker) failedResultProblem(t types.Type, reason zeroReason, seen map[types.Type]bool) *zeroProblem {
-	if seen[t] {
+func (c *zeroChecker) failedResultProblem(t types.Type, reason zeroReason, use valueUse, seen map[types.Type]valueUse) *zeroProblem {
+	use = c.useForType(t, use)
+	// A custom marshaler can require a whole-value check of a type whose
+	// JSON fields were already inspected elsewhere in the same result.
+	if prior, checked := seen[t]; checked && (prior == wholeValue || prior == use) {
 		return nil
 	}
-	seen[t] = true
-	if problem := c.conditionalProblem(t, reason); problem != nil {
+	seen[t] = use
+	if problem := c.conditionalProblem(t, reason, use); problem != nil {
 		return problem
 	}
 	switch t := t.Underlying().(type) {
 	case *types.Pointer:
-		return c.failedResultProblem(t.Elem(), reason, seen)
+		return c.failedResultProblem(t.Elem(), reason, use, seen)
 	case *types.Slice:
-		return c.failedResultProblem(t.Elem(), reason, seen)
+		return c.failedResultProblem(t.Elem(), reason, use, seen)
 	case *types.Map:
-		if problem := c.failedResultProblem(t.Key(), reason, seen); problem != nil {
+		if problem := c.failedResultProblem(t.Key(), reason, wholeValue, seen); problem != nil {
 			return problem
 		}
-		return c.failedResultProblem(t.Elem(), reason, seen)
+		return c.failedResultProblem(t.Elem(), reason, use, seen)
 	case *types.Struct:
 		for index := range t.NumFields() {
+			if !use.includesField(t, index) {
+				continue
+			}
 			field := t.Field(index)
-			if problem := c.failedResultProblem(field.Type(), reason, seen); problem != nil {
+			if problem := c.failedResultProblem(field.Type(), reason, use, seen); problem != nil {
 				problem.path = fieldPath(field.Name(), problem.path)
 				return problem
 			}
@@ -359,8 +366,8 @@ func (c *zeroChecker) failedResultProblem(t types.Type, reason zeroReason, seen 
 	return nil
 }
 
-func (c *zeroChecker) conditionalProblem(t types.Type, reason zeroReason) *zeroProblem {
-	if problem := c.zeroType(t, ""); problem != nil {
+func (c *zeroChecker) conditionalProblem(t types.Type, reason zeroReason, use valueUse) *zeroProblem {
+	if problem := c.zeroType(t, "", use); problem != nil {
 		problem.reason, problem.possible = reason, true
 		return problem
 	}
@@ -383,6 +390,7 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 	if c.validZeroStorage(location, t) {
 		return nil
 	}
+	context.use = c.useForType(t, context.use)
 	if optionalPayload(t) != nil {
 		// Follow whole-value writes and generic factories, without inspecting
 		// the inactive private payload as an independently required field.
@@ -395,6 +403,9 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 	if p := c.policies.lookup(t); p == nil || p.fact.ZeroValid {
 		if structure, ok := t.Underlying().(*types.Struct); ok {
 			for index := range structure.NumFields() {
+				if !context.use.includesField(structure, index) {
+					continue
+				}
 				field := structure.Field(index)
 				child := address{location.root, append(slices.Clone(location.path), index)}
 				if problem := c.memoryAtProblem(child, field.Type(), point, use, context, values, seen); problem != nil {
@@ -427,7 +438,7 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 			case *ssa.Call, *ssa.Extract:
 				return nil // Opaque pointer factories carry their declared contract.
 			}
-			problem := c.zeroType(t, "")
+			problem := c.zeroType(t, "", context.use)
 			if problem == nil {
 				return nil
 			}
@@ -462,13 +473,13 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 				return nil
 			}
 			if c.decoderMayInvalidate(call, mutationTarget{address: location}, before, context) {
-				return c.failedResultProblem(t, reasonUncheckedError, make(map[types.Type]bool)).
+				return c.failedResultProblem(t, reasonUncheckedError, context.use, make(map[types.Type]valueUse)).
 					withValue(c.valueName(location.root, location.path)).
 					step("mutation", pos, c.callName(call.Common())+" may leave partially decoded state without checked success")
 			}
 			switch c.callMutation(call.Common(), location, before) {
 			case mutationZero:
-				return c.zeroType(t, "").withValue(c.valueName(location.root, location.path)).step("source", pos, "helper writes zero").
+				return c.zeroType(t, "", context.use).withValue(c.valueName(location.root, location.path)).step("source", pos, "helper writes zero").
 					step("mutation", pos, "definite zero write by "+c.callName(call.Common()))
 			case mutationNonzero:
 				return nil
@@ -478,7 +489,7 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 				}
 				prior := c.memoryHistoryProblem(location, t, before, use, context, values, seen)
 				if prior == nil && !storageHasDomainContract(location, t) {
-					prior = c.conditionalProblem(t, reasonInputMayBeZero).step("source", location.root.Pos(), "raw storage "+c.storageName(location.root, location.path)+" has no domain construction contract")
+					prior = c.conditionalProblem(t, reasonInputMayBeZero, context.use).step("source", location.root.Pos(), "raw storage "+c.storageName(location.root, location.path)+" has no domain construction contract")
 				}
 				if prior == nil {
 					return nil

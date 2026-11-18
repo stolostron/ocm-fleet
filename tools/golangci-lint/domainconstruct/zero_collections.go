@@ -58,7 +58,7 @@ func (c *zeroChecker) checkCollectionBuiltin(instruction ssa.CallInstruction, po
 		}
 		if builtin.Name() == "clear" {
 			if slice, ok := call.Args[0].Type().Underlying().(*types.Slice); ok {
-				if problem := c.zeroType(slice.Elem(), ""); problem != nil {
+				if problem := c.zeroType(slice.Elem(), "", wholeValue); problem != nil {
 					problem.reason = reasonCleared
 					c.report(zeroUse{pos: instruction.Pos(), call: call}, problem, "clear", call.Args[0])
 				}
@@ -284,7 +284,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 	for index := point.index - 1; index >= 0; index-- {
 		instruction := point.block.Instrs[index]
 		if allocation, ok := instruction.(ssa.Value); ok && allocation == view.storage.root {
-			return c.unfilledCollection(view, covered, reasonZeroStorage).
+			return c.unfilledCollection(view, covered, reasonZeroStorage, context.use).
 				step("source", allocation.Pos(), "collection contains zero-initialized elements")
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
@@ -325,7 +325,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 				switch builtin.Name() {
 				case "clear":
 					if destination, ok := c.collectionOf(common.Args[0]); ok && sameStorage(destination.storage, view.storage) && rangesOverlap(destination.start, destination.end, view.start, view.end) {
-						if problem := c.unfilledCollection(intersectView(view, destination.start, destination.end), covered, reasonCleared); problem != nil {
+						if problem := c.unfilledCollection(intersectView(view, destination.start, destination.end), covered, reasonCleared, context.use); problem != nil {
 							return problem.step("source", instruction.Pos(), "clear sets collection elements to zero")
 						}
 					}
@@ -353,7 +353,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 				for _, remaining := range uncoveredViews(view, covered) {
 					storage := mutationTarget{remaining.storage, &elementRange{remaining.start, remaining.end}}
 					if c.decoderMayInvalidate(call, storage, before, context) {
-						if problem := c.failedResultProblem(view.element, reasonUncheckedError, make(map[types.Type]bool)); problem != nil {
+						if problem := c.failedResultProblem(view.element, reasonUncheckedError, context.use, make(map[types.Type]valueUse)); problem != nil {
 							problem.path = fieldPath(elementLabel(remaining.start), problem.path)
 							return problem.step("mutation", mutationPosition(call, before), c.callName(common)+" may leave partially decoded collection elements without checked success")
 						}
@@ -375,7 +375,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 		if !edge.possible {
 			continue
 		}
-		if c.filledByLoop(view, predecessor, point.block, values) {
+		if c.filledByLoop(view, predecessor, point.block, context.use, values) {
 			if alternatives.add(nil) {
 				break
 			}
@@ -420,11 +420,11 @@ func copyCoversView(destination, source, view collectionView) bool {
 	return ok && builtin.Name() == "len" && sameLength(destination.length, view.length)
 }
 
-func (c *zeroChecker) unfilledCollection(view collectionView, covered []elementRange, reason zeroReason) *zeroProblem {
+func (c *zeroChecker) unfilledCollection(view collectionView, covered []elementRange, reason zeroReason, use valueUse) *zeroProblem {
 	if rangeCovered(covered, view.start, view.end) {
 		return nil
 	}
-	if problem := c.zeroType(view.element, ""); problem != nil {
+	if problem := c.zeroType(view.element, "", use); problem != nil {
 		problem.path = fieldPath(elementLabel(firstMissing(covered, view.start)), problem.path)
 		problem.reason = reason
 		return problem

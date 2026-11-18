@@ -22,16 +22,19 @@ const (
 type flowContext struct {
 	facts    map[ssa.Value]truth
 	possible bool
+	use      valueUse
 }
 
 func (context flowContext) clone() flowContext {
-	return flowContext{facts: maps.Clone(context.facts), possible: context.possible}
+	context.facts = maps.Clone(context.facts)
+	return context
 }
 
 func (context flowContext) cloneFor(additionalFacts int) flowContext {
 	facts := make(map[ssa.Value]truth, len(context.facts)+additionalFacts)
 	maps.Copy(facts, context.facts)
-	return flowContext{facts: facts, possible: context.possible}
+	context.facts = facts
+	return context
 }
 
 func (c *zeroChecker) contextAt(block *ssa.BasicBlock) flowContext {
@@ -68,6 +71,7 @@ func (c *zeroChecker) edgeContext(context flowContext, block *ssa.BasicBlock, in
 	// Reserve room for the incoming assumptions before replaying them. Queries
 	// far beyond this predecessor can carry many more facts than it dominates.
 	edge := c.contextAt(predecessor).cloneFor(len(context.facts))
+	edge.use = context.use
 	if testingExitBlock(predecessor) {
 		edge.possible = false
 		return edge

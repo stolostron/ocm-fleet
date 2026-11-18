@@ -35,9 +35,10 @@ func (c *zeroChecker) callResultProblem(call *ssa.Call, result int, path []int, 
 }
 
 func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result int, path []int, t types.Type, point flowPoint, context flowContext, seen map[valueVisit]bool) *zeroProblem {
+	context.use = c.useForType(t, context.use)
 	switch source.Kind {
 	case sourceZero:
-		return c.zeroType(t, "")
+		return c.zeroType(t, "", context.use)
 	case sourceParameter:
 		// Arguments and receivers are checked at the call. Re-reporting their
 		// origin through an identity or field accessor would duplicate that use.
@@ -75,7 +76,7 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 		}
 		if structure, ok := t.Underlying().(*types.Struct); ok {
 			for index, child := range source.Values {
-				if index < structure.NumFields() {
+				if index < structure.NumFields() && context.use.includesField(structure, index) {
 					field := structure.Field(index)
 					if problem := c.sourceProblem(child, call, result, nil, field.Type(), point, context, seen); problem != nil {
 						problem.path = fieldPath(field.Name(), problem.path)

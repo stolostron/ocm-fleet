@@ -217,12 +217,17 @@ effects. Use them on shared ports before their payload types are erased, rather
 than teaching the analyzer application-specific function names.
 
 Encoding inputs are valid-value consumers, so encoding an uninitialized domain
-value still produces a `domainzero` finding. Decoder destinations accept zero
-output storage; a parameter selected for both encoding and decoding must already
-be valid. After the error is checked, decoding a declared native domain
-root establishes its validity, including its required members. Decoding an
-ordinary envelope does not establish required-field presence: omitted fields
-can bypass nested decoders. Failure and unchecked errors establish no validity.
+value still produces a `domainzero` finding. Standard JSON field encoding skips
+an exact `json:"-"` field in a plain envelope. A tag like `json:"-,"` names the
+field `-`. Types with custom JSON or text encoding hooks retain whole-value
+checks, including when a pointer receiver can supply the hook.
+
+Decoder destinations accept zero output storage. A parameter selected for both
+encoding and decoding must already be valid. After the error is checked,
+decoding a declared native domain root establishes its validity, including its
+required members. Decoding an ordinary envelope does not establish required-field
+presence because omitted fields can bypass nested decoders. Failure and unchecked
+errors establish no validity.
 Scanning a primitive and converting it to a domain value still requires a
 constructor.
 

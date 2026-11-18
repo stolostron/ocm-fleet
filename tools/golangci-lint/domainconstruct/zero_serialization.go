@@ -8,37 +8,91 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-func serializationArgument(call *ssa.CallCommon, index int) ssa.Value {
-	if index == -1 && call.IsInvoke() {
-		return call.Value
-	}
-	return contractArgument(call, index)
-}
+type valueUse uint8
 
-func serializationArgumentIndex(call *ssa.CallCommon, index int) int {
-	if !call.IsInvoke() && call.Signature().Recv() != nil {
-		return index + 1
-	}
-	return index
-}
+const (
+	wholeValue valueUse = iota
+	jsonFields
+	outputStorage
+)
 
-// Decoding accepts output storage. It does not consume its prior contents as a
-// valid domain value; its success contract is considered separately below.
-func (c *zeroChecker) decodingArgument(call *ssa.CallCommon, index int) bool {
-	output := false
-	for _, boundary := range c.contracts.boundariesFor(callObject(call), c.policies) {
+// Decoding accepts output storage. An input/output parameter still consumes
+// its prior contents. Standard JSON encoders consume the selected fields of
+// plain envelopes, while other declared encoders may inspect the whole input.
+func (c *zeroChecker) argumentUse(call *ssa.CallCommon, index int) valueUse {
+	function := callObject(call)
+	use := wholeValue
+	for _, boundary := range c.contracts.boundariesFor(function, c.policies) {
 		for _, input := range boundary.Encode {
 			if serializationArgumentIndex(call, input) == index {
-				return false // An input/output parameter consumes its prior state.
+				if boundary.Codec == "json" && input >= 0 && function.Pkg() != nil && function.Pkg().Path() == "encoding/json" {
+					return jsonFields
+				}
+				return wholeValue
 			}
 		}
 		for _, destination := range boundary.Decode {
 			if serializationArgumentIndex(call, destination) == index {
-				output = true
+				use = outputStorage
 			}
 		}
 	}
-	return output
+	return use
+}
+
+func (c *zeroChecker) useForType(t types.Type, use valueUse) valueUse {
+	if use != jsonFields {
+		return use
+	}
+	if c.policies.lookup(t) != nil {
+		return wholeValue
+	}
+	// A custom hook may inspect ignored fields. Pointer hooks matter when
+	// the encoder can address the value.
+	for _, name := range []string{"MarshalJSON", "MarshalText"} {
+		method, _, _ := types.LookupFieldOrMethod(t, true, nil, name)
+		if function, ok := method.(*types.Func); ok {
+			signature := function.Type().(*types.Signature)
+			if validEncoder(signature, "json") &&
+				types.Identical(signature.Results().At(1).Type(), types.Universe.Lookup("error").Type()) {
+				return wholeValue
+			}
+		}
+	}
+	return use
+}
+
+func (use valueUse) includesField(structure *types.Struct, index int) bool {
+	return use != jsonFields || !jsonFieldIgnored(structure.Tag(index))
+}
+
+func serializationArgument(call *ssa.CallCommon, index int) ssa.Value {
+	if index == -1 && call.IsInvoke() {
+		return call.Value
+	}
+	if index := serializationArgumentIndex(call, index); index >= 0 && index < len(call.Args) {
+		return call.Args[index]
+	}
+	return nil
+}
+
+func serializationArgumentIndex(call *ssa.CallCommon, index int) int {
+	if call.IsInvoke() {
+		return index
+	}
+	signature := call.Signature()
+	if signature.Recv() != nil {
+		return index + 1
+	}
+	// Method expressions make the receiver an explicit argument. A bound
+	// method takes the same arguments as the underlying declaration.
+	if function := callObject(call); function != nil {
+		declared := function.Type().(*types.Signature)
+		if declared.Recv() != nil && signature.Params().Len() == declared.Params().Len()+1 {
+			return index + 1
+		}
+	}
+	return index
 }
 
 // Only a declared root decoder establishes valid domain state on nil error.

@@ -64,6 +64,15 @@ func JSONMapKeys(value map[encodingvalues.JSONOnly]string) {
 	json.Marshal(value) // want "at path \\[key\\]: .*does not declare text serialization"
 }
 
+func JSONExcludedFields() {
+	json.Marshal(struct {
+		Ignored encodingvalues.Unsupported `json:"-"`
+	}{})
+	json.Marshal(struct { // want "DashKey.*does not declare json serialization"
+		DashKey encodingvalues.Unsupported `json:"-,"`
+	}{})
+}
+
 func DifferentMapCodecs(value map[encodingvalues.TextID]encodingvalues.TextID) {
 	json.Marshal(value) // want "does not declare json serialization"
 }
