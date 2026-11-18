@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -3078,5 +3077,10 @@ func TestOrchestration_StaticTarget_LateRegistration(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func contains(ss []string, s string) bool {
-	return slices.Contains(ss, s)
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }

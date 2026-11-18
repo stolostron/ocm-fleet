@@ -3,7 +3,6 @@ package domain
 import (
 	"fmt"
 	"iter"
-	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -102,8 +101,10 @@ func validateCanonicalPath(kind, s string) ([]string, error) {
 		return nil, fmt.Errorf("%s: %w: must not end with '/'", kind, ErrInvalidArgument)
 	}
 	parts := strings.Split(s, "/")
-	if slices.Contains(parts, "") {
-		return nil, fmt.Errorf("%s: %w: must not contain empty segments (double slashes)", kind, ErrInvalidArgument)
+	for _, p := range parts {
+		if p == "" {
+			return nil, fmt.Errorf("%s: %w: must not contain empty segments (double slashes)", kind, ErrInvalidArgument)
+		}
 	}
 	return parts, nil
 }
@@ -598,7 +599,9 @@ func (r *PlatformResource) AddRelationship(rel ResourceRelationship) error {
 // from linked extension resources via their UIDs.
 func (r *PlatformResource) EffectiveLabels() map[string]string {
 	result := make(map[string]string, len(r.labels))
-	maps.Copy(result, r.labels)
+	for k, v := range r.labels {
+		result[k] = v
+	}
 	return result
 }
 

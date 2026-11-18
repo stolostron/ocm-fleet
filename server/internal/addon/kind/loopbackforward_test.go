@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -311,7 +310,12 @@ func TestLoopbackForward_Ensure_DefaultBinaryPath(t *testing.T) {
 }
 
 func envHas(env []string, want string) bool {
-	return slices.Contains(env, want)
+	for _, e := range env {
+		if e == want {
+			return true
+		}
+	}
+	return false
 }
 
 type staticNodeProvider struct {

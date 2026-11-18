@@ -64,8 +64,10 @@ func findOwnedCluster(listed []string, id domain.ResourceID) (kindName string, f
 	if err != nil {
 		return "", false
 	}
-	if slices.Contains(listed, want) {
-		return want, true
+	for _, n := range listed {
+		if n == want {
+			return want, true
+		}
 	}
 	return "", false
 }

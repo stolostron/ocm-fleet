@@ -2,7 +2,6 @@ package dynamicapi
 
 import (
 	"fmt"
-	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -312,7 +311,9 @@ type CompositeServiceInfoProvider struct {
 // GetServiceInfo returns the merged service info map.
 func (c *CompositeServiceInfoProvider) GetServiceInfo() map[string]grpc.ServiceInfo {
 	info := c.Server.GetServiceInfo()
-	maps.Copy(info, c.DynamicMux.ServiceInfo())
+	for name, si := range c.DynamicMux.ServiceInfo() {
+		info[name] = si
+	}
 	return info
 }
 

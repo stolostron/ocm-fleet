@@ -53,7 +53,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -821,7 +821,7 @@ type ipbTimings struct {
 // stats returns mean/p50/p95/min/max across r.durations.
 func (r ipbTimings) stats() (mean, p50, p95, minD, maxD time.Duration) {
 	sorted := append([]time.Duration(nil), r.durations...)
-	slices.Sort(sorted)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
 	var sum time.Duration
 	for _, d := range sorted {
 		sum += d

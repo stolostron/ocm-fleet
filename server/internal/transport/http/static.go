@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -43,7 +42,12 @@ func (kr *knownRoutes) isKnown(urlPath string) bool {
 	path := strings.TrimPrefix(urlPath, "/")
 	seg, _, _ := strings.Cut(path, "/")
 
-	return slices.Contains(prefixes, seg)
+	for _, prefix := range prefixes {
+		if seg == prefix {
+			return true
+		}
+	}
+	return false
 }
 
 // staticKnownPrefixes are first-path segments that receive SPA index.html with

@@ -3,7 +3,6 @@ package querysql_test
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 
@@ -64,10 +63,13 @@ func TestCompileFilter_ParamBinderControlsPlaceholders(t *testing.T) {
 		if !strings.Contains(pred.SQL, "?1") || !strings.Contains(pred.SQL, "?2") {
 			t.Errorf("SQL = %q, want ?1 and ?2 numbered placeholders", pred.SQL)
 		}
-		if slices.Contains(strings.FieldsFunc(pred.SQL, func(r rune) bool {
+		for _, tok := range strings.FieldsFunc(pred.SQL, func(r rune) bool {
 			return r == ' ' || r == '(' || r == ')' || r == ',' || r == '[' || r == ']'
-		}), "?") {
-			t.Errorf("SQL = %q, question binder must not emit bare ?", pred.SQL)
+		}) {
+			if tok == "?" {
+				t.Errorf("SQL = %q, question binder must not emit bare ?", pred.SQL)
+				break
+			}
 		}
 		if len(pred.Args) != 2 || pred.Args[0] != "team" || pred.Args[1] != "platform" {
 			t.Errorf("Args = %v, want [team platform]", pred.Args)

@@ -2,7 +2,6 @@ package domain
 
 import (
 	"encoding/json"
-	"maps"
 	"time"
 )
 
@@ -437,7 +436,9 @@ func (ir InventoryResource) Snapshot() InventoryResourceSnapshot {
 		}
 	}
 	labels := make(map[string]string, len(ir.labels))
-	maps.Copy(labels, ir.labels)
+	for k, v := range ir.labels {
+		labels[k] = v
+	}
 	return InventoryResourceSnapshot{
 		Labels:      labels,
 		Observation: observationToSnapshot(ir.observation),
@@ -502,7 +503,9 @@ func (r *ExtensionResource) Snapshot() ExtensionResourceSnapshot {
 		}
 	}
 	labels := make(map[string]string, len(r.labels))
-	maps.Copy(labels, r.labels)
+	for k, v := range r.labels {
+		labels[k] = v
+	}
 	var inv *InventoryResourceSnapshot
 	if r.inventory != nil {
 		conds := make([]ConditionSnapshot, len(r.inventory.conditions))
@@ -516,7 +519,9 @@ func (r *ExtensionResource) Snapshot() ExtensionResourceSnapshot {
 			}
 		}
 		invLabels := make(map[string]string, len(r.inventory.labels))
-		maps.Copy(invLabels, r.inventory.labels)
+		for k, v := range r.inventory.labels {
+			invLabels[k] = v
+		}
 		inv = &InventoryResourceSnapshot{
 			Labels:      invLabels,
 			Observation: observationToSnapshot(r.inventory.observation),
@@ -658,7 +663,9 @@ func SignerEnrollmentFromSnapshot(s SignerEnrollmentSnapshot) SignerEnrollment {
 // relationships) are reconstituted from their snapshot slices.
 func PlatformResourceFromSnapshot(s PlatformResourceSnapshot) *PlatformResource {
 	labels := make(map[string]string, len(s.Labels))
-	maps.Copy(labels, s.Labels)
+	for k, v := range s.Labels {
+		labels[k] = v
+	}
 
 	reps := make([]ResourceRepresentation, len(s.Representations))
 	for i, rs := range s.Representations {
@@ -722,7 +729,9 @@ func ExtensionResourceTypeFromSnapshot(s ExtensionResourceTypeSnapshot) Extensio
 // the caller.
 func ExtensionResourceFromSnapshot(s ExtensionResourceSnapshot) *ExtensionResource {
 	labels := make(map[string]string, len(s.Labels))
-	maps.Copy(labels, s.Labels)
+	for k, v := range s.Labels {
+		labels[k] = v
+	}
 	var managed *ManagedState
 	if s.Managed != nil {
 		managed = &ManagedState{
@@ -743,7 +752,9 @@ func ExtensionResourceFromSnapshot(s ExtensionResourceSnapshot) *ExtensionResour
 			}
 		}
 		invLabels := make(map[string]string, len(s.Inventory.Labels))
-		maps.Copy(invLabels, s.Inventory.Labels)
+		for k, v := range s.Inventory.Labels {
+			invLabels[k] = v
+		}
 		inv = &InventoryResource{
 			labels:      invLabels,
 			observation: observationFromSnapshot(s.Inventory.Observation),
@@ -780,7 +791,9 @@ func InventoryResourceFromSnapshot(s InventoryResourceSnapshot) *InventoryResour
 		}
 	}
 	labels := make(map[string]string, len(s.Labels))
-	maps.Copy(labels, s.Labels)
+	for k, v := range s.Labels {
+		labels[k] = v
+	}
 	return &InventoryResource{
 		labels:      labels,
 		observation: observationFromSnapshot(s.Observation),

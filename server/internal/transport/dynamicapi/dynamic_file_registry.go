@@ -2,7 +2,6 @@ package dynamicapi
 
 import (
 	"fmt"
-	"maps"
 	"sync"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -47,7 +46,9 @@ func (r *DynamicFileRegistry) Register(fd protoreflect.FileDescriptor) error {
 	}
 
 	before := make(map[string]protoreflect.FileDescriptor, len(r.files))
-	maps.Copy(before, r.files)
+	for k, v := range r.files {
+		before[k] = v
+	}
 
 	r.addWithDeps(fd)
 	if err := r.rebuild(); err != nil {
@@ -65,7 +66,9 @@ func (r *DynamicFileRegistry) Replace(fd protoreflect.FileDescriptor) {
 	defer r.mu.Unlock()
 
 	before := make(map[string]protoreflect.FileDescriptor, len(r.files))
-	maps.Copy(before, r.files)
+	for k, v := range r.files {
+		before[k] = v
+	}
 	r.addWithDeps(fd)
 	if err := r.rebuild(); err != nil {
 		// Keep the previous consistent registry rather than a partial one.

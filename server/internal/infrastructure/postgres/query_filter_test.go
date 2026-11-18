@@ -11,7 +11,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -729,7 +728,12 @@ func TestQueryFieldResolver_LabelSelectIndexEquivalence(t *testing.T) {
 }
 
 func argsContain(args []any, want any) bool {
-	return slices.Contains(args, want)
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestQueryFieldResolver_SpecOnOneSideOfOrCompiles(t *testing.T) {

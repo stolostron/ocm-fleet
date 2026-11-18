@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -547,7 +547,7 @@ type qrbTimings struct {
 
 func (r qrbTimings) stats() (mean, p50, p95, minD, maxD time.Duration) {
 	sorted := append([]time.Duration(nil), r.durations...)
-	slices.Sort(sorted)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
 	var sum time.Duration
 	for _, d := range sorted {
 		sum += d

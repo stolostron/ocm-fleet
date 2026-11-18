@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"maps"
 	"sync"
 	"testing"
 	"time"
@@ -1050,7 +1049,9 @@ func (r *recordingDelayRecorder) getDelays() map[domain.DeliveryID]scripted.Dela
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make(map[domain.DeliveryID]scripted.DelayRecord, len(r.delays))
-	maps.Copy(out, r.delays)
+	for k, v := range r.delays {
+		out[k] = v
+	}
 	return out
 }
 

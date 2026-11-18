@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -1257,11 +1256,15 @@ func (r *ExtensionResourceRepo) ApplyInventoryDeltas(ctx context.Context, deltas
 			}
 		} else {
 			labels := map[string]string{}
-			maps.Copy(labels, prevLabels[uids[i]])
+			for k, v := range prevLabels[uids[i]] {
+				labels[k] = v
+			}
 			for _, k := range d.DeleteLabels {
 				delete(labels, k)
 			}
-			maps.Copy(labels, d.UpsertLabels)
+			for k, v := range d.UpsertLabels {
+				labels[k] = v
+			}
 			labelsJSON, err = json.Marshal(labels)
 			if err != nil {
 				return fmt.Errorf("marshal merged labels: %w", err)
@@ -1276,7 +1279,9 @@ func (r *ExtensionResourceRepo) ApplyInventoryDeltas(ctx context.Context, deltas
 			}
 		} else {
 			conditions := map[string]ConditionJSON{}
-			maps.Copy(conditions, prevConditions[uids[i]])
+			for t, c := range prevConditions[uids[i]] {
+				conditions[t] = c
+			}
 			for _, t := range d.DeleteConditions {
 				delete(conditions, string(t))
 			}
