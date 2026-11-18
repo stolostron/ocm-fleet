@@ -252,7 +252,7 @@ func seedIPBCorpus(t *testing.T, db *sql.DB) {
 		for base := 0; base < count; base += chunk {
 			n := min(chunk, count-base)
 			reps := make([]domain.InventoryReplacement, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				idx := start + base + i
 				obs := ipbObservationJSON(0)
 				rep := domain.InventoryReplacement{
@@ -413,7 +413,7 @@ func seedIPBACMTable(t *testing.T, db *sql.DB) {
 		uids := make([]string, n)
 		clusters := make([]string, n)
 		datas := make([]string, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			idx := start + i
 			uids[i] = ipbACMUID(idx)
 			clusters[i] = ipbClusterOf(idx)
@@ -511,7 +511,7 @@ func explainACMUpsert(t *testing.T, db *sql.DB, uid, cluster, data string) {
 // an accidental no-op repeat.
 func ipbCycle(poolStart, poolSize int, pos *int, n int) []int {
 	out := make([]int, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out[i] = poolStart + (*pos+i)%poolSize
 	}
 	*pos += n
@@ -537,7 +537,7 @@ type ipbScenarioState struct {
 
 func (s *ipbScenarioState) nextNew(n int) []int {
 	out := make([]int, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out[i] = ipbNewStart + s.newPos + i
 	}
 	s.newPos += n
@@ -799,7 +799,7 @@ func (s *ipbScenarioState) buildACMInsertNew(round, n int) (uids, clusters, data
 	uids = make([]string, n)
 	clusters = make([]string, n)
 	datas = make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		idx := ipbNewStart + base + i
 		uids[i] = ipbACMUID(idx)
 		clusters[i] = ipbClusterOf(idx)
@@ -878,7 +878,7 @@ func timeReplace(t *testing.T, db *sql.DB, scenario string, batchSize int, build
 	t.Helper()
 	ctx := context.Background()
 	durs := make([]time.Duration, ipbRounds)
-	for round := 0; round < ipbRounds; round++ {
+	for round := range ipbRounds {
 		reps := build(round, batchSize)
 		start := time.Now()
 		tx, err := db.BeginTx(ctx, nil)
@@ -902,7 +902,7 @@ func timeApplyDeltas(t *testing.T, db *sql.DB, scenario string, batchSize int, b
 	t.Helper()
 	ctx := context.Background()
 	durs := make([]time.Duration, ipbRounds)
-	for round := 0; round < ipbRounds; round++ {
+	for round := range ipbRounds {
 		deltas := build(round, batchSize)
 		start := time.Now()
 		tx, err := db.BeginTx(ctx, nil)
@@ -929,7 +929,7 @@ func timeACMUpsert(t *testing.T, db *sql.DB, scenario string, batchSize int, bui
 	t.Helper()
 	ctx := context.Background()
 	durs := make([]time.Duration, ipbRounds)
-	for round := 0; round < ipbRounds; round++ {
+	for round := range ipbRounds {
 		uids, clusters, datas := build(round, batchSize)
 		start := time.Now()
 		if err := acmBatchUpsert(ctx, db, uids, clusters, datas); err != nil {

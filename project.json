@@ -47,7 +47,7 @@
         },
         "commands": [
           "npx nx run ocm-fleet:fix:workspace",
-          "npx nx run-many --targets=fix:lint --exclude=ocm-fleet --nxBail=false",
+          "npx nx run-many --targets=fix:lint --nxBail=false",
           "npx nx run ocm-fleet:check"
         ],
         "parallel": false

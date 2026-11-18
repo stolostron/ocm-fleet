@@ -665,10 +665,7 @@ func (w *Writer) applyDeltaWithRetry(ctx context.Context, delta InventoryDeltaRe
 			break
 		}
 
-		backoff := time.Duration(1<<attempt) * time.Second
-		if backoff > 30*time.Second {
-			backoff = 30 * time.Second
-		}
+		backoff := min(time.Duration(1<<attempt)*time.Second, 30*time.Second)
 
 		w.logger.Warn("ApplyDelta failed, retrying",
 			"attempt", attempt+1,

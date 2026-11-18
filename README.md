@@ -128,10 +128,10 @@ npx nx run ocm-fleet:lint   # lint across projects without editing source
 npx nx run ocm-fleet:check  # all checks without formatting first
 
 # Select a project or subset with standard Nx commands:
-npx nx run server:verify
-npx nx run cli:verify
-npx nx run-many --targets=verify --projects=web,plugins
-npx nx run ocm-fleet:verify:go # Go-only aliases remain available
+npx nx run server:fix
+npx nx run cli:fix
+npx nx run-many --targets=fix --projects=web,plugins
+npx nx run ocm-fleet:fix:go # Go-only aliases remain available
 ```
 
 The workspace targets collect each project's supported checks: Go uses our
@@ -142,10 +142,11 @@ browser component tests, and existing type checks where available. Install
 Playwright's Chromium browser with `npx playwright install chromium` for component
 tests. Integration and end-to-end suites remain explicit.
 
-Local verification fixes formatting and imports automatically. Broader ESLint,
-stylelint, and Go linter rewrites require `fix`; review its diff. Both workflows
-finish with checks and fail if findings or test failures remain. Existing lint
-backlogs have scoped, temporary exclusions tracked in
+Run `fix` for the affected projects before staging a commit and review its diff.
+It applies formatting, import organization, and supported linter edits before
+running the same checks as `verify`. Use `verify` to apply formatting and import
+edits only, then run the checks. Both workflows fail if findings or test failures
+remain. Existing lint backlogs have scoped, temporary exclusions tracked in
 [FM-144](https://redhat.atlassian.net/browse/FM-144); unsuppressed lint errors fail CI.
 Existing ESLint warning severities are unchanged.
 

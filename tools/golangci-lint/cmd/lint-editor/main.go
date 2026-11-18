@@ -66,8 +66,7 @@ func main() {
 		cmd := exec.CommandContext(ctx, editor.binary, args...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
-			var exit *exec.ExitError
-			if errors.As(err, &exit) {
+			if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 				os.Exit(exit.ExitCode())
 			}
 			fmt.Fprintln(os.Stderr, err)

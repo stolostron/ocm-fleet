@@ -397,10 +397,7 @@ func forEachReportChunk(n, size int, fn func(start, end int) error) error {
 		size = n
 	}
 	for start := 0; start < n; start += size {
-		end := start + size
-		if end > n {
-			end = n
-		}
+		end := min(start+size, n)
 		if err := fn(start, end); err != nil {
 			return err
 		}

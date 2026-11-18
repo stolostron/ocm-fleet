@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -82,9 +81,9 @@ func BuildServiceDescriptors(cfg *Config) (*ServiceDescriptors, error) {
 	resourceMsg := buildResourceMessage(resourceName, pkg, repMsg, aliasMsg, relMsg)
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:       proto.String(fmt.Sprintf("dynamic/ocm/v1alpha/platform_%s_service.proto", lower)),
-		Package:    proto.String(pkg),
-		Syntax:     proto.String("proto3"),
+		Name:       new(fmt.Sprintf("dynamic/ocm/v1alpha/platform_%s_service.proto", lower)),
+		Package:    new(pkg),
+		Syntax:     new("proto3"),
 		Dependency: []string{"google/protobuf/timestamp.proto"},
 		MessageType: []*descriptorpb.DescriptorProto{
 			resourceMsg,
@@ -143,7 +142,7 @@ func buildResourceMessage(
 	effectiveLabelsField, effectiveLabelsEntry := buildMapStringStringField(parentFQN, "effective_labels", "EffectiveLabelsEntry", 4)
 
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String(resourceName),
+		Name: new(resourceName),
 		NestedType: []*descriptorpb.DescriptorProto{
 			labelsEntry,
 			effectiveLabelsEntry,
@@ -167,7 +166,7 @@ func buildResourceMessage(
 
 func buildRepresentationMessage(resourceName string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String(resourceName + "Representation"),
+		Name: new(resourceName + "Representation"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("service_name", 1),
 			dynamicapi.StringField("version", 2),
@@ -180,7 +179,7 @@ func buildRepresentationMessage(resourceName string) *descriptorpb.DescriptorPro
 
 func buildAliasMessage(resourceName string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String(resourceName + "Alias"),
+		Name: new(resourceName + "Alias"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("namespace", 1),
 			dynamicapi.StringField("key", 2),
@@ -191,7 +190,7 @@ func buildAliasMessage(resourceName string) *descriptorpb.DescriptorProto {
 
 func buildRelationshipMessage(resourceName string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String(resourceName + "Relationship"),
+		Name: new(resourceName + "Relationship"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("type", 1),
 			dynamicapi.StringField("target_name", 2),
@@ -203,7 +202,7 @@ func buildRelationshipMessage(resourceName string) *descriptorpb.DescriptorProto
 
 func buildCreateRequest(resourceName, lower, resourceFQN string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String("Create" + resourceName + "Request"),
+		Name: new("Create" + resourceName + "Request"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField(lower+"_id", 1),
 			dynamicapi.MessageField("platform_"+lower, 2, resourceFQN),
@@ -213,7 +212,7 @@ func buildCreateRequest(resourceName, lower, resourceFQN string) *descriptorpb.D
 
 func buildGetRequest(resourceName string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String("Get" + resourceName + "Request"),
+		Name: new("Get" + resourceName + "Request"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("name", 1),
 		},
@@ -222,7 +221,7 @@ func buildGetRequest(resourceName string) *descriptorpb.DescriptorProto {
 
 func buildListRequest(resourceName, plural string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String("List" + "Platform" + plural + "Request"),
+		Name: new("List" + "Platform" + plural + "Request"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.Int32Field("page_size", 1),
 			dynamicapi.StringField("page_token", 2),
@@ -232,7 +231,7 @@ func buildListRequest(resourceName, plural string) *descriptorpb.DescriptorProto
 
 func buildListResponse(resourceName, plural, collectionID, resourceFQN string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String("List" + "Platform" + plural + "Response"),
+		Name: new("List" + "Platform" + plural + "Response"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.RepeatedMessageField(collectionID, 1, resourceFQN),
 			dynamicapi.StringField("next_page_token", 2),
@@ -243,22 +242,22 @@ func buildListResponse(resourceName, plural, collectionID, resourceFQN string) *
 func buildService(resourceName, plural, pkg string) *descriptorpb.ServiceDescriptorProto {
 	fqnPrefix := "." + pkg + "."
 	return &descriptorpb.ServiceDescriptorProto{
-		Name: proto.String(resourceName + "Service"),
+		Name: new(resourceName + "Service"),
 		Method: []*descriptorpb.MethodDescriptorProto{
 			{
-				Name:       proto.String("Create" + resourceName),
-				InputType:  proto.String(fqnPrefix + "Create" + resourceName + "Request"),
-				OutputType: proto.String(fqnPrefix + resourceName),
+				Name:       new("Create" + resourceName),
+				InputType:  new(fqnPrefix + "Create" + resourceName + "Request"),
+				OutputType: new(fqnPrefix + resourceName),
 			},
 			{
-				Name:       proto.String("Get" + resourceName),
-				InputType:  proto.String(fqnPrefix + "Get" + resourceName + "Request"),
-				OutputType: proto.String(fqnPrefix + resourceName),
+				Name:       new("Get" + resourceName),
+				InputType:  new(fqnPrefix + "Get" + resourceName + "Request"),
+				OutputType: new(fqnPrefix + resourceName),
 			},
 			{
-				Name:       proto.String("List" + "Platform" + plural),
-				InputType:  proto.String(fqnPrefix + "List" + "Platform" + plural + "Request"),
-				OutputType: proto.String(fqnPrefix + "List" + "Platform" + plural + "Response"),
+				Name:       new("List" + "Platform" + plural),
+				InputType:  new(fqnPrefix + "List" + "Platform" + plural + "Request"),
+				OutputType: new(fqnPrefix + "List" + "Platform" + plural + "Response"),
 			},
 		},
 	}
@@ -268,20 +267,20 @@ func buildService(resourceName, plural, pkg string) *descriptorpb.ServiceDescrip
 
 func buildMapStringStringField(parentFQN, fieldName, entryName string, number int32) (*descriptorpb.FieldDescriptorProto, *descriptorpb.DescriptorProto) {
 	entry := &descriptorpb.DescriptorProto{
-		Name: proto.String(entryName),
+		Name: new(entryName),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("key", 1),
 			dynamicapi.StringField("value", 2),
 		},
 		Options: &descriptorpb.MessageOptions{
-			MapEntry: proto.Bool(true),
+			MapEntry: new(true),
 		},
 	}
 	field := &descriptorpb.FieldDescriptorProto{
-		Name:     proto.String(fieldName),
-		Number:   proto.Int32(number),
+		Name:     new(fieldName),
+		Number:   new(number),
 		Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
-		TypeName: proto.String("." + parentFQN + "." + entryName),
+		TypeName: new("." + parentFQN + "." + entryName),
 		Label:    descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(),
 	}
 	return field, entry

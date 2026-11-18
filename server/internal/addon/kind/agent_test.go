@@ -1013,7 +1013,7 @@ type blockingProvider struct {
 	gate        chan struct{} // close to unblock Create
 	entered     chan struct{} // closed when first Create is entered
 	enteredOnce sync.Once
-	createCount int32
+	createCount atomic.Int32
 }
 
 func newBlockingProvider() *blockingProvider {
@@ -1025,7 +1025,7 @@ func newBlockingProvider() *blockingProvider {
 }
 
 func (p *blockingProvider) Create(name string, opts ...cluster.CreateOption) error {
-	atomic.AddInt32(&p.createCount, 1)
+	p.createCount.Add(1)
 	if p.logger != nil {
 		p.logger.V(0).Infof("Creating cluster %q", name)
 	}
@@ -1068,7 +1068,7 @@ func TestAgent_Deliver_RetryWhileInFlight_Skipped(t *testing.T) {
 		t.Fatalf("State = %q, want %q", result.State, domain.DeliveryStateDelivered)
 	}
 
-	if n := atomic.LoadInt32(&bp.createCount); n != 1 {
+	if n := bp.createCount.Load(); n != 1 {
 		t.Fatalf("Create called %d times, want 1", n)
 	}
 }

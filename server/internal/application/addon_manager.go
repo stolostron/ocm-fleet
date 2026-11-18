@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -266,8 +267,8 @@ func (c *connectCompensation) rollback(ctx context.Context, m *AddonManager, rec
 	// Undo target registrations.
 	if len(c.createdTargets) > 0 {
 		targetSvc := &TargetService{Store: m.typeSvc.Store()}
-		for i := len(c.createdTargets) - 1; i >= 0; i-- {
-			_ = targetSvc.Deregister(ctx, c.createdTargets[i])
+		for _, id := range slices.Backward(c.createdTargets) {
+			_ = targetSvc.Deregister(ctx, id)
 		}
 	}
 
@@ -280,8 +281,8 @@ func (c *connectCompensation) rollback(ctx context.Context, m *AddonManager, rec
 	}
 
 	// Undo schema activations.
-	for i := len(c.activatedSchemas) - 1; i >= 0; i-- {
-		m.activator.Deactivate(c.activatedSchemas[i].id)
+	for _, activation := range slices.Backward(c.activatedSchemas) {
+		m.activator.Deactivate(activation.id)
 	}
 
 	// Remove schema registrations that this call added.
@@ -290,8 +291,8 @@ func (c *connectCompensation) rollback(ctx context.Context, m *AddonManager, rec
 	}
 
 	// Delete type defs that this call created.
-	for i := len(c.createdTypeDefs) - 1; i >= 0; i-- {
-		_ = m.typeSvc.Delete(ctx, c.createdTypeDefs[i])
+	for _, id := range slices.Backward(c.createdTypeDefs) {
+		_ = m.typeSvc.Delete(ctx, id)
 	}
 }
 

@@ -294,7 +294,7 @@ func normalizeAddonList(spec string) []AddonName {
 	}
 	seen := make(map[AddonName]struct{})
 	var out []AddonName
-	for _, a := range strings.Split(spec, ",") {
+	for a := range strings.SplitSeq(spec, ",") {
 		name := AddonName(strings.TrimSpace(a))
 		if name == "" {
 			continue

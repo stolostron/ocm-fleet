@@ -102,13 +102,7 @@ func (b BoundedNormalLatency) ResolveLatency() time.Duration {
 	mean := float64(b.Min+b.Max) / 2
 	sigma := float64(b.Max-b.Min) / 6
 	d := time.Duration(rand.NormFloat64()*sigma + mean)
-	if d < b.Min {
-		d = b.Min
-	}
-	if d > b.Max {
-		d = b.Max
-	}
-	return d
+	return min(max(d, b.Min), b.Max)
 }
 
 // OutcomeDecider resolves the outcome for one phase attempt given the

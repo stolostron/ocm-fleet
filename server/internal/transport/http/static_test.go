@@ -27,9 +27,9 @@ func setupTestWebDir(t *testing.T) string {
 					Extensions: []extension{
 						{
 							Type: "ocm-fleet.route",
-							Properties: map[string]interface{}{
+							Properties: map[string]any{
 								"label":     "Clusters",
-								"component": map[string]interface{}{"$codeRef": "ClustersModule.default"},
+								"component": map[string]any{"$codeRef": "ClustersModule.default"},
 							},
 						},
 					},

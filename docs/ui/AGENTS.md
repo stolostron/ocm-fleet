@@ -157,5 +157,5 @@ npx nx run common:test              # vitest
 
 - Don't run builds to verify. Use LSP diagnostics + browser MCP.
 - App served on port 8085. `/app/debug` route for plugin/nav troubleshooting.
-- Run the affected projects' `verify` targets before done (format/import fixes, lint, available unit/component tests and type checks). `npx nx run ocm-fleet:verify` covers the workspace; integration and end-to-end suites stay explicit.
+- Run the affected projects' `fix` targets before staging a commit and review the resulting diff. `fix` formats, applies supported linter edits, and runs the same checks as `verify`, including available unit and component tests and type checks. `npx nx run ocm-fleet:fix` covers the workspace. Run integration and end-to-end suites explicitly when needed.
 - Documentation-only audits: verify relative links, examples, source claims, and `git diff --check`. No application build is required. Validate LikeC4 syntax when tooling is available; report when it is not.

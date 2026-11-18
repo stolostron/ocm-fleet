@@ -198,7 +198,7 @@ func TestResourceQueryService_ActivatedTypesStableOrder(t *testing.T) {
 	ctx := context.Background()
 
 	var firstToken string
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		page, err := svc.QueryResources(ctx, application.QueryResourcesInput{
 			Scope:    "-",
 			PageSize: 1,

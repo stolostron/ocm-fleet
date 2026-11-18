@@ -228,7 +228,7 @@ func TestCodec_BoundedNormalLatency(t *testing.T) {
 	}
 
 	// Sample a few latencies and verify they're within bounds.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		resolved := bnl.ResolveLatency()
 		if resolved < bnl.Min || resolved > bnl.Max {
 			t.Errorf("sample %d: resolved = %v, want in [%v, %v]", i, resolved, bnl.Min, bnl.Max)
@@ -258,7 +258,7 @@ func TestCodec_BoundedNormalLatency_MinMaxEqual(t *testing.T) {
 
 	bnl := spec.Delivery.Acknowledgement.Latency.(scripted.BoundedNormalLatency)
 	// When min == max, should always return the constant value.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		resolved := bnl.ResolveLatency()
 		if resolved != 3*time.Second {
 			t.Errorf("sample %d: resolved = %v, want 3s", i, resolved)
@@ -301,7 +301,7 @@ func TestCodec_ProbabilisticOutcome(t *testing.T) {
 	successes := 0
 	failures := 0
 	samples := 1000
-	for i := 0; i < samples; i++ {
+	for range samples {
 		outcome, _ := po.ResolveOutcome(0)
 		if outcome == scripted.OutcomeSuccess {
 			successes++
@@ -339,7 +339,7 @@ func TestCodec_ProbabilisticOutcome_ZeroFailureRate(t *testing.T) {
 	po := spec.Delivery.Completion.Outcome.(scripted.ProbabilisticOutcome)
 
 	// With failure_rate = 0.0, should always succeed.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		outcome, _ := po.ResolveOutcome(i)
 		if outcome != scripted.OutcomeSuccess {
 			t.Errorf("sample %d: outcome = %v, want success", i, outcome)
@@ -369,7 +369,7 @@ func TestCodec_ProbabilisticOutcome_FullFailureRate(t *testing.T) {
 	po := spec.Delivery.Completion.Outcome.(scripted.ProbabilisticOutcome)
 
 	// With failure_rate = 1.0, should always fail.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		outcome, _ := po.ResolveOutcome(i)
 		if outcome != scripted.OutcomeFailure {
 			t.Errorf("sample %d: outcome = %v, want failure", i, outcome)

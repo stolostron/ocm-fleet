@@ -40,7 +40,7 @@ func (kr *knownRoutes) isKnown(urlPath string) bool {
 	}
 
 	path := strings.TrimPrefix(urlPath, "/")
-	seg := strings.SplitN(path, "/", 2)[0]
+	seg, _, _ := strings.Cut(path, "/")
 
 	for _, prefix := range prefixes {
 		if seg == prefix {
@@ -85,7 +85,7 @@ func (kr *knownRoutes) reload() []string {
 
 	prefixes := append([]string{}, staticKnownPrefixes...)
 	for _, page := range pages {
-		seg := strings.SplitN(page.Path, "/", 2)[0]
+		seg, _, _ := strings.Cut(page.Path, "/")
 		if !seen[seg] {
 			seen[seg] = true
 			prefixes = append(prefixes, seg)
@@ -200,7 +200,7 @@ func setCacheHeaders(w http.ResponseWriter, path string) {
 // (q-values and preference order are not considered).
 func acceptsHTML(r *http.Request) bool {
 	accept := r.Header.Get("Accept")
-	for _, part := range strings.Split(accept, ",") {
+	for part := range strings.SplitSeq(accept, ",") {
 		mediaType := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
 		if mediaType == "text/html" || mediaType == "*/*" {
 			return true

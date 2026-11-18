@@ -13,9 +13,9 @@ import (
 
 // SetupEvent is the JSON envelope pushed to WebSocket clients.
 type SetupEvent struct {
-	Type       string      `json:"type"`
-	AuthMethod interface{} `json:"auth_method,omitempty"`
-	Error      string      `json:"error,omitempty"`
+	Type       string `json:"type"`
+	AuthMethod any    `json:"auth_method,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // SetupHub broadcasts setup lifecycle events to connected WebSocket

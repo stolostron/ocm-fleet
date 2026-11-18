@@ -233,8 +233,8 @@ test("project lint is read-only and propagates findings", async (t) => {
   assert.equal(await readFile(path, "utf8"), source);
 });
 
-test("fmt leaves broader fixes for fix and ignores generated files", async (t) => {
-  const { root, task, tasks } = await fixture(t);
+test("workspace fix applies broader edits before checks and preserves generated files", async (t) => {
+  const { root, task, tasks } = await fixture(t, { workspaceChecks: true });
   const path = join(root, "client/cli/src/example.ts");
   await writeFile(path, "export let value='hello'\n");
   const styles = join(root, "client/cli/src/example.css");
@@ -246,13 +246,16 @@ test("fmt leaves broader fixes for fix and ignores generated files", async (t) =
   assert.match(await readFile(path, "utf8"), /export let value = "hello";/);
   assert.match(await readFile(styles, "utf8"), /#ffffff/);
   await assert.rejects(tasks("lint,lint:css", ["cli"]));
-  await task("fix", "cli");
+  await task("fix");
   assert.match(await readFile(path, "utf8"), /export const value = "hello";/);
   assert.match(await readFile(styles, "utf8"), /#fff;/);
   assert.equal(
     await readFile(generated, "utf8"),
     "export let value='generated'\n",
   );
+  for (const marker of ["tested", "component-tested", "typechecked"]) {
+    assert.equal(await readFile(join(root, marker), "utf8"), "passed");
+  }
 });
 
 test("formatter parse failures and unfixable lint findings remain failures", async (t) => {
