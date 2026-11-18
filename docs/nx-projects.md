@@ -71,6 +71,10 @@ provide Buf `fmt`/`lint` commands and a no-op `fix:lint`, as in the example.
 | `check`  | Read-only lint, formatting, normal tests, component tests, and type checks that the project provides. CI uses this. |
 | `lint`   | Report findings without editing source. Go and Buf also check formatting here.                                      |
 
+Run `fix` before staging a commit and review its edits. It runs the same checks
+as `verify` after applying fixes. Use `verify` when you only want formatting and
+checks, or `check` when the source must stay untouched.
+
 Leave common commands and ordering in `nx.json`. Source-rewriting targets and
 `verify` must not be cached. Custom rewrites must also refresh the file hashes.
 The [pre-commit hook](precommit.md) uses workspace `lint`, `fmt`, and `check` in a
@@ -109,7 +113,7 @@ values. Declare build outputs so cache restoration can recreate them.
 
 ```bash
 npx nx run ocm-fleet:lint:nx-projects
-npx nx run <project>:verify
+npx nx run <project>:fix
 npx nx run ocm-fleet:generate-agents
 ```
 

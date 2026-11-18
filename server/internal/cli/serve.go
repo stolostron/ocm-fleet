@@ -176,7 +176,7 @@ func parseLevelOverrides(spec string) (map[slogutil.ComponentName]slog.Level, er
 		return nil, nil
 	}
 	overrides := make(map[slogutil.ComponentName]slog.Level)
-	for _, entry := range strings.Split(spec, ",") {
+	for entry := range strings.SplitSeq(spec, ",") {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
 			continue

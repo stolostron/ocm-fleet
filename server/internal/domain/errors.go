@@ -74,8 +74,7 @@ func TerminalError(err error) error {
 // (for errors that lost type information through serialization, e.g.
 // durable workflow engine activity errors).
 func IsTerminal(err error) bool {
-	var t *terminalError
-	if errors.As(err, &t) {
+	if _, ok := errors.AsType[*terminalError](err); ok {
 		return true
 	}
 	return err != nil && strings.Contains(err.Error(), terminalPrefix)

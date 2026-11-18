@@ -18,7 +18,7 @@ needed, then runs `ocm-fleet:check` against the exact proposed commit.
   their unstaged edits.
 - Failed checks leave source and staging unchanged. Existing unstaged and
   untracked files stay in place throughout; there is no stash to restore.
-- If a check fails, run `npx nx run ocm-fleet:verify`, review its changes, and stage
+- If a check fails, run `npx nx run ocm-fleet:fix`, review its changes, and stage
   the intended changes before retrying. Nx prints paths to detailed failure logs.
 
 The adapter reuses installed external npm dependencies and redirects workspace
@@ -28,7 +28,7 @@ and generated outputs belong to the private checkout. This is isolation from
 ordinary unstaged source, not a security sandbox for running untrusted tasks.
 
 Nx's default task cache and database are shared between linked worktrees. Running
-`verify` before committing warms the expensive checks when their staged inputs
+`fix` before committing warms the expensive checks when their staged inputs
 match. A warm read-only lint pass skips formatting entirely. Snapshot creation,
 graph setup and deliberately uncached policy checks still run; differences between
 staged and unstaged inputs correctly cause cache misses. Custom cache-directory

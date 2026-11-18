@@ -6,8 +6,8 @@ This is the monorepo for OCM Fleet, an experimental Open Cluster Management vari
 
 - Run workspace tasks (build, test, lint, proto, image, infrastructure) through the repository's Nx CLI: `npx nx`. Deployment scripts provide platform-specific checks.
 - Prefer `NX_DEFAULT_OUTPUT_STYLE=summary npx nx ...` to limit output, including from nested Nx invocations. Check the exit status and summary; on failure, inspect the reported log selectively, following nested log paths as needed. Successful task output is suppressed. Use `--outputStyle=static` when inline output is needed.
-- Iterate with the relevant test target; finish with `npx nx run <project>:verify` (format/import fixes, lint, and available tests/type checks). Use `npx nx run ocm-fleet:verify` across projects; Go-only tasks retain the `:go` suffix. Integration and end-to-end suites stay explicit.
-- Broader linter fixes are opt-in: `npx nx run <project>:fix`; review the diff.
+- Iterate with the relevant test target. Before staging a commit, run `npx nx run <project>:fix` for each affected project. Use `npx nx run ocm-fleet:fix` for workspace changes or `npx nx run ocm-fleet:fix:go` across Go modules.
+- Review the resulting diff before staging. `fix` formats, applies supported linter fixes, and runs the same checks as `verify`. Use `verify` when you want formatting and checks without broader rewrites, or `check` when source must stay untouched. Run integration and end-to-end suites explicitly when needed.
 - For new projects or quality targets, follow [the Nx project setup guide](docs/nx-projects.md); `ocm-fleet:lint:nx-projects` checks participation and shared task policy.
 
 ## Understanding the domain

@@ -249,7 +249,7 @@ func isWebSocket(r *http.Request) bool {
 		return false
 	}
 	for _, v := range r.Header.Values("Connection") {
-		for _, part := range strings.Split(v, ",") {
+		for part := range strings.SplitSeq(v, ",") {
 			if strings.EqualFold(strings.TrimSpace(part), "upgrade") {
 				return true
 			}

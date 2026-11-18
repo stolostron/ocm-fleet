@@ -11,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 
 	"github.com/stolostron/ocm-fleet/server/internal/addon/kubernetes"
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
@@ -484,7 +483,7 @@ func TestObjectObservation(t *testing.T) {
 			Kind:       "ReplicaSet",
 			Name:       "nginx-rs",
 			UID:        types.UID("rs-uid"),
-			Controller: ptr.To(true),
+			Controller: new(true),
 		}})
 		return obj
 	}
@@ -570,7 +569,7 @@ func TestObjectObservation(t *testing.T) {
 
 	t.Run("DeletionTimestampIsIncludedWhenSet", func(t *testing.T) {
 		obj := newObj()
-		obj.SetDeletionTimestamp(ptr.To(metav1.NewTime(time.Date(2026, 7, 8, 0, 0, 0, 0, time.UTC))))
+		obj.SetDeletionTimestamp(new(metav1.NewTime(time.Date(2026, 7, 8, 0, 0, 0, 0, time.UTC))))
 
 		raw := kubernetes.ObjectObservation(id, obj, nil)
 

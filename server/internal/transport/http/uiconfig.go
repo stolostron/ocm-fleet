@@ -47,8 +47,8 @@ type pluginManifest struct {
 }
 
 type extension struct {
-	Type       string                 `json:"type"`
-	Properties map[string]interface{} `json:"properties"`
+	Type       string         `json:"type"`
+	Properties map[string]any `json:"properties"`
 }
 
 type pluginEntry struct {
@@ -229,7 +229,7 @@ func handleUserConfig(opts UIConfigOptions) http.HandlerFunc {
 		pages := generatePluginPages(registry)
 		navLayout := generateNavLayout(registry, pages)
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"navLayout": navLayout,
 		}
 
@@ -240,8 +240,8 @@ func handleUserConfig(opts UIConfigOptions) http.HandlerFunc {
 
 // buildScalprumConfig maps the plugin registry into the scalprum config object
 // advertised on /api/ui/config, with asset paths under UIPathPrefix.
-func buildScalprumConfig(registry pluginRegistry) map[string]interface{} {
-	config := make(map[string]interface{})
+func buildScalprumConfig(registry pluginRegistry) map[string]any {
+	config := make(map[string]any)
 
 	for name, entry := range registry.Plugins {
 		entry = prefixPluginEntry(entry)
@@ -307,7 +307,7 @@ func generatePluginPages(registry pluginRegistry) []pluginPage {
 			}
 
 			var moduleName string
-			if comp, ok := ext.Properties["component"].(map[string]interface{}); ok {
+			if comp, ok := ext.Properties["component"].(map[string]any); ok {
 				if codeRef, ok := comp["$codeRef"].(string); ok {
 					parts := strings.SplitN(codeRef, ".", 2)
 					moduleName = parts[0]

@@ -161,9 +161,9 @@ func BuildExtensionServiceDescriptors(cfg *ResourceTypeConfig, specDesc protoref
 
 	pkgPath := strings.ReplaceAll(pkg, ".", "/")
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:        proto.String(fmt.Sprintf("dynamic/%s/%s_service.proto", pkgPath, lower)),
-		Package:     proto.String(pkg),
-		Syntax:      proto.String("proto3"),
+		Name:        new(fmt.Sprintf("dynamic/%s/%s_service.proto", pkgPath, lower)),
+		Package:     new(pkg),
+		Syntax:      new("proto3"),
 		Dependency:  uniqueStrings(deps),
 		MessageType: messages,
 		Service: []*descriptorpb.ServiceDescriptorProto{
@@ -200,7 +200,7 @@ func BuildExtensionServiceDescriptors(cfg *ResourceTypeConfig, specDesc protoref
 
 func buildResourceMessage(cfg *ResourceTypeConfig, singular, pkg, resourceFQN, specFullName, resourceStateEnumName string) *descriptorpb.DescriptorProto {
 	msg := &descriptorpb.DescriptorProto{
-		Name: proto.String(singular),
+		Name: new(singular),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("name", 1),
 			dynamicapi.StringField("uid", 2),
@@ -267,7 +267,7 @@ func buildResourceMessage(cfg *ResourceTypeConfig, singular, pkg, resourceFQN, s
 // multiple inventory schemas in one ProtoPackage do not collide.
 func buildConditionMessage() *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String("Condition"),
+		Name: new("Condition"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("status", 1),
 			dynamicapi.StringField("reason", 2),
@@ -279,7 +279,7 @@ func buildConditionMessage() *descriptorpb.DescriptorProto {
 
 func buildCreateRequest(singular, lower, resourceFQN string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String("Create" + singular + "Request"),
+		Name: new("Create" + singular + "Request"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField(lower+"_id", 1),
 			dynamicapi.MessageField(lower, 2, resourceFQN),
@@ -291,7 +291,7 @@ func buildCreateRequest(singular, lower, resourceFQN string) *descriptorpb.Descr
 
 func buildGetRequest(singular string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String("Get" + singular + "Request"),
+		Name: new("Get" + singular + "Request"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("name", 1),
 		},
@@ -300,7 +300,7 @@ func buildGetRequest(singular string) *descriptorpb.DescriptorProto {
 
 func buildListRequest(plural string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String("List" + plural + "Request"),
+		Name: new("List" + plural + "Request"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.Int32Field("page_size", 1),
 			dynamicapi.StringField("page_token", 2),
@@ -310,7 +310,7 @@ func buildListRequest(plural string) *descriptorpb.DescriptorProto {
 
 func buildListResponse(singular, plural, collectionID, resourceFQN string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String("List" + plural + "Response"),
+		Name: new("List" + plural + "Response"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.RepeatedMessageField(collectionID, 1, resourceFQN),
 			dynamicapi.StringField("next_page_token", 2),
@@ -320,7 +320,7 @@ func buildListResponse(singular, plural, collectionID, resourceFQN string) *desc
 
 func buildDeleteRequest(singular string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String("Delete" + singular + "Request"),
+		Name: new("Delete" + singular + "Request"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("name", 1),
 		},
@@ -329,7 +329,7 @@ func buildDeleteRequest(singular string) *descriptorpb.DescriptorProto {
 
 func buildResumeRequest(singular string) *descriptorpb.DescriptorProto {
 	return &descriptorpb.DescriptorProto{
-		Name: proto.String("Resume" + singular + "Request"),
+		Name: new("Resume" + singular + "Request"),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			dynamicapi.StringField("name", 1),
 			dynamicapi.BytesField("user_signature", 2),
@@ -345,39 +345,39 @@ func buildService(singular, plural, pkg string, hasManagement bool) *descriptorp
 	methods := make([]*descriptorpb.MethodDescriptorProto, 0, 5)
 	if hasManagement {
 		methods = append(methods, &descriptorpb.MethodDescriptorProto{
-			Name:       proto.String("Create" + singular),
-			InputType:  proto.String(fqnPrefix + "Create" + singular + "Request"),
-			OutputType: proto.String(fqnPrefix + singular),
+			Name:       new("Create" + singular),
+			InputType:  new(fqnPrefix + "Create" + singular + "Request"),
+			OutputType: new(fqnPrefix + singular),
 		})
 	}
 	methods = append(methods,
 		&descriptorpb.MethodDescriptorProto{
-			Name:       proto.String("Get" + singular),
-			InputType:  proto.String(fqnPrefix + "Get" + singular + "Request"),
-			OutputType: proto.String(fqnPrefix + singular),
+			Name:       new("Get" + singular),
+			InputType:  new(fqnPrefix + "Get" + singular + "Request"),
+			OutputType: new(fqnPrefix + singular),
 		},
 		&descriptorpb.MethodDescriptorProto{
-			Name:       proto.String("List" + plural),
-			InputType:  proto.String(fqnPrefix + "List" + plural + "Request"),
-			OutputType: proto.String(fqnPrefix + "List" + plural + "Response"),
+			Name:       new("List" + plural),
+			InputType:  new(fqnPrefix + "List" + plural + "Request"),
+			OutputType: new(fqnPrefix + "List" + plural + "Response"),
 		},
 	)
 	if hasManagement {
 		methods = append(methods,
 			&descriptorpb.MethodDescriptorProto{
-				Name:       proto.String("Delete" + singular),
-				InputType:  proto.String(fqnPrefix + "Delete" + singular + "Request"),
-				OutputType: proto.String(fqnPrefix + singular),
+				Name:       new("Delete" + singular),
+				InputType:  new(fqnPrefix + "Delete" + singular + "Request"),
+				OutputType: new(fqnPrefix + singular),
 			},
 			&descriptorpb.MethodDescriptorProto{
-				Name:       proto.String("Resume" + singular),
-				InputType:  proto.String(fqnPrefix + "Resume" + singular + "Request"),
-				OutputType: proto.String(fqnPrefix + singular),
+				Name:       new("Resume" + singular),
+				InputType:  new(fqnPrefix + "Resume" + singular + "Request"),
+				OutputType: new(fqnPrefix + singular),
 			},
 		)
 	}
 	return &descriptorpb.ServiceDescriptorProto{
-		Name:   proto.String(singular + "Service"),
+		Name:   new(singular + "Service"),
 		Method: methods,
 	}
 }
@@ -386,13 +386,13 @@ func buildService(singular, plural, pkg string, hasManagement bool) *descriptorp
 
 func buildResourceStateEnum(name string) *descriptorpb.EnumDescriptorProto {
 	return &descriptorpb.EnumDescriptorProto{
-		Name: proto.String(name),
+		Name: new(name),
 		Value: []*descriptorpb.EnumValueDescriptorProto{
-			{Name: proto.String("STATE_UNSPECIFIED"), Number: proto.Int32(0)},
-			{Name: proto.String("CREATING"), Number: proto.Int32(1)},
-			{Name: proto.String("ACTIVE"), Number: proto.Int32(2)},
-			{Name: proto.String("DELETING"), Number: proto.Int32(3)},
-			{Name: proto.String("FAILED"), Number: proto.Int32(4)},
+			{Name: new("STATE_UNSPECIFIED"), Number: proto.Int32(0)},
+			{Name: new("CREATING"), Number: proto.Int32(1)},
+			{Name: new("ACTIVE"), Number: proto.Int32(2)},
+			{Name: new("DELETING"), Number: proto.Int32(3)},
+			{Name: new("FAILED"), Number: proto.Int32(4)},
 		},
 	}
 }

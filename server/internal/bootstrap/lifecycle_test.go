@@ -731,7 +731,7 @@ func TestLifecycle_CloseIdempotentAndConcurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	errs := make([]error, 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

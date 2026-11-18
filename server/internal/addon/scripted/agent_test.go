@@ -1187,7 +1187,7 @@ func TestAgent_DelayRecorder_BoundedNormalLatency(t *testing.T) {
 		Raw:          raw,
 	}}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		gen := domain.Generation(i + 1)
 		deliveryID := domain.DeliveryID(fmt.Sprintf("test-%d", i))
 		err := agent.Deliver(

@@ -249,11 +249,11 @@ func (v *Verifier) Verify(ctx context.Context, config domain.OIDCConfig, rawToke
 // The jwx library deserializes JSON arrays as []interface{}, so a direct
 // Get into *[]string fails. This helper converts element-by-element.
 func getStringSliceClaim(tok jwt.Token, key string) []string {
-	var raw interface{}
+	var raw any
 	if err := tok.Get(key, &raw); err != nil {
 		return nil
 	}
-	arr, ok := raw.([]interface{})
+	arr, ok := raw.([]any)
 	if !ok {
 		return nil
 	}

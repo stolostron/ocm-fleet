@@ -82,8 +82,8 @@ func SetMapStringString(msg *dynamicpb.Message, field protoreflect.FieldDescript
 // StringField builds a proto3 string field descriptor.
 func StringField(name string, number int32) *descriptorpb.FieldDescriptorProto {
 	return &descriptorpb.FieldDescriptorProto{
-		Name:   proto.String(name),
-		Number: proto.Int32(number),
+		Name:   new(name),
+		Number: new(number),
 		Type:   descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
 		Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 	}
@@ -92,8 +92,8 @@ func StringField(name string, number int32) *descriptorpb.FieldDescriptorProto {
 // Int32Field builds a proto3 int32 field descriptor.
 func Int32Field(name string, number int32) *descriptorpb.FieldDescriptorProto {
 	return &descriptorpb.FieldDescriptorProto{
-		Name:   proto.String(name),
-		Number: proto.Int32(number),
+		Name:   new(name),
+		Number: new(number),
 		Type:   descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(),
 		Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 	}
@@ -102,8 +102,8 @@ func Int32Field(name string, number int32) *descriptorpb.FieldDescriptorProto {
 // Int64Field builds a proto3 int64 field descriptor.
 func Int64Field(name string, number int32) *descriptorpb.FieldDescriptorProto {
 	return &descriptorpb.FieldDescriptorProto{
-		Name:   proto.String(name),
-		Number: proto.Int32(number),
+		Name:   new(name),
+		Number: new(number),
 		Type:   descriptorpb.FieldDescriptorProto_TYPE_INT64.Enum(),
 		Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 	}
@@ -112,8 +112,8 @@ func Int64Field(name string, number int32) *descriptorpb.FieldDescriptorProto {
 // BoolField builds a proto3 bool field descriptor.
 func BoolField(name string, number int32) *descriptorpb.FieldDescriptorProto {
 	return &descriptorpb.FieldDescriptorProto{
-		Name:   proto.String(name),
-		Number: proto.Int32(number),
+		Name:   new(name),
+		Number: new(number),
 		Type:   descriptorpb.FieldDescriptorProto_TYPE_BOOL.Enum(),
 		Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 	}
@@ -122,8 +122,8 @@ func BoolField(name string, number int32) *descriptorpb.FieldDescriptorProto {
 // BytesField builds a proto3 bytes field descriptor.
 func BytesField(name string, number int32) *descriptorpb.FieldDescriptorProto {
 	return &descriptorpb.FieldDescriptorProto{
-		Name:   proto.String(name),
-		Number: proto.Int32(number),
+		Name:   new(name),
+		Number: new(number),
 		Type:   descriptorpb.FieldDescriptorProto_TYPE_BYTES.Enum(),
 		Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 	}
@@ -136,10 +136,10 @@ func EnumField(name string, number int32, typeName string) *descriptorpb.FieldDe
 		fqn = "." + fqn
 	}
 	return &descriptorpb.FieldDescriptorProto{
-		Name:     proto.String(name),
-		Number:   proto.Int32(number),
+		Name:     new(name),
+		Number:   new(number),
 		Type:     descriptorpb.FieldDescriptorProto_TYPE_ENUM.Enum(),
-		TypeName: proto.String(fqn),
+		TypeName: new(fqn),
 		Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 	}
 }
@@ -151,10 +151,10 @@ func MessageField(name string, number int32, typeName string) *descriptorpb.Fiel
 		fqn = "." + fqn
 	}
 	return &descriptorpb.FieldDescriptorProto{
-		Name:     proto.String(name),
-		Number:   proto.Int32(number),
+		Name:     new(name),
+		Number:   new(number),
 		Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
-		TypeName: proto.String(fqn),
+		TypeName: new(fqn),
 		Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 	}
 }
@@ -166,10 +166,10 @@ func RepeatedMessageField(name string, number int32, typeName string) *descripto
 		fqn = "." + fqn
 	}
 	return &descriptorpb.FieldDescriptorProto{
-		Name:     proto.String(name),
-		Number:   proto.Int32(number),
+		Name:     new(name),
+		Number:   new(number),
 		Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
-		TypeName: proto.String(fqn),
+		TypeName: new(fqn),
 		Label:    descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(),
 	}
 }
@@ -205,7 +205,7 @@ func MapField(
 ) MapFieldParts {
 	entryName := mapEntryName(name)
 	valueField := &descriptorpb.FieldDescriptorProto{
-		Name:   proto.String("value"),
+		Name:   new("value"),
 		Number: proto.Int32(2),
 		Type:   valueType.Enum(),
 		Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
@@ -219,14 +219,14 @@ func MapField(
 		if !strings.HasPrefix(fqn, ".") {
 			fqn = "." + fqn
 		}
-		valueField.TypeName = proto.String(fqn)
+		valueField.TypeName = new(fqn)
 	}
 
 	entry := &descriptorpb.DescriptorProto{
-		Name: proto.String(entryName),
+		Name: new(entryName),
 		Field: []*descriptorpb.FieldDescriptorProto{
 			{
-				Name:   proto.String("key"),
+				Name:   new("key"),
 				Number: proto.Int32(1),
 				Type:   keyType.Enum(),
 				Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
@@ -234,15 +234,15 @@ func MapField(
 			valueField,
 		},
 		Options: &descriptorpb.MessageOptions{
-			MapEntry: proto.Bool(true),
+			MapEntry: new(true),
 		},
 	}
 
 	field := &descriptorpb.FieldDescriptorProto{
-		Name:     proto.String(name),
-		Number:   proto.Int32(number),
+		Name:     new(name),
+		Number:   new(number),
 		Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
-		TypeName: proto.String("." + parentFQN + "." + entryName),
+		TypeName: new("." + parentFQN + "." + entryName),
 		Label:    descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(),
 	}
 	return MapFieldParts{Field: field, Entry: entry}

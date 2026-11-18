@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -182,8 +183,8 @@ func computePodStatus(r *unstructured.Unstructured, fields map[string]any) {
 
 	// Check container statuses (reverse order to prioritize the last failing container)
 	containerStatuses, _, _ := unstructured.NestedSlice(r.Object, "status", "containerStatuses")
-	for i := len(containerStatuses) - 1; i >= 0; i-- {
-		cs, ok := containerStatuses[i].(map[string]any)
+	for _, containerStatus := range slices.Backward(containerStatuses) {
+		cs, ok := containerStatus.(map[string]any)
 		if !ok {
 			continue
 		}

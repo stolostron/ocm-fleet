@@ -562,7 +562,7 @@ func TestInventoryReportService_ReplaceBatch_LargeMixedBatchResolvesEveryReport(
 
 	names := make([]domain.ResourceName, total)
 	aliasFor := make(map[int]domain.Alias)
-	for i := 0; i < total; i++ {
+	for i := range total {
 		names[i] = domain.ResourceName(fmt.Sprintf("clusters/mixed-%03d", i))
 	}
 
@@ -596,7 +596,7 @@ func TestInventoryReportService_ReplaceBatch_LargeMixedBatchResolvesEveryReport(
 	// resolve purely by alias; everything else resolves by name,
 	// whether or not it already exists.
 	reports := make([]application.InventoryReplacementInput, total)
-	for i := 0; i < total; i++ {
+	for i := range total {
 		observation := rawMsg(fmt.Sprintf(`{"v":%d}`, i))
 		if alias, ok := aliasFor[i]; ok {
 			reports[i] = application.InventoryReplacementInput{
@@ -619,7 +619,7 @@ func TestInventoryReportService_ReplaceBatch_LargeMixedBatchResolvesEveryReport(
 		t.Fatalf("ReplaceBatch: %v", err)
 	}
 
-	for i := 0; i < total; i++ {
+	for i := range total {
 		er := getExtensionResource(t, store, names[i])
 		want := fmt.Sprintf(`{"v":%d}`, i)
 		if er.Inventory().Observation() == nil || string(*er.Inventory().Observation()) != want {

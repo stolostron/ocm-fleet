@@ -113,7 +113,7 @@ var qrbFixedTime = time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 // (,"r00",…,"rN") between the primary role and qrbRolesLateValue.
 var qrbRolesFillerMiddle = func() string {
 	var b strings.Builder
-	for i := 0; i < qrbRolesListLen-2; i++ {
+	for i := range qrbRolesListLen - 2 {
 		fmt.Fprintf(&b, `,"r%02d"`, i)
 	}
 	return b.String()
@@ -153,7 +153,7 @@ func seedQRBPlatformOnly(t *testing.T, db *sql.DB) {
 		resourceIDs := make([]string, n)
 		labels := make([]string, n)
 		createdAts := make([]time.Time, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			idx := start + i
 			resourceIDs[i] = fmt.Sprintf("asset-%08d", idx)
 			env := "prod"
@@ -195,7 +195,7 @@ func seedQRBClusters(t *testing.T, db *sql.DB) {
 		specs := make([]string, n)
 		fulfillmentIDs := make([]string, n)
 		createdAts := make([]time.Time, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			idx := start + i
 			uids[i] = domain.NewExtensionResourceUID().String()
 			resourceIDs[i] = fmt.Sprintf("cluster-%08d", idx)
@@ -262,7 +262,7 @@ func seedQRBNodes(t *testing.T, db *sql.DB) {
 		observations := make([]string, n)
 		conditions := make([]string, n)
 		observedAts := make([]time.Time, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			idx := start + i
 			uids[i] = domain.NewExtensionResourceUID().String()
 			resourceIDs[i] = fmt.Sprintf("node-%08d", idx)
@@ -325,7 +325,7 @@ func seedQRBAliasesAndRelationships(t *testing.T, db *sql.DB) {
 	values := make([]string, n)
 	targets := make([]string, n)
 	createdAts := make([]time.Time, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		resourceIDs[i] = fmt.Sprintf("asset-%08d", i)
 		values[i] = fmt.Sprintf("ext-%08d", i)
 		targets[i] = fmt.Sprintf("asset-%08d", (i+1)%n)
@@ -589,7 +589,7 @@ func timeQueryResources(t *testing.T, db *sql.DB, scenario string, req domain.Qu
 		return page, time.Since(start), err
 	}
 
-	for i := 0; i < qrbWarmupRounds; i++ {
+	for i := range qrbWarmupRounds {
 		if _, _, err := runOnce(); err != nil {
 			t.Fatalf("%s warmup %d: %v", scenario, i, err)
 		}
@@ -597,7 +597,7 @@ func timeQueryResources(t *testing.T, db *sql.DB, scenario string, req domain.Qu
 
 	durs := make([]time.Duration, qrbRounds)
 	var lastPage domain.QueryResourcesPage
-	for round := 0; round < qrbRounds; round++ {
+	for round := range qrbRounds {
 		page, d, err := runOnce()
 		if err != nil {
 			t.Fatalf("%s round %d: %v", scenario, round, err)

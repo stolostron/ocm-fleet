@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
@@ -81,21 +83,22 @@ func (r *DeliveryRepo) ListActive(ctx context.Context, targetIDs []domain.Target
 		string(domain.DeliveryStateProgressing),
 	}
 
-	q := `SELECT id, fulfillment_id, target_id, manifests, generation, state, operation, created_at, updated_at
-	      FROM delivery_records WHERE state IN ($1, $2, $3)`
+	var q strings.Builder
+	q.WriteString(`SELECT id, fulfillment_id, target_id, manifests, generation, state, operation, created_at, updated_at
+	      FROM delivery_records WHERE state IN ($1, $2, $3)`)
 	if len(targetIDs) > 0 {
-		q += ` AND target_id IN (`
+		q.WriteString(` AND target_id IN (`)
 		for i, tid := range targetIDs {
 			if i > 0 {
-				q += `, `
+				q.WriteString(`, `)
 			}
-			q += fmt.Sprintf(`$%d`, len(args)+1)
+			q.WriteString("$" + strconv.Itoa(len(args)+1))
 			args = append(args, string(tid))
 		}
-		q += `)`
+		q.WriteString(`)`)
 	}
 
-	rows, err := r.DB.QueryContext(ctx, q, args...)
+	rows, err := r.DB.QueryContext(ctx, q.String(), args...)
 	if err != nil {
 		return nil, fmt.Errorf("list active deliveries: %w", err)
 	}

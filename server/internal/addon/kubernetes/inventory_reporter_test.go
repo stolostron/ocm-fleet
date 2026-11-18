@@ -203,11 +203,11 @@ func TestInventoryReporter_DTOsHaveNoEdgeFields(t *testing.T) {
 		kubernetes.InventoryObjectReport{},
 	} {
 		rt := reflect.TypeOf(typ)
-		for i := 0; i < rt.NumField(); i++ {
-			name := rt.Field(i).Name
+		for field := range rt.Fields() {
+			name := field.Name
 			switch name {
 			case "Adds", "Deletes", "Edges", "EdgeAdds", "EdgeDeletes", "EdgeDelta":
-				if rt == reflect.TypeOf(kubernetes.InventoryDeltaReport{}) && name == "Deletes" {
+				if rt == reflect.TypeFor[kubernetes.InventoryDeltaReport]() && name == "Deletes" {
 					continue
 				}
 				t.Errorf("%s has edge-related field %q", rt.Name(), name)

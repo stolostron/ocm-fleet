@@ -316,7 +316,7 @@ func TestVerifier_RegisterJWKSRecoversAfterInitialFetchFailure(t *testing.T) {
 	jwksURI := domain.EndpointURL(proxy.URL + "/jwks")
 	cfg.JWKSURI = jwksURI
 	up.Store(false)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		downCtx, downCancel := context.WithTimeout(context.Background(), time.Second)
 		err = verifier.RegisterJWKS(downCtx, jwksURI)
 		downCancel()

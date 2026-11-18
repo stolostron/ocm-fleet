@@ -23,27 +23,27 @@ func TestGeneratePluginPages_GroupedRoutePath(t *testing.T) {
 					Extensions: []extension{
 						{
 							Type: "ocm-fleet.route-group",
-							Properties: map[string]interface{}{
+							Properties: map[string]any{
 								"id":    "settings",
 								"label": "Settings",
 							},
 						},
 						{
 							Type: "ocm-fleet.route",
-							Properties: map[string]interface{}{
+							Properties: map[string]any{
 								"id":        "navigation",
 								"label":     "Navigation",
 								"group":     "settings",
-								"component": map[string]interface{}{"$codeRef": "NavPage.default"},
+								"component": map[string]any{"$codeRef": "NavPage.default"},
 							},
 						},
 						{
 							Type: "ocm-fleet.route",
-							Properties: map[string]interface{}{
+							Properties: map[string]any{
 								"id":        "auth",
 								"label":     "Authentication",
 								"group":     "settings",
-								"component": map[string]interface{}{"$codeRef": "AuthPage.default"},
+								"component": map[string]any{"$codeRef": "AuthPage.default"},
 							},
 						},
 					},
@@ -90,10 +90,10 @@ func TestGeneratePluginPages_UngroupedRoutePath(t *testing.T) {
 					Extensions: []extension{
 						{
 							Type: "ocm-fleet.route",
-							Properties: map[string]interface{}{
+							Properties: map[string]any{
 								"id":        "clusters",
 								"label":     "Clusters",
-								"component": map[string]interface{}{"$codeRef": "ClustersPage.default"},
+								"component": map[string]any{"$codeRef": "ClustersPage.default"},
 							},
 						},
 					},
@@ -133,27 +133,27 @@ func TestGenerateNavLayout_NestedGroups(t *testing.T) {
 					Extensions: []extension{
 						{
 							Type: "ocm-fleet.route-group",
-							Properties: map[string]interface{}{
+							Properties: map[string]any{
 								"id":    "settings",
 								"label": "Settings",
 							},
 						},
 						{
 							Type: "ocm-fleet.route",
-							Properties: map[string]interface{}{
+							Properties: map[string]any{
 								"id":        "navigation",
 								"label":     "Navigation",
 								"group":     "settings",
-								"component": map[string]interface{}{"$codeRef": "NavPage.default"},
+								"component": map[string]any{"$codeRef": "NavPage.default"},
 							},
 						},
 						{
 							Type: "ocm-fleet.route",
-							Properties: map[string]interface{}{
+							Properties: map[string]any{
 								"id":        "auth",
 								"label":     "Authentication",
 								"group":     "settings",
-								"component": map[string]interface{}{"$codeRef": "AuthPage.default"},
+								"component": map[string]any{"$codeRef": "AuthPage.default"},
 							},
 						},
 					},
@@ -167,10 +167,10 @@ func TestGenerateNavLayout_NestedGroups(t *testing.T) {
 					Extensions: []extension{
 						{
 							Type: "ocm-fleet.route",
-							Properties: map[string]interface{}{
+							Properties: map[string]any{
 								"id":        "clusters",
 								"label":     "Clusters",
-								"component": map[string]interface{}{"$codeRef": "ClustersPage.default"},
+								"component": map[string]any{"$codeRef": "ClustersPage.default"},
 							},
 						},
 					},
@@ -236,10 +236,10 @@ func TestGenerateNavLayout_NoGroups(t *testing.T) {
 					Extensions: []extension{
 						{
 							Type: "ocm-fleet.route",
-							Properties: map[string]interface{}{
+							Properties: map[string]any{
 								"id":        "clusters",
 								"label":     "Clusters",
-								"component": map[string]interface{}{"$codeRef": "ClustersPage.default"},
+								"component": map[string]any{"$codeRef": "ClustersPage.default"},
 							},
 						},
 					},
