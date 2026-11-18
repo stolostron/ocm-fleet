@@ -7,8 +7,16 @@ The Go, Buf, browser, and container prerequisites are the same as for workspace
 
 The hook checks a private linked worktree containing the **Git index**, including
 partially staged files. `ocm-fleet:check` runs the full workspace check, including
-lint. If the check fails, `ocm-fleet:lint` determines whether to try
-`ocm-fleet:fmt`. The hook reruns checks when formatting produces a safe candidate.
+lint. If the check fails, `ocm-fleet:lint` determines whether to try formatting.
+The hook reruns the full workspace check when formatting produces a safe candidate.
+
+For fully staged edits to `README.md` and Markdown under `docs/`, recovery runs
+`ocm-fleet:fmt:workspace`. For fully staged Go source in one Go module or
+JavaScript and TypeScript source under one project's `src/` directory, it can run
+that project's `fmt` target using project ownership from the staged Nx graph.
+Other changes, including shared configuration, tooling, and mixed-project edits,
+use `ocm-fleet:fmt`. The workspace target also handles cases where the staged
+graph is unavailable.
 
 - Fixes can be published only to originally staged, regular files whose working
   contents and permissions still match the staged version. Safe fixes update both

@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   closeSync,
@@ -35,7 +35,9 @@ import {
   sep,
 } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isDeepStrictEqual } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
+
+const exec = promisify(execFile);
 
 /**
  * Verify the effective Git index in a disposable linked worktree. Source edits
@@ -169,7 +171,13 @@ export async function verifyCommit({
       log(
         "pre-commit: trying formatting and import fixes in the private checkout.",
       );
-      const formatted = await runTarget("fmt", snapshot, snapshotEnv, signal);
+      const formatted = await runTarget(
+        "fmt",
+        snapshot,
+        snapshotEnv,
+        signal,
+        eligible.size === staged.size ? [...staged] : undefined,
+      );
       const changed = changedSources(snapshot, snapshotEnv);
       const unsafe = changed.filter((path) => {
         const after = regularFile(snapshot, path);
@@ -282,18 +290,17 @@ export async function verifyCommit({
 }
 
 /** Run existing Nx policy; keep task definitions out of the hook adapter. */
-function runNx(target, cwd, env, signal) {
+async function runNx(target, cwd, env, signal, formatPaths) {
+  const task = formatPaths
+    ? await recoveryFormatter(cwd, env, signal, formatPaths)
+    : `ocm-fleet:${target}`;
   return new Promise((resolveResult, reject) => {
     const nxPackage = JSON.parse(
       readFileSync(join(cwd, "node_modules/nx/package.json"), "utf8"),
     );
     const child = spawn(
       process.execPath,
-      [
-        join(cwd, "node_modules/nx", nxPackage.bin.nx),
-        "run",
-        `ocm-fleet:${target}`,
-      ],
+      [join(cwd, "node_modules/nx", nxPackage.bin.nx), "run", task],
       { cwd, env, stdio: "inherit" },
     );
     const abort = () => child.kill("SIGTERM");
@@ -311,6 +318,75 @@ function runNx(target, cwd, env, signal) {
       else resolveResult(code === 0);
     });
   });
+}
+
+async function recoveryFormatter(cwd, env, signal, files) {
+  const workspace = "ocm-fleet:fmt";
+  if (
+    files.every(
+      (file) =>
+        file === "README.md" ||
+        (file.startsWith("docs/") && file.endsWith(".md")),
+    )
+  )
+    return "ocm-fleet:fmt:workspace";
+
+  const scriptSource = /\.(?:[cm]?[jt]s|[jt]sx)$/u;
+  // Shared tooling can change formatting in several projects. Limit project
+  // selection to ordinary source; use the workspace formatter for other files.
+  if (
+    files.some(
+      (file) =>
+        file.startsWith("tools/") ||
+        !(file.endsWith(".go") || scriptSource.test(file)),
+    )
+  )
+    return workspace;
+
+  let projects;
+  try {
+    // The check and lint passes already built a graph in this private checkout.
+    // Load it from that checkout so project ownership uses the staged config.
+    const { stdout } = await exec(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `import { readCachedProjectGraph } from "@nx/devkit";
+const projects = Object.values(readCachedProjectGraph().nodes).map(({ data }) => ({
+  name: data.name,
+  root: data.root,
+  tags: data.tags,
+  hasFormatter: Boolean(data.targets?.fmt),
+}));
+process.stdout.write(JSON.stringify(projects));`,
+      ],
+      { cwd, env, signal },
+    );
+    projects = JSON.parse(stdout);
+  } catch {
+    signal?.throwIfAborted();
+    return workspace;
+  }
+
+  const roots = projects
+    .filter(({ root }) => root !== ".")
+    .sort((a, b) => b.root.length - a.root.length);
+  const owner = (file) => roots.find(({ root }) => file.startsWith(`${root}/`));
+  const project = owner(files[0]);
+  if (!project?.hasFormatter) return workspace;
+
+  const go = project.tags?.includes("type:go-module");
+  const js = project.tags?.includes("type:js-project");
+  const withinProject = files.every(
+    (file) =>
+      owner(file) === project &&
+      ((go && file.endsWith(".go")) ||
+        (js &&
+          file.startsWith(`${project.root}/src/`) &&
+          scriptSource.test(file))),
+  );
+  return withinProject ? `${project.name}:fmt` : workspace;
 }
 
 /**

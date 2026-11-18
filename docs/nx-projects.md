@@ -74,7 +74,8 @@ Leave common commands and ordering in `nx.json`. Source-rewriting targets and
 `verify` must not be cached. Start a fresh Nx invocation for checks after source
 rewrites so the task graph uses the edited files.
 The [pre-commit hook](precommit.md) runs workspace `check` in a staged snapshot
-and uses `lint` and `fmt` for formatting recovery. Projects following this
+and uses `lint` to decide whether to try formatting. It reuses the existing
+workspace and project formatters for recovery, so projects following this
 lifecycle participate automatically.
 Keep `check` read-only and declare generated/build outputs for cache restoration.
 

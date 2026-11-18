@@ -336,6 +336,8 @@ test("a successful manual verify warms the hook cache and workspace imports stay
   );
   for (const path of ["app", "dependency"])
     await mkdir(join(f.root, path), { recursive: true });
+  await mkdir(join(f.root, "app/src"));
+  await mkdir(join(f.root, "docs"));
   await writeFile(
     join(f.root, "app/package.json"),
     JSON.stringify({
@@ -357,7 +359,8 @@ test("a successful manual verify warms the hook cache and workspace imports stay
     join(f.root, "dependency/value.mjs"),
     'export default "staged";\n',
   );
-  await writeFile(join(f.root, "app/source.mjs"), 'export default "ok";\n');
+  const source = "app/src/source.mjs";
+  await writeFile(join(f.root, source), 'export default "ok";\n');
   await writeFile(
     join(f.root, "app/test.mjs"),
     `import assert from "node:assert/strict";
@@ -392,9 +395,26 @@ assert.equal(value, "staged");
     },
   };
   await writeFile(join(f.root, "app/project.json"), JSON.stringify(project));
+  const formatterLog = ".formatters-ran";
+  await writeFile(
+    join(f.root, "dependency/format.mjs"),
+    `import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(join(f.root, formatterLog))}, "dependency\\n");
+`,
+  );
   await writeFile(
     join(f.root, "dependency/project.json"),
-    JSON.stringify({ name: "dependency", root: "dependency", targets: {} }),
+    JSON.stringify({
+      name: "dependency",
+      root: "dependency",
+      targets: {
+        fmt: {
+          executor: "nx:run-commands",
+          options: { command: "node dependency/format.mjs" },
+          cache: false,
+        },
+      },
+    }),
   );
   await writeFile(
     join(f.root, "eslint.config.mjs"),
@@ -402,7 +422,7 @@ assert.equal(value, "staged");
   );
   await writeFile(
     join(f.root, ".gitignore"),
-    "node_modules/\n.nx/\n**/.checks-ran\n",
+    "node_modules/\n.nx/\n**/.checks-ran\n.formatters-ran\n",
   );
   await cp(
     join(repository, ".prettierignore"),
@@ -485,6 +505,7 @@ assert.equal(value, "staged");
     maxBuffer: 4 * 1024 * 1024,
   });
   assert.equal(await f.read(".checks-ran"), "ran:staged\n");
+  assert.equal(await f.read(formatterLog), "dependency\n");
   await f.git("add", ".");
   await f.git("commit", "-qm", "formatted baseline");
   await f.stage("input.txt", "ready to commit\n");
@@ -502,27 +523,35 @@ assert.equal(value, "staged");
     join(f.root, "dependency/value.mjs"),
     'export default "unstaged";\n',
   );
-  const result = await exec("git", ["commit", "-m", "cached staged check"], {
-    cwd: f.root,
-    env,
-    maxBuffer: 4 * 1024 * 1024,
-  });
+  const commit = (...args) =>
+    exec("git", ["commit", ...args], {
+      cwd: f.root,
+      env,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+  const result = await commit("-m", "cached staged check");
   assert.match(result.stdout + result.stderr, /staged verification passed/);
   assert.equal(await f.read(".checks-ran"), "ran:staged\n");
+
+  await f.stage("docs/example.md", "#  Workspace docs\n");
+  await commit("-m", "format workspace docs");
+  assert.equal(
+    await f.git("show", "HEAD:docs/example.md"),
+    "# Workspace docs\n",
+  );
+  assert.equal(await f.read(formatterLog), "dependency\n");
+
   // Force a cache miss and exercise Git's actual temporary --only index while
   // fixing source. Unrelated staged work and unstaged dependency edits survive.
   await f.stage("notes.txt", "separate staged work\n");
-  await f.stage("app/source.mjs", "export default 'next'");
-  await exec(
-    "git",
-    ["commit", "--only", "app/source.mjs", "-m", "format selected source"],
-    { cwd: f.root, env, maxBuffer: 4 * 1024 * 1024 },
-  );
-  assert.equal(await f.read("app/source.mjs"), 'export default "next";\n');
+  await f.stage(source, "export default 'next'");
+  await commit("--only", source, "-m", "format selected source");
+  assert.equal(await f.read(source), 'export default "next";\n');
   assert.equal(
-    await f.git("show", "HEAD:app/source.mjs"),
+    await f.git("show", `HEAD:${source}`),
     'export default "next";\n',
   );
+  assert.equal(await f.read(formatterLog), "dependency\n");
   assert.equal(await f.index("notes.txt"), "separate staged work\n");
   assert.equal(await f.git("show", "HEAD:notes.txt"), "notes\n");
   assert.equal(
@@ -531,17 +560,22 @@ assert.equal(value, "staged");
   );
   // Both the original and the formatted sources are new inputs to the check.
   assert.equal(await f.read(".checks-ran"), "ran:staged\n".repeat(3));
+
+  await f.stage(".prettierrc.json", '{ "singleQuote": false }\n');
+  await f.stage("docs/example.md", "#  Formatter config changed\n");
+  await commit(
+    "--only",
+    ".prettierrc.json",
+    "docs/example.md",
+    "-m",
+    "format after shared config change",
+  );
+  assert.equal(await f.read(formatterLog), "dependency\n".repeat(2));
+
   // A stale cache key or bad workspace link would either falsely pass or fail
   // for the wrong reason. Changing staged dependency source must run the test.
   await f.git("add", "dependency/value.mjs");
-  await assert.rejects(
-    exec("git", ["commit", "-m", "bad staged dependency"], {
-      cwd: f.root,
-      env,
-      maxBuffer: 4 * 1024 * 1024,
-    }),
-    /Command failed/,
-  );
+  await assert.rejects(commit("-m", "bad staged dependency"), /Command failed/);
   assert.equal(
     await f.read(".checks-ran"),
     "ran:staged\n".repeat(3) + "ran:unstaged\n",
