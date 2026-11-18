@@ -1,9 +1,9 @@
 # Go lint tooling
 
 We build golangci-lint in this isolated Go module so we can add custom analyzers
-for domain and architecture rules later. Only stock linters are enabled now;
-the domain field-access analyzer is deferred to follow-up work in the contributor
-effectiveness epic.
+for domain and architecture rules. The `mapcopy` plugin filters suggestions from
+Go's `mapsloop` analyzer. The domain field-access analyzer is deferred to
+follow-up work in the contributor effectiveness epic.
 
 ## VS Code diagnostics
 
@@ -93,9 +93,9 @@ npx nx run ocm-fleet:fix:go
 npx nx run ocm-fleet:lint:go
 
 # Use the per-project targets and standard Nx project selection:
-npx nx run server:verify
-npx nx run-many --targets=verify --projects=server,deploy-aio
-npx nx run go-lint-tool:verify
+npx nx run server:fix
+npx nx run-many --targets=fix --projects=server,deploy-aio
+npx nx run go-lint-tool:fix
 
 # Tool development and updates:
 npx nx run ocm-fleet:setup:golangci-lint
@@ -117,9 +117,10 @@ Nx caches these suites against the project definitions and configuration they re
 rather than application source changes. Fast fileset tests check selected input
 inclusion and exclusion boundaries.
 
-`fmt:go` applies the shared formatters, including import organization. `verify:go`
-does that first, then runs lint and the normal tests. `fix:go` additionally applies
-supported linter fixes before rechecking; review those changes. These workspace
+Run `fix:go` before staging changes across Go modules and review the diff.
+It applies the shared formatters and supported linter fixes, then runs the same
+lint and normal tests as `verify:go`. Use `verify:go` to format and check without
+broader rewrites, or `fmt:go` to format and organize imports only. These workspace
 targets select Nx projects tagged `type:go-module`. Use each project's `fmt`,
 `verify`, or `fix` target to limit scope. Generated files and `testdata`
 fixtures are excluded from rewrites. A fix pass can leave findings behind, so
@@ -127,11 +128,13 @@ verification still runs and fails if those findings or test failures remain.
 `lint:go` remains a check without source edits for CI and other callers that need
 that behavior.
 
-The shared linter includes Go's `modernize` analyzers, such as `mapsloop`,
-which suggests `maps.Copy` for a map copy loop. `verify:go` reports these
-findings and `fix:go` applies their available edits. Review the diff for
-comments that need to move when a loop becomes a function call. The
-`omitzero` analyzer is disabled because its suggestions can change JSON output.
+The shared configuration enables Go's `modernize` suite and uses `mapcopy` to
+limit `mapsloop` to copies between plain map variables. This avoids changing when
+source and destination expressions are evaluated. The configuration excludes
+`omitzero`, `slicessort`, `testingcontext`, and `waitgroupgo` because their edits
+can change JSON output, NaN ordering, test cancellation timing, or goroutine
+completion. It also excludes `slicescontains` because its edits can delete loop
+comments.
 
 `goimports` owns import layout and adds missing imports or removes unused ones;
 repository imports form a local group after other dependencies. OCM imports use

@@ -281,6 +281,7 @@ test("reports map copy loops and replaces them only when fixes are requested", a
 
 func Merge(dst, src map[string]int) {
 	for k, v := range src {
+		// Source entries take precedence over existing values.
 		dst[k] = v
 	}
 }
@@ -290,15 +291,64 @@ func Merge(dst, src map[string]int) {
   await assert.rejects(lint(), { code: 1 });
   const findings = await issues();
   assert.equal(findings.length, 1);
-  assert.equal(findings[0].FromLinter, "modernize");
+  assert.equal(findings[0].FromLinter, "mapcopy");
   assert.match(findings[0].Text, /maps\.Copy/);
   assert.equal(await readFile(path, "utf8"), source);
 
   await lint({ args: ["--fix", "--issues-exit-code=0"] });
   const fixed = await readFile(path, "utf8");
   assert.match(fixed, /import "maps"/);
+  assert.match(fixed, /Source entries take precedence over existing values/);
   assert.match(fixed, /maps\.Copy\(dst, src\)/);
   assert.doesNotMatch(fixed, /for .*range/);
+  await lint();
+});
+
+test("leaves map copy loops with potentially observable evaluation order alone", async (t) => {
+  const { directory, lint } = await fixture(t);
+  const path = join(directory, "main.go");
+  const source = `package lintfixture
+
+import "iter"
+
+func WithDestinationCall(dst func() map[string]int, src map[string]int) {
+	for k, v := range src {
+		dst()[k] = v
+	}
+}
+
+func WithSourceCall(dst map[string]int, src func() map[string]int) {
+	for k, v := range src() {
+		dst[k] = v
+	}
+}
+
+func WithIterator(dst map[string]int, src iter.Seq2[string, int]) {
+	for k, v := range src {
+		dst[k] = v
+	}
+}
+`;
+  await writeFile(path, source);
+  await lint({ args: ["--fix", "--issues-exit-code=0"] });
+  assert.equal(await readFile(path, "utf8"), source);
+  await lint();
+});
+
+test("preserves the ordering policy of a floating-point sort", async (t) => {
+  const { directory, lint } = await fixture(t);
+  const path = join(directory, "main.go");
+  const source = `package lintfixture
+
+import "sort"
+
+func Order(values []float64) {
+	sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
+}
+`;
+  await writeFile(path, source);
+  await lint({ args: ["--fix", "--issues-exit-code=0"] });
+  assert.equal(await readFile(path, "utf8"), source);
   await lint();
 });
 

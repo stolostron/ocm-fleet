@@ -34,6 +34,7 @@ linters:
   # Use standard linters and their stock Staticcheck check selection.
   default: standard
   enable:
+    - mapcopy
     - modernize
   exclusions:
     # Recognize generated files by the standard Go generated-code header.
@@ -89,8 +90,22 @@ linters:
   settings:
     modernize:
       disable:
+        # The mapcopy plugin limits rewrites to plain map identifiers.
+        - mapsloop
         # Changing JSON serialization requires an explicit decision.
         - omitzero
+        # Replacing a loop with slices.Contains can discard its comments.
+        - slicescontains
+        # slices.Sort orders NaNs differently from a less-than comparator.
+        - slicessort
+        # Test context cancellation can move past the completion of subtests.
+        - testingcontext
+        # WaitGroup.Go changes when the counter is decremented on abrupt exit.
+        - waitgroupgo
+    custom:
+      mapcopy:
+        type: module
+        description: Replace loops that copy between map identifiers with maps.Copy.
     errcheck:
       # Keep the defaults for assertions and explicit blank-identifier discards.
       check-type-assertions: false
