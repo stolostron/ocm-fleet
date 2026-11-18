@@ -76,7 +76,11 @@ checks, or `check` when the source must stay untouched.
 
 Leave common commands and ordering in `nx.json`. Source-rewriting targets and
 `verify` must not be cached. Start a fresh Nx invocation for checks after source
-rewrites so the task graph uses the edited files.
+rewrites. Custom rewrites must update the modification time of changed files.
+If a tool preserves or restores an older modification time, touch each changed
+file before starting the check. Nx can otherwise reuse a cached passing result
+for the old contents.
+
 The [pre-commit hook](precommit.md) runs workspace `check` in a staged snapshot
 and uses `lint` to decide whether to try formatting. It reuses the existing
 workspace and project formatters for recovery, so projects following this

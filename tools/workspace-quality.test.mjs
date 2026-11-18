@@ -225,6 +225,26 @@ test("workspace verification formats Go, TypeScript, styles and protobuf before 
   );
 });
 
+test("format checks rehash a timestamp-preserving rewrite after a touch", async (t) => {
+  const { root, task } = await fixture(t);
+  const path = join(root, "client/cli/src/example.ts");
+  const older = new Date("2000-01-01T00:00:00Z");
+  await task("fmt", "cli");
+  await utimes(path, older, older);
+  await task("lint:format", "cli");
+
+  await writeFile(path, "export const value = 'hello';\n");
+  await utimes(path, older, older);
+  // Touch the changed file after the rewrite restores its old timestamp.
+  const now = new Date();
+  await utimes(path, now, now);
+  await assert.rejects(task("lint:format", "cli"), (error) => {
+    assert.equal(error.code, 1);
+    assert.match(error.stdout + error.stderr, /example\.ts/);
+    return true;
+  });
+});
+
 test("project lint is read-only and propagates findings", async (t) => {
   const { root, task } = await fixture(t);
   const path = join(root, "client/cli/src/example.ts");
