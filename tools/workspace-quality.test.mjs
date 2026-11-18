@@ -8,6 +8,7 @@ import {
   readFile,
   rm,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -219,7 +220,6 @@ test("workspace verification formats Go, TypeScript, styles and protobuf before 
       // A prior success must not hide subsequent project or workspace drift.
       for (const [path, source] of files)
         await writeFile(join(root, path), source);
-      await task("refresh:inputs");
       await rejectDrift();
     },
   );
@@ -303,7 +303,7 @@ test("project unit tests stay scoped and invalidate their cache for source and d
       root: directory,
       tags: project.tags,
       implicitDependencies: name === "build-utils" ? ["common"] : [],
-      targets: { test: project.targets.test, "refresh:inputs": {} },
+      targets: { test: project.targets.test },
     });
     await writeFile(
       join(root, directory, "src/__tests__/scope.test.ts"),
@@ -320,7 +320,14 @@ test("reads real source", () => {
   }
   const source = join(root, "sdk/common/src/value.ts");
   const marker = (name) => readFile(join(root, `${name}-tested`), "utf8");
-  await writeFile(source, "export const value = 1;\n");
+  // Give edits a shared timestamp newer than the scan's start to exercise the
+  // ambiguous mtime window without depending on Nx startup speed.
+  const timestamp = new Date(Date.now() + 60 * 60 * 1000);
+  const writeValue = async (value) => {
+    await writeFile(source, `export const value = ${value};\n`);
+    await utimes(source, timestamp, timestamp);
+  };
+  await writeValue(1);
   await task("test", "common");
   assert.equal(await marker("common"), "passed");
   await assert.rejects(marker("build-utils"), { code: "ENOENT" });
@@ -330,8 +337,7 @@ test("reads real source", () => {
     "passed",
     "unchanged tests must reuse the cache",
   );
-  await writeFile(source, "export const value = 2;\n");
-  await task("refresh:inputs", "common");
+  await writeValue(2);
   await task("test", "common");
   assert.equal(
     await marker("common"),
@@ -340,8 +346,7 @@ test("reads real source", () => {
   );
   await task("test", "build-utils");
   assert.equal(await marker("build-utils"), "passed");
-  await writeFile(source, "export const value = 3;\n");
-  await task("refresh:inputs", "common");
+  await writeValue(3);
   await task("test", "build-utils");
   assert.equal(
     await marker("build-utils"),
@@ -394,7 +399,6 @@ test("TypeScript checks invalidate cached passes for compiler settings and depen
   await writeJSON(root, "tsconfig.json", {
     compilerOptions: { ...compilerOptions, noUnusedLocals: true },
   });
-  await task("refresh:inputs", "cli");
   await assert.rejects(task("typecheck", "cli"), (error) => {
     assert.match(error.stdout + error.stderr, /TS6133.*unused/);
     return true;
@@ -402,7 +406,6 @@ test("TypeScript checks invalidate cached passes for compiler settings and depen
 
   await writeJSON(root, "tsconfig.json", { compilerOptions });
   await writeFile(dependency, 'export const value = "wrong type";\n');
-  await task("refresh:inputs", "cli");
   await assert.rejects(task("typecheck", "cli"), (error) => {
     assert.match(error.stdout + error.stderr, /TS2322.*string.*number/);
     return true;
@@ -435,7 +438,8 @@ test("Nx checks include component tests and omit inferred end-to-end suites", as
   for (const project of ["server", "proto", "cli", "e2e-cli"]) {
     assert.ok(dependencies["ocm-fleet:check"].includes(`${project}:check`));
   }
-  assert.ok(dependencies["ocm-fleet:check"].includes("ocm-fleet:lint:format"));
+  assert.ok(dependencies["ocm-fleet:check"].includes("ocm-fleet:lint"));
+  assert.ok(dependencies["ocm-fleet:lint"].includes("ocm-fleet:lint:format"));
   assert.equal(Object.hasOwn(tasks, "e2e-cli:test:ct"), false);
   for (const task of Object.values(tasks)) {
     assert.equal(
@@ -517,7 +521,6 @@ async function fixture(t, { workspaceChecks = false } = {}) {
       "fix:workspace",
       "lint:workspace",
       "lint:format",
-      "refresh:inputs",
     ].map((name) => [name, workspace.targets[name]]),
   );
   // Tool setup is already done by this suite's Nx prerequisite. Keep config
@@ -539,15 +542,10 @@ async function fixture(t, { workspaceChecks = false } = {}) {
     name: "server",
     tags: go.tags,
     targets: Object.fromEntries(
-      [
-        "fmt",
-        "verify",
-        "fix",
-        "fix:lint",
-        "refresh:inputs",
-        "lint",
-        "check",
-      ].map((name) => [name, go.targets[name]]),
+      ["fmt", "verify", "fix", "fix:lint", "lint", "check"].map((name) => [
+        name,
+        go.targets[name],
+      ]),
     ),
   });
   await writeFile(
@@ -560,16 +558,9 @@ async function fixture(t, { workspaceChecks = false } = {}) {
   );
   const cli = await json("client/cli/project.json");
   const cliTargets = Object.fromEntries(
-    [
-      "fmt",
-      "verify",
-      "fix",
-      "fix:lint",
-      "refresh:inputs",
-      "check",
-      "lint",
-      "lint:format",
-    ].map((name) => [name, cli.targets[name]]),
+    ["fmt", "verify", "fix", "fix:lint", "check", "lint", "lint:format"].map(
+      (name) => [name, cli.targets[name]],
+    ),
   );
   cliTargets["lint:css"] = {
     executor: "nx:run-commands",

@@ -8,15 +8,7 @@ import { createTaskGraph } from "nx/src/tasks-runner/create-task-graph";
 import { globWithWorkspaceContext } from "nx/src/utils/workspace-context";
 
 const profiles = ["type:go-module", "type:js-project", "lang:proto"];
-const lifecycle = [
-  "fmt",
-  "verify",
-  "fix",
-  "fix:lint",
-  "refresh:inputs",
-  "check",
-  "lint",
-];
+const lifecycle = ["fmt", "verify", "fix", "fix:lint", "check", "lint"];
 const checks = [
   "lint",
   "lint:format",
@@ -25,14 +17,7 @@ const checks = [
   "test:ct",
   "typecheck",
 ];
-const rewrites = [
-  "fmt",
-  "fix",
-  "fix:lint",
-  "fix:css",
-  "lint:fix",
-  "refresh:inputs",
-];
+const rewrites = ["fmt", "fix", "fix:lint", "fix:css", "lint:fix"];
 const ignoredDirectories = [
   "node_modules",
   "vendor",

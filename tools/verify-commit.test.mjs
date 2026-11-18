@@ -23,6 +23,21 @@ import { verifyCommit } from "./verify-commit.mjs";
 const exec = promisify(execFile);
 const repository = fileURLToPath(new URL("../", import.meta.url));
 
+test("a clean staged snapshot runs the workspace check once", async (t) => {
+  const f = await fixture(t);
+  await f.stage("input.txt", "ready to commit\n");
+  await f.verify();
+  assert.deepEqual(f.targets, ["check"]);
+});
+
+test("a check failure with passing lint skips formatting and fails the hook", async (t) => {
+  const f = await fixture(t);
+  await f.stage("input.txt", "FAIL\n");
+  await assert.rejects(f.verify(), /checks failed/);
+  assert.deepEqual(f.targets, ["check", "lint"]);
+  assert.equal(await f.index("input.txt"), "FAIL\n");
+});
+
 test("fixes fully staged files without including unrelated edits or untracked files", async (t) => {
   const f = await fixture(t);
   const pathspecName = process.platform === "win32" ? null : ":(exclude)*.txt";
@@ -31,6 +46,7 @@ test("fixes fully staged files without including unrelated edits or untracked fi
   await writeFile(join(f.root, "notes.txt"), "unfinished notes\n");
   await writeFile(join(f.root, "untracked.txt"), "private work\n");
   await f.verify();
+  assert.deepEqual(f.targets, ["check", "lint", "fmt", "check"]);
   assert.equal(await f.index("space in name.txt"), "formatted\n");
   assert.equal(await f.read("space in name.txt"), "formatted\n");
   if (pathspecName) assert.equal(await f.index(pathspecName), "formatted\n");
@@ -55,6 +71,7 @@ test("partially staged files are checked as staged and never rewritten", async (
   );
   const before = await f.git("write-tree");
   await assert.rejects(f.verify(), /checks failed/);
+  assert.deepEqual(f.targets, ["check", "lint", "fmt"]);
   assert.equal(await f.git("write-tree"), before);
   assert.equal(
     await f.read("input.txt"),
@@ -291,12 +308,10 @@ test("a successful manual verify warms the hook cache and workspace imports stay
       "lint:workspace",
       "lint:format",
       "check",
-      "refresh:inputs",
     ].map((name) => [name, workspace.targets[name]]),
   );
   targets.check.dependsOn = [
-    "lint:workspace",
-    "lint:format",
+    "lint",
     "test:commit-fixture",
     { projects: ["*", "!ocm-fleet"], target: "check" },
   ];
@@ -359,7 +374,6 @@ assert.equal(value, "staged");
     implicitDependencies: ["dependency"],
     targets: {
       fmt: {},
-      "refresh:inputs": {},
       verify: {},
       check: {},
       "lint:format": {},
@@ -515,7 +529,8 @@ assert.equal(value, "staged");
     await f.read("dependency/value.mjs"),
     'export default "unstaged";\n',
   );
-  assert.equal(await f.read(".checks-ran"), "ran:staged\nran:staged\n");
+  // Both the original and the formatted sources are new inputs to the check.
+  assert.equal(await f.read(".checks-ran"), "ran:staged\n".repeat(3));
   // A stale cache key or bad workspace link would either falsely pass or fail
   // for the wrong reason. Changing staged dependency source must run the test.
   await f.git("add", "dependency/value.mjs");
@@ -529,7 +544,7 @@ assert.equal(value, "staged");
   );
   assert.equal(
     await f.read(".checks-ran"),
-    "ran:staged\nran:staged\nran:unstaged\n",
+    "ran:staged\n".repeat(3) + "ran:unstaged\n",
   );
   assert.equal(
     await f.index("dependency/value.mjs"),
@@ -598,10 +613,12 @@ if (target === "fmt") {
   await git("add", ".");
   await git("commit", "-qm", "baseline");
   const output = [];
+  const targets = [];
   return {
     root,
     git,
     output,
+    targets,
     read: (path) => readFile(join(root, path), "utf8"),
     index: (path) => git("show", `:${path}`),
     stage: async (path, contents) => {
@@ -618,6 +635,7 @@ if (target === "fmt") {
         },
         log: (message) => output.push(message),
         runTarget: async (target, cwd, env) => {
+          targets.push(target);
           const result = await exec(process.execPath, ["task.mjs", target], {
             cwd,
             env,
@@ -631,7 +649,7 @@ if (target === "fmt") {
               return false;
             },
           );
-          if (target === "check") await afterCheck?.();
+          if (target === "check" && result) await afterCheck?.();
           return result;
         },
       }),

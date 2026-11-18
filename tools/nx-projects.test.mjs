@@ -258,7 +258,6 @@ function lifecycle(checks) {
     verify: task({ dependsOn: ["fmt"] }),
     fix: task({ dependsOn: ["fmt"] }),
     "fix:lint": task(),
-    "refresh:inputs": task(),
     check: task({
       dependsOn: [
         "lint",

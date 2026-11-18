@@ -53,7 +53,6 @@ silently skipped by workspace aggregation.
   "verify": {},
   "fix": {},
   "fix:lint": {},
-  "refresh:inputs": {},
   "check": {},
   "lint": {}
 }
@@ -65,16 +64,18 @@ provide Buf `fmt`/`lint` commands and a no-op `fix:lint`, as in the example.
 
 | Target   | Contract                                                                                                            |
 | -------- | ------------------------------------------------------------------------------------------------------------------- |
-| `fmt`    | Apply formatting and import organization, then refresh Nx's file hashes.                                            |
+| `fmt`    | Apply formatting and import organization.                                                                           |
 | `verify` | Format first, then check the resulting source in a fresh Nx invocation.                                             |
 | `fix`    | Format, apply broader supported linter fixes, then check. Review its diff.                                          |
 | `check`  | Read-only lint, formatting, normal tests, component tests, and type checks that the project provides. CI uses this. |
 | `lint`   | Report findings without editing source. Go and Buf also check formatting here.                                      |
 
 Leave common commands and ordering in `nx.json`. Source-rewriting targets and
-`verify` must not be cached. Custom rewrites must also refresh the file hashes.
-The [pre-commit hook](precommit.md) uses workspace `lint`, `fmt`, and `check` in a
-staged snapshot, so projects following this lifecycle participate automatically.
+`verify` must not be cached. Start a fresh Nx invocation for checks after source
+rewrites so the task graph uses the edited files.
+The [pre-commit hook](precommit.md) runs workspace `check` in a staged snapshot
+and uses `lint` and `fmt` for formatting recovery. Projects following this
+lifecycle participate automatically.
 Keep `check` read-only and declare generated/build outputs for cache restoration.
 
 ## Declare the project's capabilities

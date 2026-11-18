@@ -13,7 +13,6 @@
     "verify": {},
     "fix": {},
     "fix:lint": {},
-    "refresh:inputs": {},
     "check": {},
     "lint": {
       "inputs": ["goSource", "^default", "goLintConfig"]

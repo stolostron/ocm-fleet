@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -116,50 +117,32 @@ func TestServe_DialsDestinationPerConnection(t *testing.T) {
 	}
 }
 
-func TestServe_DialHonorsTimeout(t *testing.T) {
-	orig := dial
-	t.Cleanup(func() { dial = orig })
-	dial = func(ctx context.Context, _, _ string) (net.Conn, error) {
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}
+func TestProxyConn_DialHonorsTimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		orig := dial
+		t.Cleanup(func() { dial = orig })
+		dial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errc := make(chan error, 1)
-	go func() { errc <- Serve(ctx, ln, "127.0.0.1:1") }()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		client, peer := net.Pipe()
+		defer peer.Close()
+		start := time.Now()
+		if err := peer.SetReadDeadline(start.Add(dialTimeout + time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		go proxyConn(ctx, client, "127.0.0.1:1")
 
-	c, err := net.Dial("tcp", ln.Addr().String())
-	if err != nil {
-		t.Fatalf("dial proxy: %v", err)
-	}
-	defer c.Close()
-
-	deadline := time.Now().Add(dialTimeout + time.Second)
-	if err := c.SetReadDeadline(deadline); err != nil {
-		t.Fatal(err)
-	}
-	buf := make([]byte, 1)
-	n, err := c.Read(buf)
-	if n != 0 {
-		t.Fatalf("unexpected data: %q", buf[:n])
-	}
-	if err == nil {
-		t.Fatal("expected client close after dial timeout")
-	}
-	var ne net.Error
-	if errors.As(err, &ne) && ne.Timeout() {
-		t.Fatal("read waited until deadline; dial timeout did not close client")
-	}
-
-	cancel()
-	if err := <-errc; err != nil {
-		t.Fatal(err)
-	}
+		if n, err := peer.Read(make([]byte, 1)); n != 0 || !errors.Is(err, io.EOF) {
+			t.Fatalf("read = %d, %v; want EOF after dial timeout", n, err)
+		}
+		if elapsed := time.Since(start); elapsed != dialTimeout {
+			t.Fatalf("client closed after %v, want %v", elapsed, dialTimeout)
+		}
+	})
 }
 
 func echoListener(t *testing.T) string {

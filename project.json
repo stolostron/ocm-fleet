@@ -85,15 +85,13 @@
       },
       "executor": "nx:noop",
       "dependsOn": [
-        "lint:workspace",
-        "lint:format",
+        "lint",
         "test:generate-agents",
         "test:ci-output",
         "test:ci-policy",
         "test:eslint-config",
         "test:workspace-quality",
         "test:verify-commit",
-        "lint:nx-projects",
         "test:nx-projects",
         {
           "projects": ["*", "!ocm-fleet"],
@@ -106,13 +104,9 @@
       "executor": "nx:run-commands",
       "options": {
         "forwardAllArgs": false,
-        "env": {
-          "NX_DAEMON": "false"
-        },
         "commands": [
           "prettier --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/workspace/prettier\" --write --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" \"*.{json,yaml,yml,md,mjs}\" \".github/**/*.{yml,yaml,json,md}\" \"docs/**/*.{md,json,yaml,yml}\" \"tools/*.{mjs,md,json}\" \"scripts/**/*.{mjs,json,yaml,yml,md}\" \"deploy/**/*.{mjs,json,yaml,yml,md}\" \"e2e/{shared,sandbox}/**/*.{ts,mjs,json,md}\" --no-error-on-unmatched-pattern",
-          "eslint --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/workspace/eslint-layout\" \"{tools,scripts,deploy}/**/*.mjs\" \"*.mjs\" --no-error-on-unmatched-pattern --fix --fix-type layout --exit-on-fatal-error || test \"$?\" -eq 1",
-          "npx nx run ocm-fleet:refresh:inputs"
+          "eslint --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/workspace/eslint-layout\" \"{tools,scripts,deploy}/**/*.mjs\" \"*.mjs\" --no-error-on-unmatched-pattern --fix --fix-type layout --exit-on-fatal-error || test \"$?\" -eq 1"
         ],
         "parallel": false
       },
@@ -122,14 +116,7 @@
       "executor": "nx:run-commands",
       "options": {
         "forwardAllArgs": false,
-        "env": {
-          "NX_DAEMON": "false"
-        },
-        "commands": [
-          "eslint \"{tools,scripts,deploy}/**/*.mjs\" \"*.mjs\" --no-error-on-unmatched-pattern --fix --exit-on-fatal-error || test \"$?\" -eq 1",
-          "npx nx run ocm-fleet:refresh:inputs"
-        ],
-        "parallel": false
+        "command": "eslint \"{tools,scripts,deploy}/**/*.mjs\" \"*.mjs\" --no-error-on-unmatched-pattern --fix --exit-on-fatal-error || test \"$?\" -eq 1"
       },
       "cache": false
     },
@@ -171,7 +158,6 @@
       ],
       "outputs": []
     },
-    "refresh:inputs": {},
     "test:ci-output": {
       "executor": "nx:run-commands",
       "options": {

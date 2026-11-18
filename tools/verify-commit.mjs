@@ -147,9 +147,25 @@ export async function verifyCommit({
       if (sameFile(source, checkedOut, 0o100)) eligible.set(path, source);
     }
 
+    const check = async (tree) => {
+      const passed = await runTarget("check", snapshot, snapshotEnv, signal);
+      signal?.throwIfAborted();
+      if (
+        changedSources(snapshot, snapshotEnv).length ||
+        git(snapshot, snapshotEnv, ["write-tree"]).trim() !== tree
+      )
+        throw new Error(
+          "a read-only check changed source; refusing to publish an unchecked candidate.",
+        );
+      return passed;
+    };
+
     log("pre-commit: checking the staged snapshot (Nx cache enabled).");
+    let checked = await check(originalTree);
     let fixes = [];
-    if (!(await runTarget("lint", snapshot, snapshotEnv, signal))) {
+    // The workspace check includes lint. Consult lint separately only after a
+    // failure, so a test or typecheck failure alone doesn't trigger formatting.
+    if (!checked && !(await runTarget("lint", snapshot, snapshotEnv, signal))) {
       log(
         "pre-commit: trying formatting and import fixes in the private checkout.",
       );
@@ -160,7 +176,11 @@ export async function verifyCommit({
         const before = eligible.get(path);
         return !before || !after || ((after.mode ^ before.mode) & 0o100) !== 0;
       });
-      if (formatted && !unsafe.length) {
+      if (!formatted || unsafe.length) {
+        log(
+          `pre-commit: leaving fixes unapplied${unsafe.length ? `; these files have unstaged work or were not staged: ${unsafe.map(JSON.stringify).join(", ")}` : " because formatting failed"}.`,
+        );
+      } else if (changed.length) {
         fixes = changed.map((path) => ({
           path,
           before: eligible.get(path),
@@ -170,34 +190,14 @@ export async function verifyCommit({
           },
         }));
         git(snapshot, snapshotEnv, ["add", "--update"]);
-      } else {
-        log(
-          `pre-commit: leaving fixes unapplied${unsafe.length ? `; these files have unstaged work or were not staged: ${unsafe.map(JSON.stringify).join(", ")}` : " because formatting failed"}. Checking the original staged contents.`,
+        checked = await check(
+          git(snapshot, snapshotEnv, ["write-tree"]).trim(),
         );
-        // Only this disposable checkout is reset. No stash or restore operation
-        // ever touches the developer's working tree.
-        git(snapshot, snapshotEnv, [
-          "restore",
-          `--source=${originalTree}`,
-          "--staged",
-          "--worktree",
-          ".",
-        ]);
-        git(snapshot, snapshotEnv, ["clean", "-fd"]);
       }
     }
-    const candidateTree = git(snapshot, snapshotEnv, ["write-tree"]).trim();
-    if (!(await runTarget("check", snapshot, snapshotEnv, signal)))
+    if (!checked)
       throw new Error(
         "staged checks failed; run npx nx run ocm-fleet:verify, review the fixes, and stage them.",
-      );
-    signal?.throwIfAborted();
-    if (
-      changedSources(snapshot, snapshotEnv).length ||
-      git(snapshot, snapshotEnv, ["write-tree"]).trim() !== candidateTree
-    )
-      throw new Error(
-        "a read-only check changed source; refusing to publish an unchecked candidate.",
       );
     if (!fixes.length) {
       if (git(root, env, ["write-tree"]).trim() !== originalTree)

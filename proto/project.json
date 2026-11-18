@@ -11,14 +11,7 @@
       "executor": "nx:run-commands",
       "options": {
         "forwardAllArgs": false,
-        "env": {
-          "NX_DAEMON": "false"
-        },
-        "commands": [
-          "buf format --write proto",
-          "npx nx run proto:refresh:inputs"
-        ],
-        "parallel": false
+        "command": "buf format --write proto"
       },
       "cache": false
     },
@@ -28,7 +21,6 @@
       "executor": "nx:noop",
       "cache": false
     },
-    "refresh:inputs": {},
     "check": {},
     "lint": {
       "executor": "nx:run-commands",

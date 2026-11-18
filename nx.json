@@ -144,16 +144,11 @@
           }
         ],
         "options": {
-          "commands": [
-            "\"$NX_WORKSPACE_ROOT/bin/tools/format-go\" --config \"$NX_WORKSPACE_ROOT/.golangci.yaml\" .",
-            "npx nx run {projectName}:refresh:inputs"
-          ],
-          "parallel": false,
+          "command": "\"$NX_WORKSPACE_ROOT/bin/tools/format-go\" --config \"$NX_WORKSPACE_ROOT/.golangci.yaml\" .",
           "forwardAllArgs": false,
           "cwd": "{projectRoot}",
           "env": {
-            "GOWORK": "off",
-            "NX_DAEMON": "false"
+            "GOWORK": "off"
           }
         },
         "cache": false
@@ -162,13 +157,9 @@
         "executor": "nx:run-commands",
         "options": {
           "forwardAllArgs": false,
-          "env": {
-            "NX_DAEMON": "false"
-          },
           "commands": [
             "prettier --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/{projectName}/prettier\" --write --ignore-unknown --ignore-path \"$NX_WORKSPACE_ROOT/.gitignore\" --ignore-path \"$NX_WORKSPACE_ROOT/.prettierignore\" .",
-            "eslint --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/{projectName}/eslint-layout\" . --fix --fix-type layout --exit-on-fatal-error || test \"$?\" -eq 1",
-            "npx nx run {projectName}:refresh:inputs"
+            "eslint --cache --cache-strategy content --cache-location \"$NX_WORKSPACE_ROOT/.nx/formatter-cache/{projectName}/eslint-layout\" . --fix --fix-type layout --exit-on-fatal-error || test \"$?\" -eq 1"
           ],
           "parallel": false,
           "cwd": "{projectRoot}"
@@ -250,16 +241,11 @@
           }
         ],
         "options": {
-          "commands": [
-            "\"$NX_WORKSPACE_ROOT/bin/tools/golangci-lint\" run --fix --issues-exit-code=0 --config \"$NX_WORKSPACE_ROOT/.golangci.yaml\" ./...",
-            "npx nx run {projectName}:refresh:inputs"
-          ],
-          "parallel": false,
+          "command": "\"$NX_WORKSPACE_ROOT/bin/tools/golangci-lint\" run --fix --issues-exit-code=0 --config \"$NX_WORKSPACE_ROOT/.golangci.yaml\" ./...",
           "forwardAllArgs": false,
           "cwd": "{projectRoot}",
           "env": {
-            "GOWORK": "off",
-            "NX_DAEMON": "false"
+            "GOWORK": "off"
           }
         },
         "cache": false
@@ -268,14 +254,7 @@
         "executor": "nx:run-commands",
         "options": {
           "forwardAllArgs": false,
-          "env": {
-            "NX_DAEMON": "false"
-          },
-          "commands": [
-            "eslint . --fix --exit-on-fatal-error || test \"$?\" -eq 1",
-            "npx nx run {projectName}:refresh:inputs"
-          ],
-          "parallel": false,
+          "command": "eslint . --fix --exit-on-fatal-error || test \"$?\" -eq 1",
           "cwd": "{projectRoot}"
         },
         "cache": false,
@@ -401,17 +380,6 @@
         "outputs": []
       }
     ],
-    "refresh:inputs": {
-      "metadata": {
-        "description": "Discard Nx 23.1.2's second-resolution file hashes after source rewrites; retain task cache records."
-      },
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "rm -f \"${NX_WORKSPACE_DATA_DIRECTORY:-${NX_PROJECT_GRAPH_CACHE_DIRECTORY:-$NX_WORKSPACE_ROOT/.nx/workspace-data}}/nx_files.nxt\"",
-        "forwardAllArgs": false
-      },
-      "cache": false
-    },
     "fix:css": {
       "executor": "nx:run-commands",
       "options": {

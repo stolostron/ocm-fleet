@@ -146,16 +146,13 @@ Source-rewriting tasks are uncached. They finish editing before starting a fresh
 Nx invocation for lint and tests, ensuring checks hash the resulting source.
 The tool build and successful checks are cached against their actual inputs.
 
-After successful rewrites, `refresh:inputs` discards only Nx's `nx_files.nxt`
-file-hash metadata, preserving task cache records and outputs. Nx 23.1.2
-[compares whole-second modification times](https://github.com/nrwl/nx/blob/23.1.2/packages/nx/src/native/workspace/files_hashing.rs),
-so a fast rewrite can otherwise reuse a stale hash even in a new process.
-This workaround belongs to the shared task stages and can be revisited when Nx
-is upgraded.
+Nx 23.3.1 rehashes files from the previous scan's modification-time window.
+This lets checks after a rewrite reuse the task cache even when both invocations
+see the same whole-second file timestamp.
 
 The common task stages live in `nx.json`'s `targetDefaults`, scoped to projects
 tagged `type:go-module`. Each module opts in with empty `fmt`, `verify`, `fix`,
-`fix:lint`, `refresh:inputs`, `check`, and `lint` target objects, overriding
+`fix:lint`, `check`, and `lint` target objects, overriding
 cache inputs where needed and keeping its own normal test target. Nx substitutes
 the project root and name; commands use `NX_WORKSPACE_ROOT` for the common
 executable and config. The tag filter keeps these defaults separate from
