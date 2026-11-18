@@ -296,9 +296,13 @@ func (c *zeroChecker) tupleProblem(value *ssa.Extract, t types.Type, context flo
 func (c *zeroChecker) tupleGuardChecked(tuple ssa.Value, index int, success truth, context flowContext) bool {
 	if references := tuple.Referrers(); references != nil {
 		for _, reference := range *references {
-			if guard, ok := reference.(*ssa.Extract); ok && guard.Index == index &&
-				c.valueTruth(guard, context, make(map[ssa.Value]bool)) == success {
-				return true
+			if guard, ok := reference.(*ssa.Extract); ok && guard.Index == index {
+				if c.valueTruth(guard, context, make(map[ssa.Value]bool)) == success {
+					return true
+				}
+				if success == isZero && isErrorType(guard.Type()) && c.errorGuardChecked(guard, context) {
+					return true
+				}
 			}
 		}
 	}

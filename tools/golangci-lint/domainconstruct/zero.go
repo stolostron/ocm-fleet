@@ -28,6 +28,7 @@ type zeroChecker struct {
 	contracts   *contractSet
 	contexts    map[*ssa.BasicBlock]flowContext
 	equalities  map[*ssa.Function][]*ssa.BinOp
+	errorMerges map[*ssa.Function][]*ssa.Phi
 	mutations   map[mutationQuery]mutationKind
 	reads       map[ssa.Value]storageRead
 	stores      map[ssa.Value][]storageWrite

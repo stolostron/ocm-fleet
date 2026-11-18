@@ -845,6 +845,105 @@ func InvalidPolicy() (int, bool) { return 0, false }
   await assert.doesNotReject(lint());
 });
 
+test("forwarded error joins preserve constructor and presence guards without hiding failures", async (t) => {
+  const { directory, lint, issues, format } = await fixture(t, {
+    domain: true,
+  });
+  await mkdir(join(directory, "value"));
+  await writeFile(
+    join(directory, "value/id.go"),
+    `package value
+
+import "errors"
+
+//domain:constructors ParseID
+type ID string
+
+func ParseID(raw string) (ID, error) {
+  if raw == "" { return "", errors.New("empty ID") }
+  return ID(raw), nil
+}
+
+type Provider interface {
+  //domain:presence
+  Lookup() (ID, bool, error)
+}
+`,
+  );
+  const valid = `package lintfixture
+
+import (
+  "fmt"
+
+  "github.com/stolostron/ocm-fleet/lintfixture/value"
+)
+
+func accept(value.ID) {}
+
+func Forward(raw string) (value.ID, error) {
+  id, err := value.ParseID(raw)
+  if err != nil { err = fmt.Errorf("parse: %w", err) }
+  return id, err
+}
+
+func Checked(raw string) {
+  id, err := value.ParseID(raw)
+  if err != nil { err = fmt.Errorf("parse: %w", err) }
+  if err == nil { accept(id) }
+}
+
+//domain:presence
+func ForwardLookup(provider value.Provider) (value.ID, bool, error) {
+  id, ok, err := provider.Lookup()
+  if err != nil { err = fmt.Errorf("lookup: %w", err) }
+  return id, ok, err
+}
+`;
+  await writeFile(
+    join(directory, "main.go"),
+    `${valid}
+
+func Cleared(raw string) (value.ID, error) {
+  id, err := value.ParseID(raw)
+  if err != nil { err = nil }
+  return id, err
+}
+
+func Unrelated(raw string, other error) (value.ID, error) {
+  id, _ := value.ParseID(raw)
+  if other != nil { other = fmt.Errorf("other: %w", other) }
+  return id, other
+}
+
+func MissingPresence(provider value.Provider) {
+  id, _, err := provider.Lookup()
+  if err != nil { err = fmt.Errorf("lookup: %w", err) }
+  if err == nil { accept(id) }
+}
+`,
+  );
+  await format();
+  await assert.rejects(lint(), { code: 1 });
+  const findings = (await issues()).map(domainFinding);
+  assert.deepEqual(findings.map((finding) => finding.Reason).sort(), [
+    "unchecked-error",
+    "unchecked-error",
+    "unchecked-presence",
+  ]);
+  for (const finding of findings) {
+    assert.equal(finding.Rule, "domainzero.invalid-zero");
+    assert.equal(finding.Certainty, "possible");
+    assert.equal(
+      finding.Type,
+      "github.com/stolostron/ocm-fleet/lintfixture/value.ID",
+    );
+  }
+
+  await writeFile(join(directory, "main.go"), valid);
+  await format();
+  await assert.doesNotReject(lint());
+});
+
 test("canonical inline Optional permits absence and preserves payload, presence, and codec checks", async (t) => {
   const { directory, lint, issues, format } = await fixture(t, {
     domain: true,

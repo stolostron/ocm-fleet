@@ -503,6 +503,17 @@ exemption. Observing a context's `Done` receive establishes its later `Err()` or
 preserves these rules. Map lookups, channel receives, and comma-ok type assertions
 need their successful `ok` check when they can otherwise introduce an invalid zero.
 
+A checked or forwarded error can retain its original result guard through local
+branch merges. For example, `if err != nil { err = fmt.Errorf("lookup: %w", err) }`
+preserves the implication that a nil forwarded error means the original error
+was nil. The checker examines feasible incoming paths using existing non-nil
+error contracts; it does not require an early return or a particular wrapper
+name. Clearing an error, replacing it with an unrelated possibly-nil error, or
+calling a wrapper that might swallow it establishes no such implication.
+Presence checks remain independent. This proof has a bounded path budget and
+does not infer relationships through loop-carried errors or mutable fields;
+an incomplete proof retains the warning.
+
 Arrays and slices retain element initialization state. The checker catches
 omitted array elements, unfilled `make` slots, zero elements passed through
 interfaces or variadic arguments, and invalid contents after `clear` or a partial
