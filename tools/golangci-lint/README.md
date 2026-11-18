@@ -127,6 +127,12 @@ verification still runs and fails if those findings or test failures remain.
 `lint:go` remains a check without source edits for CI and other callers that need
 that behavior.
 
+The shared linter includes Go's `modernize` analyzers, such as `mapsloop`,
+which suggests `maps.Copy` for a map copy loop. `verify:go` reports these
+findings and `fix:go` applies their available edits. Review the diff for
+comments that need to move when a loop becomes a function call. The
+`omitzero` analyzer is disabled because its suggestions can change JSON output.
+
 `goimports` owns import layout and adds missing imports or removes unused ones;
 repository imports form a local group after other dependencies. OCM imports use
 the normal third-party group. We retain `gofmt` for its standard simplifications.
@@ -199,6 +205,6 @@ and rejected examples with `analysistest`. Register it with `register.Plugin` fr
 blank-import that package from `main.go`, and enable the module plugin in
 `.golangci.yaml`. Run the tool module, setup, configuration, and workflow tests.
 
-Application cleanup and CI lint enforcement remain deferred; CI tests the tool
-and its configuration. CodeQL builds the tool module alongside application modules,
-excluding test fixtures from standalone builds.
+CI runs the read-only checks and tests the tool and its configuration. CodeQL
+builds the tool module alongside application modules, excluding test fixtures
+from standalone builds.

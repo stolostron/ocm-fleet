@@ -101,7 +101,7 @@ func Label(value int) string {return strconv.Itoa(value)}
 test("loads packages with its build toolchain despite an ambient override", async (t) => {
   const { lint } = await fixture(t);
   await assert.doesNotReject(
-    lint({ GOTOOLCHAIN: "invalid-ambient-toolchain" }),
+    lint({ env: { GOTOOLCHAIN: "invalid-ambient-toolchain" } }),
   );
 });
 
@@ -111,7 +111,7 @@ test("still rejects modules requiring a newer Go version than the linter support
     join(directory, "go.mod"),
     "module lintfixture\n\ngo 1.99.0\n",
   );
-  await assert.rejects(lint({ GOTOOLCHAIN: "local" }), (error) => {
+  await assert.rejects(lint({ env: { GOTOOLCHAIN: "local" } }), (error) => {
     assert.match(
       error.stdout + error.stderr,
       /used to build golangci-lint is lower than the targeted Go version \(1\.99\.0\)/,
@@ -274,6 +274,34 @@ test("reports formatting issues without modifying sources", async (t) => {
   assert.equal(await readFile(path, "utf8"), source);
 });
 
+test("reports map copy loops and replaces them only when fixes are requested", async (t) => {
+  const { directory, lint, issues } = await fixture(t);
+  const path = join(directory, "main.go");
+  const source = `package lintfixture
+
+func Merge(dst, src map[string]int) {
+	for k, v := range src {
+		dst[k] = v
+	}
+}
+`;
+  await writeFile(path, source);
+
+  await assert.rejects(lint(), { code: 1 });
+  const findings = await issues();
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].FromLinter, "modernize");
+  assert.match(findings[0].Text, /maps\.Copy/);
+  assert.equal(await readFile(path, "utf8"), source);
+
+  await lint({ args: ["--fix", "--issues-exit-code=0"] });
+  const fixed = await readFile(path, "utf8");
+  assert.match(fixed, /import "maps"/);
+  assert.match(fixed, /maps\.Copy\(dst, src\)/);
+  assert.doesNotMatch(fixed, /for .*range/);
+  await lint();
+});
+
 // Real modules exercise config paths, formatter checks, exclusions, and exit
 // statuses without third-party dependencies or running the fixture's Go code.
 async function fixture(t, { project = "" } = {}) {
@@ -295,7 +323,7 @@ async function fixture(t, { project = "" } = {}) {
   return {
     directory,
     issues: async () => JSON.parse(await readFile(report, "utf8")).Issues ?? [],
-    lint: (env = {}) =>
+    lint: ({ env = {}, args = [] } = {}) =>
       run(
         binary,
         [
@@ -304,6 +332,7 @@ async function fixture(t, { project = "" } = {}) {
           configuration,
           "--output.text.path=stdout",
           `--output.json.path=${report}`,
+          ...args,
           "./...",
         ],
         {
