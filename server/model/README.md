@@ -13,6 +13,15 @@ delivery is an explicit abstraction here.
 
 ## Reading and running it
 
+Start with the `run` blocks in [counterexamples.qnt](counterexamples.qnt).
+Each `.then(...)` is one interleaving step. In the main workflow model,
+`db` is the committed fulfillment view and the other records track the
+workflow bodies. A `*Reply` phase means the side effect happened and the
+result still needs a workflow checkpoint. The `exit` phase means the
+workflow decided to return and still owns its backend instance ID. The
+[source correspondence table](#source-correspondence) and comments above the
+action groups map these steps to Go methods.
+
 - [managed_resources.qnt](managed_resources.qnt): workflow state, transitions,
   invariants, fairness, and current/corrected configurations.
 - [counterexamples.qnt](counterexamples.qnt): executable reproductions of current
@@ -22,6 +31,10 @@ delivery is an explicit abstraction here.
 - [aggregate.qnt](aggregate.qnt): repository revisions, overlapping copies,
   creation decisions, incarnation identity, and reconciliation-result merging.
 - [aggregate_test.qnt](aggregate_test.qnt): concrete repository-contract scenarios.
+- [Workflow boundaries](workflow_boundaries.md) covers the focused models for
+  delivery completion, Postgres instance admission, and a proposed durable
+  wake operation. Each model keeps its executable scenarios next to the
+  configuration it checks.
 
 Prerequisites: Quint **0.33.1** on PATH and Java.
 Quint's TLC backend first uses Apalache to translate the model to TLA+, then runs
@@ -83,7 +96,7 @@ fairly scheduled maintenance pass.
 | `current_create / eventualProgress`                  | Counterexample | The resource commits, but Create's dispatch activity exhausts its retries. The workflow returns an error, leaving no orchestration owner.            |
 | `current_delete / mutationProgress`                  | Counterexample | After Delete commits, its workflow or cleanup can lose the progress obligation. This check excludes failures confined to the initial Create.         |
 | `current_delete / noPausedEntry`                     | Counterexample | A Start delayed after a successful Create preflight can load a fulfillment that another workflow has since paused. Orchestration has no entry guard. |
-| `current_delete / noRepeatedRemoval`                 | Counterexample | Removal and completion commit; notification fails; orchestration continues and repeats external removal despite persisted deletion readiness.        |
+| `current_delete / noRepeatedRemoval`                 | Counterexample | Removal and completion commit, notification fails, and orchestration enters the deletion pipeline again despite persisted readiness.                 |
 | `current_update / mutationProgress`                  | Holds          | Once an Update commits, losing its mutation reply or racing an exiting orchestration does not strand that work in this model.                        |
 | `current_delete_with_maintenance / eventualProgress` | Holds          | Fair level-based maintenance repairs the modeled lost obligations.                                                                                   |
 
@@ -109,9 +122,9 @@ and checks current work after an ambiguous mutation.
 
 `noPausedEntry` concerns starting a pass from a snapshot already marked paused.
 It does not claim that a pause can retroactively stop effects from an earlier
-in-flight pass. `noRepeatedRemoval` is an efficiency/contract property: idempotent
-external removal can make its violation harmless, but the work is unnecessary
-and can fail or encounter expired authorization again.
+in-flight pass. `noRepeatedRemoval` detects another pass through the deletion
+pipeline. Once successful cleanup empties the target and delivery lists, that
+pass can amount to redundant reads and cleanup rather than another addon call.
 
 ## Corrected protocol
 
@@ -192,9 +205,11 @@ Those variants are negative controls, not additional claims of current defects.
   budget; faults eventually stop.
 - Weak fairness schedules each continuously enabled workflow/cleanup/maintenance
   actor. External requests need not arrive fairly. Writes are finitely bounded.
-  Durable workflow storage, timers, instance-ID uniqueness, and successful
-  buffered signals survive process failure. Infinite outages and explicit
-  administrative workflow termination are outside the progress assumptions.
+  The main workflow model assumes durable workflow storage, timers, unique
+  active instance IDs, and durable buffered signals. The focused
+  [Postgres admission model](workflow_instances.qnt) checks the uniqueness
+  assumption separately. Progress assumes finite outages and continued
+  execution of the workflows.
 - Delivery/placement/removal is one abstract pass which eventually completes or
   reports an authorization pause. Removal is idempotent; successful removal
   includes target cleanup. This does not verify any provider's implementation,

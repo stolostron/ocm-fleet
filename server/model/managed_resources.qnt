@@ -55,6 +55,9 @@ module managed_resources {
   }
 
   var state: State
+  // The model keeps separate control positions for each Go workflow and the
+  // fulfillment record they share. A *Reply phase follows an activity side
+  // effect but precedes the workflow engine recording the activity result.
   val db = state.db
   val creator = state.create
   val mutation = state.mutation
@@ -86,6 +89,8 @@ module managed_resources {
     loadedWhilePaused: false, repeatedRemoval: false, unsafeDeletion: false,
   }
 
+  // CreateManagedResourceWorkflowSpec.Run
+
   /// PersistManagedResource commits acceptance, intent, and fulfillment together.
   /// A replay uses the accepted nonce; it does not create a second incarnation.
   action persistCreate = all {
@@ -103,7 +108,8 @@ module managed_resources {
     state' = state.with("create", creator.with("pc", "preflight")),
   }
 
-  /// This is a read, not a lock extending through Orchestration.Start.
+  /// Create's StartOrchestration activity first reads the fulfillment. Its
+  /// read transaction ends before the call to the workflow backend.
   action createPreflight = all {
     creator.pc == "preflight",
     state' = state.with("create", creator.with("pc",
@@ -139,6 +145,8 @@ module managed_resources {
       .with("create", creator.with("pc", if (RECOVER_CREATE_DELETE) "persist" else "done")),
   }
 
+  // UpdateManagedResourceWorkflowSpec.Run / DeleteManagedResourceWorkflowSpec.Run
+
   /// External requests need not arrive fairly. There is at most one, so writes
   /// eventually quiesce. Preparing an Update and supplying a Delete etag both
   /// pin the visible state before the first mutation activity runs.
@@ -147,6 +155,8 @@ module managed_resources {
     state' = state.with("mutation", mutation.with("pc", "mutate").with("target", token)),
   }
 
+  // MutateSpec / MutateToDeleting. This transition commits the transaction.
+  // Only checkpointMutation gives the reply to the workflow body.
   action mutate = all {
     mutation.pc == "mutate",
     val matches = db.exists and token == mutation.target
@@ -192,6 +202,8 @@ module managed_resources {
     state' = state.with("mutation", mutation.with("pc", "check").with("cleanupStarted", true)),
   }
 
+  // Update calls LoadProgress; current Delete uses convergenceLoop with its
+  // own generation. The two branches preserve that distinction.
   action checkMutationProgress = all {
     mutation.pc == "check",
     val needsCleanup = OPERATION == "delete" and db.exists and db.deleting and not(mutation.cleanupStarted)
@@ -229,8 +241,12 @@ module managed_resources {
       .with("mutation", mutation.with("pc", if (updateRecovery) mutation.pc else "done")),
   }
 
-  /// Instance-ID uniqueness belongs to the workflow backend. The DB lock is
-  /// released at completion; the backend ID remains occupied until "exit".
+  // OrchestrationWorkflowSpec.Run
+
+  /// AcquireLockAndLoad captures a snapshot for one reconciliation pass.
+  /// Instance-ID uniqueness is assumed here and checked separately in
+  /// workflow_instances.qnt. The fulfillment's active-workflow marker can
+  /// clear before the backend releases the instance ID.
   action loadOrchestration = all {
     orchestration.pc == "load",
     val stop = not(db.exists) or (GUARD_ORCHESTRATION_ENTRY and db.paused)
@@ -258,6 +274,8 @@ module managed_resources {
     state' = state.with("orchestration", orchestration.with("pc", "persist").with("pauseResult", true)),
   }
 
+  // PersistAndCompleteReconciliation: commit the merge and generation check,
+  // then send any cleanup signal, then checkpoint the result.
   action persistReconciliation = all {
     orchestration.pc == "persist", db.exists,
     val current = orchestration.generation == db.generation
@@ -319,6 +337,9 @@ module managed_resources {
     state' = state.with("orchestration", orchestration.with("pc", "idle")),
   }
 
+  // DeleteManagedResourceCleanupWorkflowSpec.Run
+
+  // CleanupRequired reads readiness. A waiting run can advance on its signal.
   action checkCleanup = all {
     cleanup.pc == "check",
     state' = state.with("cleanup", cleanup.with("pc",

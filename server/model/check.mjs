@@ -112,6 +112,9 @@ if (phase === "bootstrap") {
     "managed_resources_test.qnt",
     "aggregate.qnt",
     "aggregate_test.qnt",
+    "delivery_reports.qnt",
+    "workflow_instances.qnt",
+    "orchestration_handoff.qnt",
   ]) {
     quint("typecheck", file);
   }
@@ -125,6 +128,16 @@ if (phase === "bootstrap") {
   }
   quint("test", "managed_resources_test.qnt", "--seed=1");
   quint("test", "aggregate_test.qnt", "--seed=1");
+  for (const [file, main] of [
+    ["delivery_reports.qnt", "current_delivery_reports"],
+    ["delivery_reports.qnt", "persisted_delivery_reports"],
+    ["workflow_instances.qnt", "current_postgres_instances"],
+    ["workflow_instances.qnt", "unique_active_instances"],
+    ["orchestration_handoff.qnt", "execution_signal_handoff"],
+    ["orchestration_handoff.qnt", "durable_pending_handoff"],
+  ]) {
+    quint("test", file, `--main=${main}`, "--seed=1");
+  }
 } else if (phase === "verify") {
   if (process.argv[3]) {
     verify(
@@ -148,6 +161,30 @@ if (phase === "bootstrap") {
       verify(main, "eventualProgress");
     }
     verify("corrected_delete", "deletionProgress");
+    verify(
+      "persisted_delivery_reports",
+      "eventualProgress",
+      "holds",
+      "delivery_reports.qnt",
+    );
+    verify(
+      "unique_active_instances",
+      "oneActiveExecution",
+      "holds",
+      "workflow_instances.qnt",
+    );
+    verify(
+      "durable_pending_handoff",
+      "publishedWorkHasOwner",
+      "holds",
+      "orchestration_handoff.qnt",
+    );
+    verify(
+      "durable_pending_handoff",
+      "eventualProgress",
+      "holds",
+      "orchestration_handoff.qnt",
+    );
   }
 } else if (phase === "reproduce") {
   for (const [main, property, expected] of [
@@ -168,6 +205,24 @@ if (phase === "bootstrap") {
     ["without_observation_monotonicity", "observationIsMonotone"],
   ])
     verify(main, property, "violated", "aggregate.qnt");
+  verify(
+    "current_delivery_reports",
+    "eventualProgress",
+    "violated",
+    "delivery_reports.qnt",
+  );
+  verify(
+    "current_postgres_instances",
+    "oneActiveExecution",
+    "violated",
+    "workflow_instances.qnt",
+  );
+  verify(
+    "execution_signal_handoff",
+    "publishedWorkHasOwner",
+    "violated",
+    "orchestration_handoff.qnt",
+  );
 } else {
   throw new Error(`Unknown check phase: ${phase}`);
 }
