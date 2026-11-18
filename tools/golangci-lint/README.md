@@ -78,11 +78,24 @@ non-nil error sentinels against reassignment and address-taking by other
 packages. `domainserialization` checks the shared `optional.Optional[T]` at
 codec boundaries, including when `T` is a plain type.
 
-Keep the linters enabled and enroll related types one at a time. Run the
-focused audit to see findings for the selected type, and fix its producers,
-callers, boundaries, and tests in the enrollment change. See
-[Adopting the domain linters](../../server/docs/domain.md#adopting-the-domain-linters)
-for the migration steps.
+### Enrolling domain types
+
+Keep the linters enabled in normal verification. Declare applicable contracts
+for new types and work through related existing types one at a time.
+
+1. Identify the type's invariants, absence cases, and construction paths.
+   Trace the callers and the boundaries where it is stored or sent. See
+   [Domain](../../server/docs/domain.md) and
+   [Domain serialization](../../server/docs/serialization.md).
+2. Declare the construction, snapshot, presence, or codec contracts that
+   apply. Run the [focused audit](#domain-audits) to find affected uses.
+3. Fix producers, consumers, adapters, and
+   [domain fixtures](../../server/docs/testing.md#domain-fixtures) in the
+   enrollment change. For a confirmed analyzer error, add a regression case
+   and fix the analyzer. Document narrow exceptions at the site that needs them.
+4. Run `npx nx run server:verify` before moving on to the next type.
+
+### Construction checks
 
 Opt a type into construction checks in its declaration's doc comment:
 
@@ -98,8 +111,8 @@ construct its representation. Methods use `Receiver.Method`, for example
 only when it deliberately restores this type under the root's hydration
 contract. A function's name alone grants no permission, and permission applies
 only to the listed type and function body, excluding nested closures. Tests
-receive the same checks as production code. Use a local, explained `nolint`
-only for a justified fixture that cannot use normal construction.
+receive the same checks as production code. For fixture construction and
+exceptions, see [Domain fixtures](../../server/docs/testing.md#domain-fixtures).
 
 Defined scalars, arrays, and structs are supported. Arrays cover opaque values
 such as UUIDs; element writes and mutable slices require representation ownership.
@@ -135,22 +148,18 @@ return. Shared optionals, optional nil pointers, and type-only `reflect.TypeOf` 
 allowed. `//domain:zero-valid` declares that zero supports ordinary domain use,
 such as an empty `AliasSet`; other nonzero literals still require construction.
 
-For programmer-controlled fixed values, a `Must*` helper may call a checked
-constructor and panic on error. It needs no special lint permission when it
-uses the normal constructor. Such a call initializes a variable, not a Go
-constant. Retaining an actual domain constant requires a narrow, explained
-`nolint:domainconstruct` on its declaration and review of its invariants. The
-exception does not make zero valid or exempt subsequent operations. Ordinary
-closed enums retain their typed constant pattern.
+An approved constructor retains its construction permission when a `Must*`
+helper calls it. A `nolint:domainconstruct` on a typed constant applies at
+that declaration. Zero-value use and subsequent operations are checked
+independently. See [Fixed values](../../server/docs/constructors.md#fixed-values).
 
 ### Serialization contracts
 
-`domainserialization` checks serialization of constructor-protected types at
-known boundaries. An ordinary envelope may contain domain values recursively,
-but each domain value must declare support for the codec. A protected value
-without that support must first become raw representation data, usually through
-its serialization root's snapshot. Implementing an encoding interface alone is
-not an opt-in, and `domain:zero-valid` does not imply encoding support.
+`domainserialization` checks nested protected values at recognized codec
+calls and declared ports. It checks for an explicit codec declaration even
+when a type implements an encoding interface or permits zero. See
+[Domain serialization](../../server/docs/serialization.md) for choosing a
+boundary representation.
 
 ```go
 //domain:constructors NewResource ResourceFromSnapshot
@@ -164,35 +173,22 @@ type ResourceSnapshot struct {
 }
 ```
 
-`domain:serialization` accepts `json`, `text`, and `sql`, independently. Each is
-a reviewed contract: encoding valid state and decoding it successfully restores
-valid domain state under the type's restoration rules. Unsupported or invalid
-state must return an error. Compatibility defaults, migrations, and historical
-creation rules belong to restoration, which need not call today's `New` function.
-The analyzer checks the standard method signatures; tests must establish the
-implementation's semantic round trip and rejection behavior. Declaring a codec
-does not exempt construction, mutation, or zero-value use.
+`domain:serialization` requires `domain:constructors` and accepts `json`,
+`text`, and `sql` independently. The analyzer checks method signatures.
+Use tests to establish the semantic contract for each codec. Construction,
+mutation, and zero-value use remain subject to their own checks.
 Declared decoding hooks receive construction permission for their receiver type
 only, excluding nested closures. Child domain values still require their own
 construction or restoration paths.
 
-JSON requires pointer `UnmarshalJSON`; composites also need a value encoding
+JSON requires pointer `UnmarshalJSON`. Composites also need a value encoding
 hook (`MarshalJSON` or `MarshalText`). Text requires value `MarshalText` and
-pointer `UnmarshalText`; SQL requires value `Value` and pointer `Scan`. Encoding
-hooks must work for values in interfaces and maps, where pointer methods alone
-are insufficient. Text support does not imply JSON support: JSON can skip a text
-decoder for `null`. JSON map keys use the text contract. SQL scanners must not
-silently succeed on NULL or empty data while leaving a required value invalid.
-Use an optional representation for absence. A scalar may reuse its checked
-`Parse` constructor; a separate scalar snapshot API is not required.
+pointer `UnmarshalText`. SQL requires value `Value` and pointer `Scan`. The
+checker uses the text contract for JSON map keys.
 
-`domain:snapshot` identifies the stronger representation rule. Snapshots contain
-plain data recursively, including primitives, enums, raw nested DTOs, collections,
-optional pointers, and `time.Time`. Protected domain values remain prohibited
-even when they support a codec. Interface payloads, runtime handles, and behavior
-are not plain data. The marker does not promise valid scalar contents and does
-not enroll the snapshot in construction or zero-value rules. Names alone do not
-identify snapshots. Existing snapshot types are being migrated incrementally.
+`domain:snapshot` opts a declaration into recursive shape checks using the
+[plain-data snapshot rules](../../server/docs/serialization.md#snapshots-and-persistence).
+Construction and zero-value checks use their own enrollment policy.
 
 The analyzer recognizes the Go objects for JSON `Marshal`, `MarshalIndent`,
 `Unmarshal`, `Encoder.Encode`, and `Decoder.Decode`, SQL `Row.Scan`/`Rows.Scan`,
@@ -222,14 +218,13 @@ type scanner interface {
 func Send(payload any) error
 ```
 
-Selectors are comma-separated lists: `types=` names function type parameters,
-`encode=` and `decode=` name parameters (or a named method receiver), and
-`results=` gives zero-based payload result indices. Selectors are checked
-against the signature; decoding requires exactly one error result whose nil
-value means success. Declarations on functions and interface methods travel
-across packages as analysis facts. They are kept separate from inferred body
-effects. Use them on shared ports before their payload types are erased, rather
-than teaching the analyzer application-specific function names.
+Selectors are comma-separated lists. Use `types=` for function type parameters,
+`encode=` and `decode=` for named parameters or a method receiver, and
+`results=` for zero-based payload result indices. Decoding requires exactly one
+error result whose nil value means success. Declarations on functions and
+interface methods travel across packages as analysis facts. Declare the
+contract on each shared or forwarding port while concrete payload types are
+still visible.
 
 Encoding inputs are valid-value consumers, so encoding an uninitialized domain
 value still produces a `domainzero` finding. Standard JSON field encoding skips
@@ -239,17 +234,14 @@ checks, including when a pointer receiver can supply the hook.
 
 Decoder destinations accept zero output storage. A parameter selected for both
 encoding and decoding must already be valid. After the error is checked,
-decoding a declared native domain root establishes its validity, including its
-required members. Decoding an ordinary envelope does not establish required-field
-presence because omitted fields can bypass nested decoders. Failure and unchecked
-errors establish no validity.
+the analyzer trusts a successfully decoded native root and its required
+members. It keeps tracking required fields in an ordinary envelope.
 Scanning a primitive and converting it to a domain value still requires a
 constructor.
 
 This is bounded static checking, not whole-program reflection or byte-buffer
 provenance analysis. Opaque interface payloads, indirect function dispatch, and
-unknown storage origins can hide types. New generic forwarding abstractions
-need their own boundary declaration. A narrow, explained
+unknown storage origins can hide types. A narrow, explained
 `nolint:domainserialization` remains available for an exceptional representation;
 do not grant a type an untested codec contract to suppress findings.
 
@@ -375,12 +367,12 @@ consumers should use the explicit fields for decisions.
 
 ### Zero-value flow
 
-`domainzero` uses the same type policies. An enrolled type's zero is invalid
-unless its declaration includes `//domain:zero-valid`. This is a statement of
-domain meaning, not something the checker can infer from a representation.
-The checker rejects a valid-zero struct whose required fields recursively
-contain an invalid-zero value. Shared optionals, optional nil pointers, and empty containers do
-not contradict that declaration.
+`domainzero` uses the construction type policies. It rejects a
+`//domain:zero-valid` struct whose required fields recursively contain an
+invalid-zero value. Absent optionals, nil optional pointers, and empty
+containers are valid in those checks. See
+[Zero values and optionality](../../server/docs/domain.md#zero-values-and-optionality)
+for deciding when to accept zero and how to represent absence.
 
 Temporary storage such as `var value ResourceID` is allowed. The checker follows
 local assignments, branches, copies, struct fields, and allocated pointers to
@@ -452,22 +444,18 @@ type ResourceLookup interface {
 ```
 
 `//domain:presence` takes no arguments and applies only to those two result
-shapes. The first result must be valid when the second result is true and the
-optional error is nil. On absence or failure, that payload is inert and may be
-zero, boxed, or point to invalid storage. Callers must establish both guards
-before consuming a required domain value. Forwarding the value with its matching
-presence and error results is allowed. A type whose zero is valid does not need
-a presence check merely to use that zero.
+shapes. The checker recognizes established presence and error guards, or
+forwarding the value with its matching indicators. Valid-zero types retain
+their valid zeros. On an inactive path the analysis can preserve the payload
+through boxing or pointer storage.
 
-Declare the contract separately on interface methods and concrete functions or
-methods. Facts follow the Go declaration across packages and statically resolved
-calls, including method values and expressions. The checker does not infer
-presence from a method name, result name, signature alone, or an implementation
-of an unannotated interface. Booleans such as `created` and `changed` retain their
-ordinary meaning. Invalid signatures, duplicate markers, and marker arguments
-produce `domainzero.invalid-presence-policy` findings, including in packages
-without protected domain types. Arbitrary function parameters and relationships
-between separately stored fields do not acquire a presence contract.
+Facts follow the declaration across packages and statically resolved calls,
+including method values and expressions. Each interface method and concrete
+function or method supplies its own fact. Invalid signatures, duplicate markers,
+and marker arguments produce `domainzero.invalid-presence-policy` findings,
+including in packages without protected types. The contract applies to the
+annotated results. Arbitrary parameters and separately stored fields use
+ordinary flow analysis.
 
 #### Shared optional storage
 
@@ -491,15 +479,15 @@ valid zeros, such as nil pointers and empty slices, retain that validity. Error
 guards on other APIs remain independent. The analyzer trusts this small shared
 implementation's contract; tests exercise its actual source across packages.
 
-Presence does not establish ownership or freeze T. Copies retain ordinary Go
-sharing, and the analyzer does not fully trace later writes through pointers or
-slice backing storage carried through nested generic wrappers. A presence check
-does not validate those mutations; callers must preserve T's invariants.
+The analyzer has limited visibility into later writes through pointers and
+slice backing storage in generic wrappers. See
+[Field access and getters](../../server/docs/domain.md#field-access-and-getters)
+for ownership rules.
 
 Optional has no native JSON, text, or SQL serialization contract. Encoding its
 private fields would lose its value and presence; serialization boundaries
-report this even when T itself is serializable. Convert presence into an
-appropriate raw DTO. A snapshot cannot hide a protected T inside Optional.
+report this even when T itself is serializable. The snapshot checker also
+checks T inside Optional.
 
 No general optional-type registration directive, arbitrary field relationship,
 or separate presence-method/unchecked-getter correlation is inferred.
@@ -588,9 +576,6 @@ inherit that contract. Copies made before mutation retain their state, and a
 later explicit zero assignment remains invalid. Length relationships beyond the
 simple helper contracts above are not inferred. Error factories whose non-nil
 contract cannot be derived can produce uncertain findings.
-A returned boolean is not automatically treated as an absence marker; use
-`domain:presence` for the supported optional-result signatures, return a shared
-`optional.Optional[T]`, or use an optional pointer where appropriate.
 
 For a justified case beyond these limits, use a narrow `nolint:domainzero` with
 a local explanation of how initialization or the error contract is guaranteed.
@@ -598,10 +583,6 @@ Prefer teaching the checker a recurring ordinary Go pattern to adding repeated
 suppressions. Do not mark a type `zero-valid` to silence an analysis limitation,
 and do not add defensive `IsZero()` checks to work around it. Tests need the same
 justification as production code.
-
-Decode boundary data into plain DTOs and then parse or hydrate through the
-serialization root, as described in the [domain guidance](../../server/docs/domain.md).
-Decoding into a struct with domain fields does not establish their validity.
 
 ### Analysis performance
 

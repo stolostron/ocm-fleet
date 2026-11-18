@@ -34,14 +34,11 @@ The port surface (application-visible)
 These types live in internal/domain/workflow.go:
 
 Workflow inputs, activity inputs/results, signals, continuation inputs, and
-awaited workflow results cross JSON serialization boundaries. Their ports carry
-`domain:boundary` declarations so the linter can inspect concrete generic
-payload types before `any` erases them. Payload envelopes must contain raw data
-or domain types that explicitly declare a native JSON round trip. The latter
-must restore valid state on successful decoding, usually through snapshots.
-See [native encoding contracts](domain.md#native-encoding-contracts). A new
-forwarding port must declare its serialized parameters or payload results too;
-the analyzer does not infer a workflow contract from a function's name.
+awaited workflow results cross JSON serialization boundaries. Use the
+[serialization guide](serialization.md#native-encoding-contracts) to choose
+payload types. Follow the
+[lint tooling guide](../../tools/golangci-lint/README.md#serialization-contracts)
+when declaring serialized ports, including forwarding ports.
 
 1. Activity definition
 

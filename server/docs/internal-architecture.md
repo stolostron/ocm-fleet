@@ -54,17 +54,14 @@ This layer makes the end to end use cases of an application testable, without an
 ### Method signatures
 
 Application service methods accept **validated values and constructed commands**,
-never domain aggregates or entities. Required inputs are positional; optional
-value inputs use `optional.Optional[T]`, and pointer inputs can use nil for
-absence where reference semantics are appropriate. Avoid exported parameter
-bags whose required domain fields can be omitted. See
-[constructors.md](./constructors.md) for constructor options and
-[domain.md](./domain.md) for boundary DTOs and hydration.
+never domain aggregates or entities. See [Constructors](./constructors.md)
+for signature choices and [Zero values and optionality](./domain.md#zero-values-and-optionality)
+for optional inputs.
 
-The transport layer constructs validated values and commands from raw protocol
-input; the application service receives these and internally loads, mutates,
-and persists the aggregate. This keeps the aggregate lifecycle encapsulated —
-callers never hold a mutable aggregate and "save it back."
+Transport maps raw protocol input to those arguments. The application service
+loads, mutates, and persists the aggregate within its transaction. See
+[Raw DTOs at boundaries](./serialization.md#raw-dtos-at-boundaries) for
+the input mapping.
 
 For queries, returning domain aggregates (or projections of them) is fine —
 they are read-only from the caller's perspective.
@@ -90,23 +87,12 @@ This is the primary home for business logic that differentiates the application.
 
 Sometimes you can define interfaces' implementations in domain, while obeying these dependency rules. Some implementations are simple enough (a very basic fake for a simple interface) that it may be convenient to do so. Others may be core aspects of the domain model itself (e.g. strategy implementations that are part of the business rules). In those cases, the implementations MUST be defined in domain, with dependency rules enforced (I/O abstracted).
 
-### Domain Model vs Data Model
+### Domain model and storage
 
-A Domain Model is commonly confused with a database's *data model*. In some communities (e.g. Java), it is common that they are even defined together. They are not the same thing.
-
-A domain model defines the nouns and verbs of the business. We express business rules as directly and simply as possible in imperative code. It matches how the entire team, from coders to UX, speak about the problem domain. It necessarily contains data (state), but it is not the same thing as the data model used by a database to persist this state. It is the responsibility of the *repository implementation* to define how it translates the state of the domain model into database state, and back. However, domain models often participate in *enabling this* by exposing a serialized form.
-
-This can be explicit or declarative. In an explicit model, the domain model has explicit serialize/deserialize functions that expose the raw state of the model, and hydrate from raw state. In a declarative model, the domain model is annotated (in some language dependent way) with how it can be serialized. Declarative metadata can "get away" with describing repository implementation details in the domain model, because it is just that: declarative metadata. Good metadata frameworks are flexible enough such that they don't otherwise impose themselves on the domain model. An ideal domain model makes no concessions to frameworks. Its only concern is modeling the business problem accurately and correctly.
-
-We use an explicit approach: serialization roots expose snapshots with public
-plain-data fields and restore domain state through a root-level hydration
-contract. Snapshots contain primitives or nested DTOs, with conventional
-standard-library values such as `time.Time` where useful. Repositories map
-those fields to their storage layout directly and choose encodings where
-needed; JSON is not a universal requirement. Hydration must account for
-previous snapshot formats and may bypass current creation rules. See
-[domain.md](./domain.md#snapshots-and-persistence) for composition and
-compatibility guidance.
+The domain model uses the nouns and verbs of the business and expresses its
+rules directly in code. See [Domain](./domain.md) for model design and
+[Snapshots and persistence](./serialization.md#snapshots-and-persistence)
+for the contract with repositories.
 
 ### Tests
 
@@ -114,7 +100,14 @@ Tests here are true "unit tests." They can usually isolate a single method or st
 
 ## Infrastructure
 
-Infrastructure is where implementations of interfaces defined elsewhere go. These are not the essence of the application, but adapters to make the essential abstractions work in certain environments or dependencies. Implementations that require I/O in particular almost always go here. There is little business logic here. Some business rules are expressed insofar as they are requirements of their interfaces. As such, it is not the responsibility of infrastructure to define business logic, but it may have to adhere to it. For example, a repository has to understand the domain model enough in order to enforce constraints and follow query parameters.
+Infrastructure is where implementations of interfaces defined elsewhere go.
+Implementations that require I/O in particular almost always go here.
+Adapters work with their environment and follow the business rules
+specified by their interfaces.
+
+Repositories honor query parameters and enforce storage constraints such as
+cross-aggregate uniqueness, referential integrity, and transactional
+consistency.
 
 ### Tests
 
