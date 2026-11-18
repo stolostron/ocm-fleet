@@ -559,6 +559,13 @@ a lost or consumed notification must not strand cleanup after a workflow failure
 Recovery can notify an existing cleanup listener again or let a restarted
 listener read the committed completion state.
 
+The [resource-manager Quint model](../../server/model/README.md) separates these
+database commits from workflow checkpoints and instance termination. It retains
+counterexamples for the current Create/Delete recovery dependencies alongside a
+proposed protocol that keeps progress inside the durable workflows. The model's
+assumptions and finite bounds are explicit; it is not yet connected to application
+conformance tests and does not rely on the delivery POC's guarantees.
+
 A Kubernetes controller can use a finalizer, a persisted unresolved-create record,
 and UID-qualified names to implement this contract without a general Fleet owner
 reference API. A reserved name range provides initial ownership by convention;

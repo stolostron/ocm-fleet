@@ -51,6 +51,85 @@
       ],
       "outputs": []
     },
+    "model:bootstrap": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node model/check.mjs bootstrap",
+        "cwd": "server"
+      },
+      "cache": false
+    },
+    "model:typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node model/check.mjs typecheck",
+        "cwd": "server"
+      },
+      "cache": false
+    },
+    "model:fmt": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "prettier --write model/*.mjs model/*.md model/*.json project.json ../docs/design/managed_resources.md",
+          "npx nx run server:refresh:inputs"
+        ],
+        "parallel": false,
+        "cwd": "server"
+      },
+      "cache": false
+    },
+    "model:lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "prettier --check model/*.mjs model/*.md model/*.json project.json ../docs/design/managed_resources.md",
+          "eslint model/*.mjs"
+        ],
+        "parallel": false,
+        "cwd": "server"
+      },
+      "cache": false
+    },
+    "model:test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node model/check.mjs test",
+        "cwd": "server"
+      },
+      "cache": false
+    },
+    "model:verify": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node model/check.mjs verify",
+        "cwd": "server"
+      },
+      "cache": false
+    },
+    "model:reproduce": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node model/check.mjs reproduce",
+        "cwd": "server"
+      },
+      "cache": false
+    },
+    "model:check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "npx nx run server:model:lint",
+          "npx nx run server:model:typecheck",
+          "npx nx run server:model:test",
+          "npx nx run server:model:reproduce",
+          "npx nx run server:model:verify"
+        ],
+        "parallel": false,
+        "cwd": "server"
+      },
+      "cache": false
+    },
     "test-stress": {
       "executor": "nx:run-commands",
       "options": {
