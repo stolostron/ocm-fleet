@@ -678,6 +678,11 @@ npx nx run ocm-fleet:test:go-quality
 npx nx run ocm-fleet:update:golangci-lint --release=v2.15.0
 ```
 
+Put detailed rule behavior and regression cases in the Go analyzer tests. Keep
+the domain cases in `tools/golangci-lint-config.test.mjs` focused on plugin
+activation, a representative CLI smoke test for exit status and JSON diagnostics,
+and the audit's parser and report tests.
+
 The quality integration tests run real Nx, Go, and linter commands in disposable
 workspaces. They check source files on disk, per-module completion markers, lint
 failure propagation, and Nx's exported task dependencies. These contracts keep
