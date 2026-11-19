@@ -1,0 +1,2 @@
+# Managed external source, installed Rust and live native compilation caches.
+/client/aio-installation-check/.native-toolchain/

@@ -23,6 +23,11 @@ export default [
       "**/playwright/.cache/**",
       "**/test-results/**",
       "**/playwright-report/**",
+      // Managed Perry source, Rustup, Cargo registry and native caches; the
+      // root .gitignore/.nxignore exclude it from git and Nx, but ESLint does
+      // not read those, and the shared fmt/fix targets run `eslint .` from the
+      // project root. Upstream source formatting must stay untouched.
+      "client/aio-installation-check/.native-toolchain/**",
     ],
   },
   {

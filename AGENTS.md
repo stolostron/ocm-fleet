@@ -53,6 +53,7 @@ Regenerate: `npx nx run ocm-fleet:generate-agents`.
 
 - @ocm-fleet/kind-plugin (extensions/kind/client) - Web console plugin for creating and managing local Kind clusters.
 - @ocm-fleet/kind-server (extensions/kind/server) - Placeholder for the Kind cluster provider backend extension.
+- aio-installation-check (client/aio-installation-check) - All-in-one host preflight utility for OCM Fleet.
 - build-utils (sdk/build-utils) - Shared build helpers for web console plugins and UI assets.
 - cli (client/cli) - Fleetctl command-line interface for OCM Fleet.
 - common (sdk/common) - Shared types, utilities, and hooks for the web console and its plugins.
