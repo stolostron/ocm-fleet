@@ -53,7 +53,6 @@ silently skipped by workspace aggregation.
   "verify": {},
   "fix": {},
   "fix:lint": {},
-  "refresh:inputs": {},
   "check": {},
   "lint": {}
 }
@@ -65,7 +64,7 @@ provide Buf `fmt`/`lint` commands and a no-op `fix:lint`, as in the example.
 
 | Target   | Contract                                                                                                            |
 | -------- | ------------------------------------------------------------------------------------------------------------------- |
-| `fmt`    | Apply formatting and import organization, then refresh Nx's file hashes.                                            |
+| `fmt`    | Apply formatting and import organization.                                                                           |
 | `verify` | Format first, then check the resulting source in a fresh Nx invocation.                                             |
 | `fix`    | Format, apply broader supported linter fixes, then check. Review its diff.                                          |
 | `check`  | Read-only lint, formatting, normal tests, component tests, and type checks that the project provides. CI uses this. |
@@ -76,9 +75,16 @@ as `verify` after applying fixes. Use `verify` when you only want formatting and
 checks, or `check` when the source must stay untouched.
 
 Leave common commands and ordering in `nx.json`. Source-rewriting targets and
-`verify` must not be cached. Custom rewrites must also refresh the file hashes.
-The [pre-commit hook](precommit.md) uses workspace `lint`, `fmt`, and `check` in a
-staged snapshot, so projects following this lifecycle participate automatically.
+`verify` must not be cached. Start a fresh Nx invocation for checks after source
+rewrites. Custom rewrites must update the modification time of changed files.
+If a tool preserves or restores an older modification time, touch each changed
+file before starting the check. Nx can otherwise reuse a cached passing result
+for the old contents.
+
+The [pre-commit hook](precommit.md) runs workspace `check` in a staged snapshot
+and uses `lint` to decide whether to try formatting. It reuses the existing
+workspace and project formatters for recovery, so projects following this
+lifecycle participate automatically.
 Keep `check` read-only and declare generated/build outputs for cache restoration.
 
 ## Declare the project's capabilities

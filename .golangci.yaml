@@ -10,8 +10,9 @@ run:
   timeout: 5m
   # Evaluate exclusion paths relative to this shared configuration.
   relative-path-mode: cfg
-  # Concurrent Nx tasks wait for the shared lock instead of failing to acquire it.
-  allow-serial-runners: true
+  # Independent Nx tasks can share the local analysis cache without the global
+  # runner lock serializing lint across Go modules and test fixtures.
+  allow-parallel-runners: true
 
 formatters:
   exclusions:

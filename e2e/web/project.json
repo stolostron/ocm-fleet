@@ -12,7 +12,6 @@
     "verify": {},
     "fix": {},
     "fix:lint": {},
-    "refresh:inputs": {},
     "check": {},
     "test:e2e": {
       "executor": "nx:run-commands",

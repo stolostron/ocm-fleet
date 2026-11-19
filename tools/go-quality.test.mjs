@@ -157,7 +157,6 @@ func TestCacheInputs(t *testing.T) {
     ["server/main.go", await readFile(join(root, "server/main.go"), "utf8")],
   ]) {
     await writeFile(join(root, path), content + "\n");
-    await task("refresh:inputs");
     await runTest();
   }
   for (const change of [
@@ -198,7 +197,6 @@ test("Go workspace aliases include new Go modules and exclude unrelated projects
       verify: {},
       fix: {},
       "fix:lint": {},
-      "refresh:inputs": {},
       check: {},
       lint: {},
       test: {
@@ -388,15 +386,10 @@ async function fixture(t, { serverTestPolicy = false } = {}) {
     // server cache-policy fixture retains proto to exercise dependency inputs.
     delete project.implicitDependencies;
     project.targets = Object.fromEntries(
-      [
-        "fmt",
-        "verify",
-        "fix",
-        "fix:lint",
-        "refresh:inputs",
-        "check",
-        "lint",
-      ].map((name) => [name, project.targets[name]]),
+      ["fmt", "verify", "fix", "fix:lint", "check", "lint"].map((name) => [
+        name,
+        project.targets[name],
+      ]),
     );
     project.targets.lint.inputs = [
       "{projectRoot}/**/*.go",
