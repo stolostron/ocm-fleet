@@ -498,6 +498,9 @@ appendFileSync(${JSON.stringify(join(f.root, formatterLog))}, "dependency\\n");
   const env = {
     ...process.env,
     NX_DAEMON: "false",
+    NX_VERBOSE_LOGGING: "false",
+    NX_SKIP_NX_CACHE: "false",
+    NX_DISABLE_NX_CACHE: "false",
   };
   delete env.NX_DEFAULT_OUTPUT_STYLE;
   await exec(process.execPath, [nx, "run", "ocm-fleet:verify"], {
@@ -550,7 +553,11 @@ appendFileSync(${JSON.stringify(join(f.root, formatterLog))}, "dependency\\n");
   // fixing source. Unrelated staged work and unstaged dependency edits survive.
   await f.stage("notes.txt", "separate staged work\n");
   await f.stage(source, "export default 'next'");
-  await commit("--only", source, "-m", "format selected source");
+  const fresh = await commit("--only", source, "-m", "format selected source");
+  assert.doesNotMatch(
+    fresh.stdout + fresh.stderr,
+    /noisy passing check output/,
+  );
   assert.equal(await f.read(source), 'export default "next";\n');
   assert.equal(
     await f.git("show", `HEAD:${source}`),
@@ -580,15 +587,12 @@ appendFileSync(${JSON.stringify(join(f.root, formatterLog))}, "dependency\\n");
   // A stale cache key or bad workspace link would either falsely pass or fail
   // for the wrong reason. Changing staged dependency source must run the test.
   await f.git("add", "dependency/value.mjs");
-  await assert.rejects(
-    commit("-m", "bad staged dependency"),
-    (error) => {
-      const output = error.stdout + error.stderr;
-      assert.match(output, /staged checks failed/);
-      assert.doesNotMatch(output, /noisy passing check output/);
-      return true;
-    },
-  );
+  await assert.rejects(commit("-m", "bad staged dependency"), (error) => {
+    const output = error.stdout + error.stderr;
+    assert.match(output, /staged checks failed/);
+    assert.doesNotMatch(output, /noisy passing check output/);
+    return true;
+  });
   assert.equal(
     await f.read(".checks-ran"),
     "ran:staged\n".repeat(3) + "ran:unstaged\n",
@@ -597,6 +601,19 @@ appendFileSync(${JSON.stringify(join(f.root, formatterLog))}, "dependency\\n");
     await f.index("dependency/value.mjs"),
     'export default "unstaged";\n',
   );
+  await f.stage("dependency/value.mjs", 'export default "staged";\n');
+  const originalProject = await f.read("project.json");
+  const missingCheck = JSON.parse(originalProject);
+  delete missingCheck.targets.check;
+  await f.stage("project.json", JSON.stringify(missingCheck));
+  await assert.rejects(commit("-m", "missing staged check"), (error) => {
+    assert.match(
+      error.stdout + error.stderr,
+      /Cannot find configuration for task ocm-fleet:check/,
+    );
+    return true;
+  });
+  await f.stage("project.json", originalProject);
   await f.git("config", "core.hooksPath", join(f.root, ".git/no-hooks"));
   const before = await f.git("write-tree");
   const alteredLock = {

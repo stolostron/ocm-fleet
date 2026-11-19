@@ -71,14 +71,14 @@ func (c *checker) collectPolicies() {
 			if !ok || group.Tok != token.TYPE {
 				continue
 			}
-			if len(group.Specs) > 1 && hasDomainDirective(group.Doc) {
+			if group.Lparen.IsValid() && hasDomainDirective(group.Doc) {
 				c.reportPolicy(group, "grouped-directive", "put domain directives on each type in a grouped declaration")
 				continue
 			}
 			for _, spec := range group.Specs {
 				spec := spec.(*ast.TypeSpec)
 				doc := spec.Doc
-				if doc == nil && len(group.Specs) == 1 {
+				if doc == nil && !group.Lparen.IsValid() {
 					doc = group.Doc
 				}
 				c.collectPolicy(spec, doc)

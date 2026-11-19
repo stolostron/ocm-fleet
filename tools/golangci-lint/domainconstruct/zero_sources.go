@@ -1,6 +1,8 @@
 package domainconstruct
 
 import (
+	"go/constant"
+	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/ssa"
@@ -15,16 +17,6 @@ func (c *zeroChecker) resultSource(call *ssa.CallCommon, result int) (valueSourc
 		}
 	}
 	return valueSource{}, false
-}
-
-func sourceArgument(call *ssa.CallCommon, index int) ssa.Value {
-	if index == -1 {
-		if function := call.StaticCallee(); function != nil && function.Signature.Recv() != nil && !call.IsInvoke() {
-			return call.Args[0]
-		}
-		return nil
-	}
-	return contractArgument(call, index)
 }
 
 func (c *zeroChecker) callResultProblem(call *ssa.Call, result int, path []int, t types.Type, point flowPoint, context flowContext, seen map[valueVisit]bool) *zeroProblem {
@@ -43,7 +35,7 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 		// Arguments and receivers are checked at the call. Re-reporting their
 		// origin through an identity or field accessor would duplicate that use.
 		// A raw argument converted into a domain result has no such contract.
-		if argument := sourceArgument(&call.Call, source.Parameter); argument != nil {
+		if argument := contractArgument(&call.Call, source.Parameter); argument != nil {
 			projection := append(append([]int(nil), source.Path...), path...)
 			if original := projectedType(argument.Type(), projection); original != nil && !types.Identical(original, t) {
 				return c.problem(argument, projection, t, point, context, seen)
@@ -75,11 +67,11 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 			return c.sourceProblem(source.Values[0], call, result, nil, payload, point, context, seen)
 		}
 		if structure, ok := t.Underlying().(*types.Struct); ok {
-			for index, child := range source.Values {
-				if index < structure.NumFields() && context.use.includesField(structure, index) {
-					field := structure.Field(index)
-					if problem := c.sourceProblem(child, call, result, nil, field.Type(), point, context, seen); problem != nil {
-						problem.path = fieldPath(field.Name(), problem.path)
+			for selected := range c.jsonShape.fields(structure, context.use.json()) {
+				index := selected.indices[0]
+				if index < len(source.Values) && !selected.indirect {
+					if problem := c.sourceProblem(source.Values[index], call, result, selected.indices[1:], selected.field.Type(), point, context, seen); problem != nil {
+						problem.path = fieldPath(selected.path, problem.path)
 						return problem
 					}
 				}
@@ -95,11 +87,48 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 		return alternatives.problem().step("branch", call.Pos(), "generic helper selects an alternative result")
 	case sourceConversion:
 		if len(source.Values) != 0 {
-			return c.sourceProblem(source.Values[0], call, result, path, t, point, context, seen).
+			operand := source.Values[0]
+			if basic, ok := t.Underlying().(*types.Basic); ok && basic.Info()&types.IsString != 0 &&
+				operand.Kind == sourceZero && operand.ZeroKind == constant.Int {
+				return nil // Integer zero converts to a one-rune string.
+			}
+			if problem, handled := c.narrowIntegerSource(operand, &call.Call, path, t, context.use); handled {
+				return problem
+			}
+			return c.sourceProblem(operand, call, result, path, t, point, context, seen).
 				step("conversion", call.Pos(), "generic helper converts raw representation to "+t.String())
 		}
 	}
 	return nil
+}
+
+func (c *zeroChecker) narrowIntegerSource(source valueSource, call *ssa.CallCommon, path []int, target types.Type, use valueUse) (*zeroProblem, bool) {
+	if source.Kind != sourceParameter || len(source.Path)+len(path) != 0 || c.pass.TypesSizes == nil {
+		return nil, false
+	}
+	argument := contractArgument(call, source.Parameter)
+	if argument == nil {
+		return nil, false
+	}
+	from, integerFrom := argument.Type().Underlying().(*types.Basic)
+	to, integerTo := target.Underlying().(*types.Basic)
+	if !integerFrom || !integerTo || from.Info()&types.IsInteger == 0 || to.Info()&types.IsInteger == 0 {
+		return nil, false
+	}
+	sizes := c.pass.TypesSizes
+	if sizes.Sizeof(target) >= sizes.Sizeof(argument.Type()) {
+		return nil, false
+	}
+	if literal, ok := argument.(*ssa.Const); ok && literal.Value != nil {
+		one := constant.MakeInt64(1)
+		width := uint(sizes.Sizeof(target) * 8)
+		mask := constant.BinaryOp(constant.Shift(one, token.SHL, width), token.SUB, one)
+		if constantZero(constant.BinaryOp(literal.Value, token.AND, mask)) {
+			return c.zeroType(target, "", use), true
+		}
+		return nil, true
+	}
+	return c.conditionalProblem(target, reasonConversion, use), true
 }
 
 func (c *zeroChecker) sourceSliceView(call *ssa.Call, result int, value ssa.Value) (collectionView, bool) {
@@ -143,9 +172,10 @@ func (c *zeroChecker) sliceSourceView(source valueSource, call *ssa.Call, value 
 	if source.Kind != sourceSlice {
 		return collectionView{}, false
 	}
+	view.capEnd = -1
 	view.end = source.Length.Constant
 	if source.Length.Parameter >= 0 {
-		argument := sourceArgument(&call.Call, source.Length.Parameter)
+		argument := contractArgument(&call.Call, source.Length.Parameter)
 		if source.Length.FromLen {
 			if original, ok := c.collectionOf(argument); ok {
 				view.end, view.length = original.end-original.start, original.length

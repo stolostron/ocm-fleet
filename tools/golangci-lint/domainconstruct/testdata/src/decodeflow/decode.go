@@ -91,6 +91,23 @@ func ReplacedDestination(row *sql.Row, other *encodingvalues.ID) {
 	consume(id) // want "argument is an empty encodingvalues.ID"
 }
 
+func RawAliasDecode(data []byte) {
+	var id encodingvalues.ID
+	if err := json.Unmarshal(data, (*string)(&id)); err != nil { // want "conversion uses an empty encodingvalues.ID"
+		return
+	}
+	consume(id) // want "empty encodingvalues.ID"
+}
+
+func PossiblyExcludedDestination(row *sql.Row, n int) {
+	var id, other encodingvalues.ID
+	outputs := []any{&other, &id}
+	if err := row.Scan(outputs[:n]...); err != nil {
+		return
+	}
+	consume(id) // want "empty encodingvalues.ID"
+}
+
 func FailedOverwrite(data []byte) {
 	id, err := encodingvalues.NewID("valid")
 	if err != nil { return }

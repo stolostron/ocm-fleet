@@ -4,8 +4,14 @@ import "errors"
 
 func JoinedErrorUnaffectedByOtherRange(mutate func([]error)) (ID, error) {
 	errs := []error{nil, errors.New("failure")}
-	mutate(errs[:1])
+	mutate(errs[:1:1])
 	return "", errors.Join(errs[1:]...)
+}
+
+func JoinedErrorMayChangeThroughCapacity(mutate func([]error)) (ID, error) {
+	errs := []error{nil, errors.New("failure")}
+	mutate(errs[:1])
+	return "", errors.Join(errs[1:]...) // want "return produces an empty zeroflow.ID"
 }
 
 func inspectErrors(errs []error) int { return len(errs) }

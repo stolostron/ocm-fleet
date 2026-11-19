@@ -11,15 +11,25 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-// A view identifies a range in one backing allocation. An unknown end is -1;
-// length retains the expression needed to recognize complete range fills.
+// A view identifies a range in one backing allocation. Unknown ends are -1.
+// The dynamic upper bound is relative to lengthBase in the backing storage.
 type collectionView struct {
-	storage address
-	element types.Type
-	start   int64
-	end     int64
-	length  ssa.Value
-	value   ssa.Value
+	storage      address
+	element      types.Type
+	start        int64
+	end          int64
+	capEnd       int64
+	length       ssa.Value
+	lengthBase   int64
+	dynamicStart bool
+	value        ssa.Value
+}
+
+func (view collectionView) size() int64 {
+	if view.end < 0 {
+		return -1
+	}
+	return max(0, view.end-view.start)
 }
 
 type elementRange struct{ start, end int64 }
@@ -48,8 +58,8 @@ func (c *zeroChecker) checkCollectionBuiltin(instruction ssa.CallInstruction, po
 			return true
 		}
 	case "append", "copy", "clear":
-		if builtin.Name() == "clear" {
-			if view, ok := c.collectionOf(call.Args[0]); ok && view.end >= 0 && view.start == view.end {
+		if builtin.Name() != "append" {
+			if view, ok := c.collectionOf(call.Args[0]); ok && view.size() == 0 {
 				return true
 			}
 		}
@@ -64,9 +74,22 @@ func (c *zeroChecker) checkCollectionBuiltin(instruction ssa.CallInstruction, po
 				}
 			}
 		} else {
-			for _, argument := range call.Args[1:] {
-				if problem := c.problem(argument, nil, argument.Type(), point, context, make(map[valueVisit]bool)); problem != nil {
-					c.report(zeroUse{pos: instruction.Pos(), call: call}, problem, "store-element", argument)
+			for index, argument := range call.Args[1:] {
+				var problem *zeroProblem
+				destination, destKnown := c.collectionOf(call.Args[0])
+				source, sourceKnown := c.collectionOf(argument)
+				if builtin.Name() == "copy" && destKnown && sourceKnown {
+					definite := destination.size() >= 0 && source.size() >= 0
+					source.end = endFromCount(source.start, minEnd(destination.size(), source.size()))
+					problem = c.collectionStorageProblem(source, point, context, make(map[valueVisit]bool), nil, make(map[collectionVisit]bool))
+					if !definite {
+						problem = problem.uncertain()
+					}
+				} else {
+					problem = c.problem(argument, nil, argument.Type(), point, context, make(map[valueVisit]bool))
+				}
+				if problem != nil {
+					c.report(zeroUse{pos: instruction.Pos(), call: call, argument: index + 1}, problem, "store-element", argument)
 				}
 			}
 		}
@@ -108,6 +131,11 @@ func (c *zeroChecker) freshStorage(root ssa.Value) bool {
 	case *ssa.Alloc, *ssa.MakeSlice:
 		return true
 	case *ssa.Call, *ssa.Extract:
+		if call, ok := root.(*ssa.Call); ok {
+			if before, appended, known := c.appendViews(&call.Call); known && before.end+appended.size() > before.capEnd {
+				return true
+			}
+		}
 		source, _, _, known := c.rootSource(root)
 		return known && freshSource(source)
 	}
@@ -146,7 +174,7 @@ func (c *zeroChecker) elementProblem(value, index ssa.Value, projection []int, t
 
 func (c *zeroChecker) elementAtProblem(value, index ssa.Value, projection []int, t types.Type, point, use flowPoint, context flowContext, seen map[valueVisit]bool) *zeroProblem {
 	visit := valueVisit{value, pathKey(projection), t}
-	if !context.possible || seen[visit] {
+	if !context.possible || seen[visit] || !c.work.take() {
 		return nil
 	}
 	seen[visit] = true
@@ -187,6 +215,14 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 			return collectionView{storage: address{root: value}, element: slice.Elem(), value: value}, true
 		}
 	case *ssa.Call:
+		if before, appended, ok := c.appendViews(&value.Call); ok {
+			end := before.end + appended.size()
+			if end > before.capEnd {
+				return collectionView{storage: address{root: value}, element: before.element, end: before.size() + appended.size(), capEnd: -1, value: value}, true
+			}
+			before.end, before.length, before.value = end, nil, value
+			return before, true
+		}
 		return c.sourceSliceView(value, 0, value)
 	case *ssa.Extract:
 		if call, ok := value.Tuple.(*ssa.Call); ok {
@@ -194,23 +230,27 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 		}
 	case *ssa.Alloc:
 		if array, ok := value.Type().Underlying().(*types.Pointer).Elem().Underlying().(*types.Array); ok {
-			return collectionView{storage: address{root: value}, element: array.Elem(), end: array.Len(), value: value}, true
+			return collectionView{storage: address{root: value}, element: array.Elem(), end: array.Len(), capEnd: array.Len(), value: value}, true
 		}
 	case *ssa.MakeSlice:
 		length, known := integerValue(value.Len)
 		if !known {
 			length = -1
 		}
-		return collectionView{storage: address{root: value}, element: value.Type().Underlying().(*types.Slice).Elem(), end: length, length: value.Len, value: value}, true
+		capacity, known := integerValue(value.Cap)
+		if !known {
+			capacity = -1
+		}
+		return collectionView{storage: address{root: value}, element: value.Type().Underlying().(*types.Slice).Elem(), end: length, capEnd: capacity, length: value.Len, value: value}, true
 	case *ssa.Parameter, *ssa.FreeVar:
 		switch t := value.Type().Underlying().(type) {
 		case *types.Slice:
-			return collectionView{storage: address{root: value}, element: t.Elem(), end: -1, value: value}, true
+			return collectionView{storage: address{root: value}, element: t.Elem(), end: -1, capEnd: -1, value: value}, true
 		case *types.Array:
-			return collectionView{storage: address{root: value}, element: t.Elem(), end: t.Len(), value: value}, true
+			return collectionView{storage: address{root: value}, element: t.Elem(), end: t.Len(), capEnd: t.Len(), value: value}, true
 		case *types.Pointer:
 			if array, ok := t.Elem().Underlying().(*types.Array); ok {
-				return collectionView{storage: address{root: value}, element: array.Elem(), end: array.Len(), value: value}, true
+				return collectionView{storage: address{root: value}, element: array.Elem(), end: array.Len(), capEnd: array.Len(), value: value}, true
 			}
 		}
 	case *ssa.Slice:
@@ -220,6 +260,11 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 				var known bool
 				low, known = integerValue(value.Low)
 				if !known {
+					if value.Low == value.High {
+						view.end, view.length, view.value = view.start, nil, value
+						view.dynamicStart = true
+						return view, true
+					}
 					return collectionView{}, false
 				}
 			}
@@ -229,6 +274,13 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 					view.length = nil
 				} else {
 					view.end, view.length = -1, value.High
+					view.lengthBase = view.start
+				}
+			}
+			if value.Max != nil {
+				view.capEnd = -1
+				if max, known := integerValue(value.Max); known && !view.dynamicStart {
+					view.capEnd = view.start + max
 				}
 			}
 			view.start += low
@@ -238,21 +290,21 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 	case *ssa.ChangeType:
 		return c.collectionOf(value.X)
 	case *ssa.Field:
-		if origin := c.projectedReference(value.X, []int{value.Field}, make(map[valueVisit]bool), make(map[memoryVisit]bool)); origin != nil {
+		if origin := c.projectedReference(value.X, []int{value.Field}, make(map[valueVisit]bool), nil); origin != nil {
 			return c.collectionOf(origin)
 		}
 	case *ssa.UnOp:
 		if value.Op == token.MUL {
 			if array, ok := value.Type().Underlying().(*types.Array); ok {
 				if storage, ok := addressOf(value.X); ok {
-					return collectionView{storage: storage, element: array.Elem(), end: array.Len(), value: value}, true
+					return collectionView{storage: storage, element: array.Elem(), end: array.Len(), capEnd: array.Len(), value: value}, true
 				}
 			}
 			if origin := localLoadOrigin(value); origin != nil {
 				return c.collectionOf(origin)
 			}
 			if location, ok := c.collectionAddress(value.X); ok {
-				if origin := c.storedReference(location, instructionPoint(value), make(map[memoryVisit]bool)); origin != nil {
+				if origin := c.storedReference(location, instructionPoint(value)); origin != nil {
 					return c.collectionOf(origin)
 				}
 			}
@@ -260,7 +312,7 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 	case *ssa.FieldAddr:
 		if array, ok := value.Type().Underlying().(*types.Pointer).Elem().Underlying().(*types.Array); ok {
 			if storage, ok := addressOf(value); ok {
-				return collectionView{storage: storage, element: array.Elem(), end: array.Len(), value: value}, true
+				return collectionView{storage: storage, element: array.Elem(), end: array.Len(), capEnd: array.Len(), value: value}, true
 			}
 		}
 	}
@@ -276,20 +328,44 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 		return nil
 	}
 	visit := collectionVisit{point, view.storage.root, pathKey(view.storage.path), view.start, view.end}
-	if seen[visit] {
+	if seen[visit] || !c.work.take() {
 		return nil
 	}
 	seen[visit] = true
 	defer delete(seen, visit)
 	for index := point.index - 1; index >= 0; index-- {
+		if !c.work.take() {
+			return nil
+		}
 		instruction := point.block.Instrs[index]
 		if allocation, ok := instruction.(ssa.Value); ok && allocation == view.storage.root {
+			if call, ok := allocation.(*ssa.Call); ok {
+				if prefix, appended, known := c.appendViews(&call.Call); known {
+					before := flowPoint{point.block, index}
+					initial := intersectView(view, 0, prefix.size())
+					if problem := c.copiedCollectionProblem(prefix, initial, 0, before, use, context, values, covered, seen); problem != nil {
+						return problem
+					}
+					tail := intersectView(view, prefix.size(), -1)
+					return c.copiedCollectionProblem(appended, tail, prefix.size(), before, use, context, values, covered, seen)
+				}
+			}
 			return c.unfilledCollection(view, covered, reasonZeroStorage, context.use).
 				step("source", allocation.Pos(), "collection contains zero-initialized elements")
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
 			if destination, ok := c.collectionAddress(store.Addr); ok && destination.root == view.storage.root {
 				if pathPrefix(view.storage.path, destination.path) {
+					if sameStorage(view.storage, destination) {
+						if source, known := c.collectionOf(store.Val); known {
+							read := flowPoint{point.block, index}
+							if load, ok := store.Val.(*ssa.UnOp); ok {
+								read = instructionPoint(load)
+							}
+							return c.copiedCollectionProblem(source, view, 0, read, use, context, values, covered, seen).
+								step("assignment", store.Pos(), "assign collection backing storage")
+						}
+					}
 					remaining := view.storage.path[len(destination.path):]
 					array := types.NewArray(view.element, max(view.end, 0))
 					return c.problem(store.Val, remaining, array, use, context, values).
@@ -319,32 +395,57 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 				}
 			}
 		}
+		if _, scheduled := instruction.(*ssa.Defer); scheduled {
+			continue
+		}
 		if call, ok := instruction.(ssa.CallInstruction); ok {
 			common := call.Common()
 			if builtin, ok := common.Value.(*ssa.Builtin); ok {
+				if _, synchronous := instruction.(*ssa.Call); !synchronous {
+					continue
+				}
+				before := flowPoint{point.block, index}
 				switch builtin.Name() {
 				case "clear":
 					if destination, ok := c.collectionOf(common.Args[0]); ok && sameStorage(destination.storage, view.storage) && rangesOverlap(destination.start, destination.end, view.start, view.end) {
+						destination = boundedView(destination, context)
 						if problem := c.unfilledCollection(intersectView(view, destination.start, destination.end), covered, reasonCleared, context.use); problem != nil {
+							if destination.end < 0 {
+								problem = problem.uncertain()
+							}
 							return problem.step("source", instruction.Pos(), "clear sets collection elements to zero")
 						}
 					}
 				case "copy":
 					if destination, ok := c.collectionOf(common.Args[0]); ok && sameStorage(destination.storage, view.storage) {
-						if source, ok := c.collectionOf(common.Args[1]); ok && copyCoversView(destination, source, view) {
-							return c.collectionAtProblem(source, flowPoint{point.block, index}, use, context, values, nil, seen)
-						}
-						if source, ok := c.collectionOf(common.Args[1]); ok && destination.end >= 0 && source.end >= 0 {
-							count := min(destination.end-destination.start, source.end-source.start)
-							low, high := max(view.start, destination.start), minEnd(view.end, destination.start+count)
-							if low < high && !rangeCovered(covered, low, high) {
-								source.start += low - destination.start
-								source.end = source.start + high - low
-								if problem := c.collectionAtProblem(source, flowPoint{point.block, index}, use, context, values, nil, seen); problem != nil {
-									return problem
+						if source, ok := c.collectionOf(common.Args[1]); ok && !destination.dynamicStart && !source.dynamicStart {
+							destination, source = boundedView(destination, context), boundedView(source, context)
+							transferred := intersectView(view, destination.start, endFromCount(destination.start, minEnd(destination.size(), source.size())))
+							covers := copyCoversView(destination, source, view)
+							definite := destination.end >= 0 && source.end >= 0 || covers
+							if problem := c.copiedCollectionProblem(source, transferred, destination.start, before, use, context, values, covered, seen); problem != nil {
+								if !definite {
+									problem = problem.uncertain()
 								}
-								covered = coverRange(covered, low, high)
+								return problem
 							}
+							if covers {
+								return nil
+							}
+							if definite && transferred.start < transferred.end {
+								covered = coverRange(covered, transferred.start, transferred.end)
+							}
+						}
+					}
+				case "append":
+					if destination, source, known := c.appendViews(common); known &&
+						sameStorage(destination.storage, view.storage) && destination.end+source.size() <= destination.capEnd {
+						transferred := intersectView(view, destination.end, destination.end+source.size())
+						if problem := c.copiedCollectionProblem(source, transferred, destination.end, before, use, context, values, covered, seen); problem != nil {
+							return problem
+						}
+						if transferred.start < transferred.end {
+							covered = coverRange(covered, transferred.start, transferred.end)
 						}
 					}
 				}
@@ -371,6 +472,9 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 	}
 	var alternatives zeroAlternatives
 	for index, predecessor := range point.block.Preds {
+		if c.work.exhausted() {
+			return alternatives.problem().uncertain()
+		}
 		edge := c.edgeContext(context, point.block, index)
 		if !edge.possible {
 			continue
@@ -409,7 +513,7 @@ func uncoveredViews(view collectionView, covered []elementRange) []collectionVie
 }
 
 func copyCoversView(destination, source, view collectionView) bool {
-	if destination.start != 0 || source.start != 0 || view.start != 0 {
+	if destination.start != 0 || source.start != 0 || destination.lengthBase != view.lengthBase {
 		return false
 	}
 	length, ok := destination.length.(*ssa.Call)
@@ -417,7 +521,93 @@ func copyCoversView(destination, source, view collectionView) bool {
 		return false
 	}
 	builtin, ok := length.Call.Value.(*ssa.Builtin)
-	return ok && builtin.Name() == "len" && sameLength(destination.length, view.length)
+	return ok && builtin.Name() == "len" && (destination.value == view.value || sameLength(destination.length, view.length))
+}
+
+func (c *zeroChecker) copiedCollectionProblem(source, destination collectionView, start int64, point, use flowPoint, context flowContext,
+	values map[valueVisit]bool, covered []elementRange, seen map[collectionVisit]bool) *zeroProblem {
+	for _, span := range uncoveredViews(destination, covered) {
+		mapped := source
+		mapped.start += span.start - start
+		mapped.end = endFromCount(mapped.start, span.size())
+		if problem := c.collectionAtProblem(mapped, point, use, context, values, nil, seen); problem != nil {
+			if index, rest, ok := splitElementPath(problem.path); ok {
+				problem.path = fieldPath(elementLabel(int64(index)-source.start+start), rest)
+			}
+			return problem
+		}
+	}
+	return nil
+}
+
+func (c *zeroChecker) appendViews(call *ssa.CallCommon) (collectionView, collectionView, bool) {
+	builtin, ok := call.Value.(*ssa.Builtin)
+	if !ok || builtin.Name() != "append" || len(call.Args) != 2 {
+		return collectionView{}, collectionView{}, false
+	}
+	before, beforeKnown := c.collectionOf(call.Args[0])
+	added, addedKnown := c.collectionOf(call.Args[1])
+	known := beforeKnown && addedKnown && !before.dynamicStart && !added.dynamicStart &&
+		before.end >= 0 && before.capEnd >= 0 && added.end >= 0
+	return before, added, known
+}
+
+// Only the transferred slots can change. An append that must allocate has
+// an empty write range on the old backing storage.
+func (c *zeroChecker) builtinWriteView(call *ssa.CallCommon) (collectionView, bool) {
+	destination, known := c.collectionOf(call.Args[0])
+	if !known {
+		return collectionView{}, false
+	}
+	switch call.Value.(*ssa.Builtin).Name() {
+	case "copy":
+		if source, known := c.collectionOf(call.Args[1]); known {
+			destination.end = endFromCount(destination.start, minEnd(destination.size(), source.size()))
+		}
+	case "append":
+		if before, source, known := c.appendViews(call); known {
+			destination.start = before.end
+			destination.end = before.end + source.size()
+			if destination.end > before.capEnd {
+				destination.end = before.end
+			}
+		} else {
+			destination.end = destination.capEnd
+		}
+	}
+	return destination, true
+}
+
+func endFromCount(start, count int64) int64 {
+	if count < 0 {
+		return -1
+	}
+	return start + count
+}
+
+func boundedView(view collectionView, context flowContext) collectionView {
+	if view.end >= 0 || view.length == nil {
+		return view
+	}
+	for value, state := range context.facts {
+		comparison, ok := value.(*ssa.BinOp)
+		if !ok {
+			continue
+		}
+		equal := comparison.Op == token.EQL && state == notZero || comparison.Op == token.NEQ && state == isZero
+		if !equal {
+			continue
+		}
+		for _, pair := range [][2]ssa.Value{{comparison.X, comparison.Y}, {comparison.Y, comparison.X}} {
+			if pair[0] == view.length {
+				if upper, known := integerValue(pair[1]); known {
+					view.end = view.lengthBase + upper
+					return view
+				}
+			}
+		}
+	}
+	return view
 }
 
 func (c *zeroChecker) unfilledCollection(view collectionView, covered []elementRange, reason zeroReason, use valueUse) *zeroProblem {

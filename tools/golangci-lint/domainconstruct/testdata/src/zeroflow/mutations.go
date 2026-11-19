@@ -215,7 +215,7 @@ func MutatedZeroElementPointer(mutate func(*ID)) {
 func MutatedOtherRange(mutate func([]ID), valid ID) {
 	ids := make([]ID, 2)
 	ids[0] = valid
-	mutate(ids[:1])
+	mutate(ids[:1:1])
 	AcceptIDs(ids[1:]) // want "(?s)rule: domainzero[.]invalid-zero; certainty: known.*type: \"zeroflow[.]ID\""
 }
 

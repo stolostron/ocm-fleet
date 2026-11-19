@@ -35,6 +35,7 @@ export function domainFinding(issue) {
         .match(
           new RegExp(
             `^([a-z][a-z-]*): (.*) \\((${quoted}), line (\\d+), column (\\d+)\\)$`,
+            "s",
           ),
         );
       if (!match) return undefined;
@@ -45,10 +46,7 @@ export function domainFinding(issue) {
           Line: Number(match[4]),
           Column: Number(match[5]),
         },
-        Message: match[2].replace(
-          /\\([\\|nr])/g,
-          (_, escape) => ({ n: "\n", r: "\r" })[escape] ?? escape,
-        ),
+        Message: unescapeRecord(match[2]),
       });
     }
     const [rule, certainty, reason] = identity.slice(1);
@@ -73,7 +71,7 @@ export function domainFinding(issue) {
       Reason: reason,
       Pos: issue.Pos,
       Category: category,
-      Message: message.trim(),
+      Message: unescapeRecord(message.trim()),
       Provenance: provenance,
     };
   } catch (error) {
@@ -82,29 +80,41 @@ export function domainFinding(issue) {
   }
 }
 
+function unescapeRecord(text) {
+  return text.replace(
+    /\\([\\|nr])/g,
+    (_, escape) => ({ n: "\n", r: "\r" })[escape] ?? escape,
+  );
+}
+
 export async function writeDomainReports({
   workspace,
   moduleRoot = ".",
   reportPath,
   report,
 }) {
+  const issues = report.Issues ?? [];
+  if (issues.some((issue) => issue.FromLinter === "typecheck"))
+    throw new Error("domain audit incomplete because type checking failed");
   const generatedAt = new Date().toISOString();
   const moduleDirectory = resolve(workspace, moduleRoot);
-  const position = (pos) => ({
+  const position = (pos, base) => ({
     ...pos,
-    Filename: resolve(moduleDirectory, pos.Filename),
+    Filename: resolve(base, pos.Filename),
   });
   const enriched = {
     ...report,
     GeneratedAt: generatedAt,
-    Issues: (report.Issues ?? []).map((issue) => {
+    Issues: issues.map((issue) => {
       const domain = domainFinding(issue);
-      const pos = position(issue.Pos);
+      // Golangci-lint uses the config directory for issue paths. The analyzer
+      // embeds related locations from its file set under the module's cwd.
+      const pos = position(issue.Pos, workspace);
       if (domain) {
         domain.Pos = pos;
         domain.Provenance = domain.Provenance.map((step) => ({
           ...step,
-          Pos: position(step.Pos),
+          Pos: position(step.Pos, moduleDirectory),
         }));
       }
       return { ...issue, Pos: pos, Domain: domain };
@@ -226,6 +236,7 @@ async function runDomainAudit(project, moduleRoot) {
         "--config",
         join(workspace, ".golangci.yaml"),
         `--output.json.path=${raw}`,
+        "--output.text.path=stdout",
         "./...",
       ],
       {

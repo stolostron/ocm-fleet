@@ -12,7 +12,7 @@ import (
 // checks after an assignment are evaluated at the back edge, so early returns
 // on parse failure do not invalidate a successful fill.
 func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicBlock, use valueUse, seen map[valueVisit]bool) bool {
-	if len(exit.Preds) != 1 || len(header.Instrs) == 0 {
+	if len(exit.Preds) != 1 || len(header.Instrs) == 0 || !c.work.take() {
 		return false
 	}
 	branch, ok := header.Instrs[len(header.Instrs)-1].(*ssa.If)
@@ -38,6 +38,12 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 			continue
 		}
 		for index, instruction := range block.Instrs {
+			if !c.work.take() {
+				return false
+			}
+			if _, scheduled := instruction.(*ssa.Defer); scheduled {
+				continue
+			}
 			if call, ok := instruction.(ssa.CallInstruction); ok {
 				point := flowPoint{block, index}
 				if builtin, builtinCall := call.Common().Value.(*ssa.Builtin); builtinCall {
@@ -61,6 +67,8 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 						return false
 					}
 					assignments[store] = true
+				} else if c.mayReferenceStorage(store.Addr, mutationTarget{view.storage, &elementRange{view.start, view.end}}, flowPoint{block, index}, make(map[ssa.Value]bool)) {
+					return false
 				}
 			}
 		}
@@ -80,14 +88,14 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 }
 
 func (c *zeroChecker) filledOnPaths(view collectionView, header, block *ssa.BasicBlock, assignments map[*ssa.Store]bool, context flowContext, values map[valueVisit]bool, seen map[*ssa.BasicBlock]bool) bool {
-	if block == header || seen[block] {
+	if block == header || seen[block] || !c.work.take() {
 		return false
 	}
 	seen[block] = true
 	defer delete(seen, block)
 	for index, instruction := range slices.Backward(block.Instrs) {
 		if store, ok := instruction.(*ssa.Store); ok && assignments[store] {
-			return c.problem(store.Val, nil, view.element, flowPoint{block, index}, context, values) == nil
+			return c.problem(store.Val, nil, view.element, flowPoint{block, index}, context, values) == nil && !c.work.exhausted()
 		}
 	}
 	found := false
@@ -157,7 +165,7 @@ func (c *zeroChecker) lengthCoversViewSeen(length ssa.Value, view collectionView
 	if number, known := integerValue(length); known {
 		return view.end >= 0 && number >= view.end
 	}
-	if sameLength(length, view.length) {
+	if view.lengthBase == 0 && sameLength(length, view.length) {
 		return true
 	}
 	if call, ok := length.(*ssa.Call); ok {
@@ -166,7 +174,8 @@ func (c *zeroChecker) lengthCoversViewSeen(length ssa.Value, view collectionView
 				return true
 			}
 			if bound, ok := c.collectionOf(call.Call.Args[0]); ok && sameStorage(bound.storage, view.storage) && bound.start == 0 {
-				return bound.end >= 0 && view.end >= 0 && bound.end >= view.end || sameLength(bound.length, view.length)
+				return bound.end >= 0 && view.end >= 0 && bound.end >= view.end ||
+					bound.lengthBase == view.lengthBase && sameLength(bound.length, view.length)
 			}
 			if producer, result, ok := sliceProducer(call.Call.Args[0]); ok {
 				if fact := c.callContract(&producer.Call); fact != nil {
@@ -177,11 +186,11 @@ func (c *zeroChecker) lengthCoversViewSeen(length ssa.Value, view collectionView
 						if bound.Length.Parameter < 0 {
 							return view.end >= 0 && bound.Length.Constant >= view.end
 						}
-						argument := sourceArgument(&producer.Call, bound.Length.Parameter)
+						argument := contractArgument(&producer.Call, bound.Length.Parameter)
 						if !bound.Length.FromLen {
 							return c.lengthCoversViewSeen(argument, view, seen)
 						}
-						if size, ok := view.length.(*ssa.Call); ok {
+						if size, ok := view.length.(*ssa.Call); ok && view.lengthBase == 0 {
 							if builtin, ok := size.Call.Value.(*ssa.Builtin); ok && builtin.Name() == "len" && sameSliceValue(size.Call.Args[0], argument) {
 								return true
 							}
@@ -249,6 +258,9 @@ func sameSliceValue(first, second ssa.Value) bool {
 	// Repeated field loads describe the same header only before intervening
 	// writes or calls can change it, including through an alias.
 	for _, instruction := range left.Block().Instrs[start+1 : end] {
+		if sharedStorage(leftAddress.root) && channelHandoff(instruction) {
+			return false
+		}
 		if _, store := instruction.(*ssa.Store); store {
 			return false
 		}

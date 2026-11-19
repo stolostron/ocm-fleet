@@ -55,12 +55,15 @@ func (reason zeroReason) description() string {
 }
 
 func (c *zeroChecker) report(use zeroUse, problem *zeroProblem, operation string, value ssa.Value) {
-	key := zeroReport{use.pos, problem.name, problem.path}
+	key := zeroReport{use.pos, problem.typ, problem.path, operation, use.argument}
 	if !use.pos.IsValid() || c.reported[key] {
 		return
 	}
 	c.reported[key] = true
-	site := c.useSite(use, value, operation, problem.path)
+	if c.work.exhausted() {
+		problem = problem.uncertain()
+	}
+	site := c.useSite(use, operation, problem.path)
 	pos, operation := site.pos, site.operation
 	// Presentation is relative to the source use; analysis and deduplication
 	// retain the original path through any compiler-generated packing slice.

@@ -13,6 +13,7 @@ type valueUse uint8
 const (
 	wholeValue valueUse = iota
 	jsonFields
+	jsonAddressableFields
 	outputStorage
 )
 
@@ -24,7 +25,7 @@ func (c *zeroChecker) argumentUse(call *ssa.CallCommon, index int) valueUse {
 	use := wholeValue
 	for _, boundary := range c.contracts.boundariesFor(function, c.policies) {
 		for _, input := range boundary.Encode {
-			if serializationArgumentIndex(call, input) == index {
+			if callArgumentIndex(call, input) == index {
 				if boundary.Codec == "json" && input >= 0 && function.Pkg() != nil && function.Pkg().Path() == "encoding/json" {
 					return jsonFields
 				}
@@ -32,7 +33,7 @@ func (c *zeroChecker) argumentUse(call *ssa.CallCommon, index int) valueUse {
 			}
 		}
 		for _, destination := range boundary.Decode {
-			if serializationArgumentIndex(call, destination) == index {
+			if callArgumentIndex(call, destination) == index {
 				use = outputStorage
 			}
 		}
@@ -41,7 +42,7 @@ func (c *zeroChecker) argumentUse(call *ssa.CallCommon, index int) valueUse {
 }
 
 func (c *zeroChecker) useForType(t types.Type, use valueUse) valueUse {
-	if use != jsonFields {
+	if !use.json() {
 		return use
 	}
 	if c.policies.lookup(t) != nil {
@@ -50,49 +51,25 @@ func (c *zeroChecker) useForType(t types.Type, use valueUse) valueUse {
 	// A custom hook may inspect ignored fields. Pointer hooks matter when
 	// the encoder can address the value.
 	for _, name := range []string{"MarshalJSON", "MarshalText"} {
-		method, _, _ := types.LookupFieldOrMethod(t, true, nil, name)
+		method, _, _ := types.LookupFieldOrMethod(t, use == jsonAddressableFields, nil, name)
 		if function, ok := method.(*types.Func); ok {
 			signature := function.Type().(*types.Signature)
-			if validEncoder(signature, "json") &&
-				types.Identical(signature.Results().At(1).Type(), types.Universe.Lookup("error").Type()) {
+			if validEncoder(signature, "json") {
 				return wholeValue
 			}
 		}
 	}
+	switch t.Underlying().(type) {
+	case *types.Pointer, *types.Slice:
+		return jsonAddressableFields
+	case *types.Map:
+		return jsonFields
+	}
 	return use
 }
 
-func (use valueUse) includesField(structure *types.Struct, index int) bool {
-	return use != jsonFields || !jsonFieldIgnored(structure.Tag(index))
-}
-
-func serializationArgument(call *ssa.CallCommon, index int) ssa.Value {
-	if index == -1 && call.IsInvoke() {
-		return call.Value
-	}
-	if index := serializationArgumentIndex(call, index); index >= 0 && index < len(call.Args) {
-		return call.Args[index]
-	}
-	return nil
-}
-
-func serializationArgumentIndex(call *ssa.CallCommon, index int) int {
-	if call.IsInvoke() {
-		return index
-	}
-	signature := call.Signature()
-	if signature.Recv() != nil {
-		return index + 1
-	}
-	// Method expressions make the receiver an explicit argument. A bound
-	// method takes the same arguments as the underlying declaration.
-	if function := callObject(call); function != nil {
-		declared := function.Type().(*types.Signature)
-		if declared.Recv() != nil && signature.Params().Len() == declared.Params().Len()+1 {
-			return index + 1
-		}
-	}
-	return index
+func (use valueUse) json() bool {
+	return use == jsonFields || use == jsonAddressableFields
 }
 
 // Only a declared root decoder establishes valid domain state on nil error.
@@ -104,17 +81,26 @@ func (c *zeroChecker) decoderInitializes(instruction ssa.CallInstruction, locati
 		if len(boundary.Decode) == 0 || !c.decodingSucceeded(instruction, boundary.ErrorResult, context) {
 			continue
 		}
+		initialized, conflicting := false, false
 		for _, index := range boundary.Decode {
-			argument := serializationArgument(call, index)
+			argument := contractArgument(call, index)
 			for _, destination := range c.decodeDestinations(argument, before, make(map[ssa.Value]bool)) {
-				pointer, ok := destination.Type().Underlying().(*types.Pointer)
-				if !ok || !c.policies.lookup(pointer.Elem()).supports(boundary.Codec) {
+				target, known := c.collectionAddress(destination)
+				if !known || !(mutationTarget{address: location}).overlaps(target) {
 					continue
 				}
-				if target, known := c.collectionAddress(destination); known && target.root == location.root && pathPrefix(location.path, target.path) {
-					return true
+				pointer, ok := destination.Type().Underlying().(*types.Pointer)
+				if !ok || target.root != location.root || !pathPrefix(location.path, target.path) ||
+					!c.policies.lookup(pointer.Elem()).supports(boundary.Codec) ||
+					!supportsNativeDecode(pointer.Elem(), boundary.Codec) {
+					conflicting = true
+				} else {
+					initialized = true
 				}
 			}
+		}
+		if initialized && !conflicting {
+			return true
 		}
 	}
 	return false
@@ -145,7 +131,7 @@ func (c *zeroChecker) decoderMayInvalidate(instruction ssa.CallInstruction, stor
 			continue
 		}
 		for _, index := range boundary.Decode {
-			if value := serializationArgument(call, index); value != nil && c.mayReferenceStorage(value, storage, before, make(map[ssa.Value]bool)) {
+			if value := contractArgument(call, index); value != nil && c.mayReferenceStorage(value, storage, before, make(map[ssa.Value]bool)) {
 				return true
 			}
 		}
@@ -167,12 +153,10 @@ func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen 
 		return c.decodeDestinations(value.X, point, seen)
 	case *ssa.ChangeInterface:
 		return c.decodeDestinations(value.X, point, seen)
-	case *ssa.ChangeType:
-		return c.decodeDestinations(value.X, point, seen)
 	case *ssa.UnOp:
 		if value.Op == token.MUL {
 			if location, known := c.collectionAddress(value.X); known {
-				if origin := c.storedReference(location, instructionPoint(value), make(map[memoryVisit]bool)); origin != nil {
+				if origin := c.storedReference(location, instructionPoint(value)); origin != nil {
 					return c.decodeDestinations(origin, point, seen)
 				}
 			}
@@ -182,7 +166,7 @@ func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen 
 		return []ssa.Value{value}
 	}
 	view, ok := c.collectionOf(value)
-	if !ok {
+	if !ok || view.end < 0 || view.dynamicStart {
 		return nil
 	}
 	var destinations []ssa.Value
@@ -201,7 +185,7 @@ func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen 
 		}
 		visited[key] = true
 		location := address{root: view.storage.root, path: slices.Clone(store.target.path)}
-		if origin := c.storedReference(location, point, make(map[memoryVisit]bool)); origin != nil {
+		if origin := c.storedReference(location, point); origin != nil {
 			destinations = append(destinations, c.decodeDestinations(origin, point, seen)...)
 		}
 	}

@@ -11,7 +11,7 @@ import (
 
 func TestConstruction(t *testing.T) {
 	results := analysistest.Run(t, analysistest.TestData(), domainconstruct.Analyzer,
-		"values", "client", "badpolicy")
+		"values", "client", "badpolicy", "protection")
 	for _, result := range results {
 		for _, finding := range result.Diagnostics {
 			if !strings.Contains(finding.Message, "| rule: "+finding.Category+"; certainty: known;") {

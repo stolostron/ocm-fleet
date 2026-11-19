@@ -48,7 +48,7 @@ func checkUseLabels(t *testing.T, result *analysistest.Result) {
 			"append", "", "append argument is an empty zeroflow.ID; empty values are invalid",
 		},
 		"PositionCopyArgument": {
-			"copy", "[1]", "copy source contains an empty zeroflow.ID at path [1]; empty values are invalid",
+			"copy", "[1]", "copy source may contain an empty zeroflow.ID at path [1]; empty values are invalid",
 		},
 		"PositionClearArgument": {
 			"clear", "", "slice element after clear is an empty zeroflow.ID; empty values are invalid",

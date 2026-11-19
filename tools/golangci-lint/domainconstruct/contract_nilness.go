@@ -16,10 +16,12 @@ type nilnessEvaluator struct {
 	result    int
 	returns   []truth
 	complete  bool
+	work      workBudget
 }
 
 func (e *nilnessEvaluator) function(body *ast.BlockStmt, initial nilnessEnv) truth {
 	e.returns, e.complete = nil, true
+	e.work = maxInferenceWork
 	environment := maps.Clone(initial)
 	if environment == nil {
 		environment = make(nilnessEnv)
@@ -60,6 +62,10 @@ func (e *nilnessEvaluator) block(statements []ast.Stmt, states []nilnessEnv) []n
 
 func (e *nilnessEvaluator) statement(statement ast.Stmt, state nilnessEnv) []nilnessEnv {
 	ast.Inspect(statement, func(node ast.Node) bool {
+		if node != nil && (!e.complete || !e.work.take()) {
+			e.complete = false
+			return false
+		}
 		if _, closure := node.(*ast.FuncLit); closure {
 			e.complete = false
 		}
@@ -228,6 +234,9 @@ func (e *nilnessEvaluator) call(call *ast.CallExpr, result int, state nilnessEnv
 		if path == "errors" && name == "Join" && !call.Ellipsis.IsValid() {
 			joined := isZero
 			for _, argument := range call.Args {
+				if _, tuple := e.builder.pass.TypesInfo.TypeOf(argument).(*types.Tuple); tuple {
+					return unknown
+				}
 				actual := e.converted(argument, types.Universe.Lookup("error").Type(), state)
 				if actual == notZero {
 					return notZero
@@ -248,7 +257,8 @@ func (e *nilnessEvaluator) call(call *ast.CallExpr, result int, state nilnessEnv
 				return notZero
 			}
 			if argument := callParameter(e.builder.pass.TypesInfo, call, rule.Parameter); argument != nil {
-				value := e.expression(argument, state)
+				parameter := function.Type().(*types.Signature).Params().At(rule.Parameter)
+				value := e.converted(argument, parameter.Type(), state)
 				if value == notZero || rule.Exact && value == isZero {
 					return value
 				}
@@ -298,7 +308,12 @@ func (e *nilnessEvaluator) refine(expression ast.Expr, value truth, state nilnes
 	if binary, ok := ast.Unparen(expression).(*ast.BinaryExpr); ok && (binary.Op == token.EQL || binary.Op == token.NEQ) {
 		for _, pair := range [][2]ast.Expr{{binary.X, binary.Y}, {binary.Y, binary.X}} {
 			if e.builder.pass.TypesInfo.Types[pair[1]].IsNil() {
-				if variable, ok := expressionObject(e.builder.pass.TypesInfo, pair[0]).(*types.Var); ok {
+				identifier, direct := ast.Unparen(pair[0]).(*ast.Ident)
+				if !direct {
+					continue
+				}
+				variable, ok := expressionObject(e.builder.pass.TypesInfo, identifier).(*types.Var)
+				if ok && (variable.Pkg() == nil || variable.Parent() != variable.Pkg().Scope()) {
 					if binary.Op == token.EQL {
 						value = opposite(value)
 					}

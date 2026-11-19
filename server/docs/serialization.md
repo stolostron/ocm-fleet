@@ -20,8 +20,9 @@ type createPlatformResourceRequest struct {
 }
 ```
 
-Parse `Name` through `ParseResourceName` and supply labels through a creation
-option. See [Constructors](./constructors.md) for choosing the signature.
+Parse `Name` through `ParseResourceName` and pass `Labels` as the second
+argument to `NewPlatformResource`. See [Constructors](./constructors.md) for
+choosing the signature.
 
 ## Snapshots and persistence
 
@@ -70,6 +71,8 @@ be encoded. Check for missing required data on decode. JSON `null` can bypass
 a text decoder, and a SQL scanner can succeed without assigning a value.
 Translate Go optional values, including `Optional[T]`, into raw nullable
 fields or optional pointers in the serialized representation.
+Use plain string keys in JSON maps. JSON writes a defined string key's
+underlying text and can invoke its text decoder when reading it back.
 
 Establish codec behavior with the [boundary tests](./testing.md#domain-fixtures)
 before declaring support.

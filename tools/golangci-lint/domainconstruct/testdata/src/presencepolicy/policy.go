@@ -30,6 +30,18 @@ func Duplicate() (int, bool) { return 1, true } // want "use domain:presence onc
 
 type Found bool
 
+type Status int
+
+func (Status) Error() string { return "status" }
+
+//domain:presence
+func ConcreteStatus() (int, bool, Status) { return 1, true, 0 } // want "domain:presence requires"
+
+type ErrorAlias = error
+
+//domain:presence
+func AliasStatus() (int, bool, ErrorAlias) { return 1, true, nil }
+
 //domain:presence
 func NamedFlag() (int, Found) { return 1, true } // want "domain:presence requires"
 

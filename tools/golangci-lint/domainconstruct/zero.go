@@ -33,12 +33,21 @@ type zeroChecker struct {
 	reads       map[ssa.Value]storageRead
 	stores      map[ssa.Value][]storageWrite
 	zeroStorage map[valueVisit]bool
+	zeroTypes   map[zeroTypeVisit]*zeroProblem
+	jsonShape   jsonFieldCache
 	reported    map[zeroReport]bool
 	interesting map[types.Type]bool
 	locating    map[ssa.Value]bool
 	returns     map[token.Pos]bool
 	comparisons map[token.Pos]bool
 	expressions map[token.Pos]sourceExpression
+	deferred    map[*ssa.Function]*ssa.Defer
+	work        *workBudget
+}
+
+type zeroTypeVisit struct {
+	typ types.Type
+	use valueUse
 }
 
 type zeroProblem struct {
@@ -91,9 +100,11 @@ func (alternatives zeroAlternatives) problem() *zeroProblem {
 }
 
 type zeroReport struct {
-	pos  token.Pos
-	name string
-	path string
+	pos       token.Pos
+	typ       types.Type
+	path      string
+	operation string
+	argument  int
 }
 
 type flowPoint struct {
@@ -113,6 +124,7 @@ func runZero(pass *analysis.Pass) (any, error) {
 		returns:     returnPositions(pass.Files),
 		comparisons: make(map[token.Pos]bool),
 		expressions: make(map[token.Pos]sourceExpression),
+		work:        new(workBudget),
 	}
 	for _, finding := range c.contracts.presenceDiagnostics {
 		pass.Report(finding)
@@ -132,15 +144,13 @@ func runZero(pass *analysis.Pass) (any, error) {
 	}
 	for object, p := range c.policies {
 		if object.Pkg() == pass.Pkg && p != nil && p.fact.ZeroValid {
-			if structure, ok := object.Type().Underlying().(*types.Struct); ok {
-				if problem := c.zeroFields(structure, "", wholeValue); problem != nil {
-					pass.Report((diagnostic.Finding{
-						Rule: "domainzero.invalid-zero-policy", Certainty: diagnostic.Known,
-						Operation: "declaration", Value: object.Name(), Type: typeIdentity(p.typ), Path: problem.path,
-						Reason: "required-field-invalid-zero", Pos: object.Pos(),
-						Message: fmt.Sprintf("%s declares a valid zero but required value at path %s has invalid zero %s", p.name, problem.path, problem.name),
-					}).Diagnostic())
-				}
+			if problem := c.zeroType(object.Type(), "", wholeValue); problem != nil {
+				pass.Report((diagnostic.Finding{
+					Rule: "domainzero.invalid-zero-policy", Certainty: diagnostic.Known,
+					Operation: "declaration", Value: object.Name(), Type: typeIdentity(p.typ), Path: problem.path,
+					Reason: "required-field-invalid-zero", Pos: object.Pos(),
+					Message: fmt.Sprintf("%s declares a valid zero but required value at path %s has invalid zero %s", p.name, problem.path, problem.name),
+				}).Diagnostic())
 			}
 		}
 	}
@@ -158,6 +168,7 @@ func runZero(pass *analysis.Pass) (any, error) {
 	c.indexStores(input.SrcFuncs)
 	for _, function := range input.SrcFuncs {
 		for _, block := range function.Blocks {
+			c.resetWork()
 			context := c.contextAt(block)
 			if !context.possible {
 				continue
@@ -174,14 +185,15 @@ func runZero(pass *analysis.Pass) (any, error) {
 }
 
 func (c *zeroChecker) checkInstruction(instruction ssa.Instruction, point flowPoint, context flowContext) {
-	check := func(value ssa.Value, operation string, mode valueUse) {
+	c.resetWork()
+	check := func(value ssa.Value, operation string, mode valueUse, argument int) {
 		if mode == outputStorage {
 			return
 		}
 		useContext := context
 		useContext.use = mode
 		if problem := c.problem(value, nil, value.Type(), point, useContext, make(map[valueVisit]bool)); problem != nil {
-			use := zeroUse{pos: instructionPosition(instruction, point)}
+			use := zeroUse{pos: instructionPosition(instruction, point), argument: argument}
 			if call, ok := instruction.(ssa.CallInstruction); ok {
 				use.call = call.Common()
 			}
@@ -190,59 +202,49 @@ func (c *zeroChecker) checkInstruction(instruction ssa.Instruction, point flowPo
 	}
 	switch instruction := instruction.(type) {
 	case ssa.CallInstruction:
-		call := instruction.Common()
-		if typeOnlyCall(call) {
-			return
-		}
-		if c.checkCollectionBuiltin(instruction, point, context) {
-			return
-		}
-		receiverUse := wholeValue
-		if call.IsInvoke() {
-			receiverUse = c.argumentUse(call, -1)
-		}
-		check(call.Value, "receiver", receiverUse)
-		for index, argument := range call.Args {
-			check(argument, "argument", c.argumentUse(call, index))
+		c.checkCall(instruction, point, context, false)
+	case *ssa.RunDefers:
+		if deferred := c.deferredAt(point); deferred != nil {
+			c.checkCall(deferred, point, context, true)
 		}
 	case *ssa.Return:
 		c.checkResults(instruction.Results, point, context, instructionPosition(instruction, point))
 	case *ssa.MapUpdate:
-		check(instruction.Key, "map-key", wholeValue)
-		check(instruction.Value, "map-value", wholeValue)
+		check(instruction.Key, "map-key", wholeValue, 0)
+		check(instruction.Value, "map-value", wholeValue, 0)
 	case *ssa.Send:
-		check(instruction.X, "send", wholeValue)
+		check(instruction.X, "send", wholeValue, 0)
 	case *ssa.Select:
 		for _, state := range instruction.States {
-			if state.Dir == types.SendOnly {
+			if state.Dir == types.SendOnly && c.valueTruth(state.Chan, context, make(map[ssa.Value]bool)) != isZero {
 				if problem := c.problem(state.Send, nil, state.Send.Type(), point, context, make(map[valueVisit]bool)); problem != nil {
 					c.report(zeroUse{pos: state.Pos}, problem, "send", state.Send)
 				}
 			}
 		}
 	case *ssa.Lookup:
-		check(instruction.Index, "map-key", wholeValue)
+		check(instruction.Index, "map-key", wholeValue, 0)
 	case *ssa.BinOp:
 		if c.comparisons[instruction.Pos()] {
 			return
 		}
-		for _, operand := range []ssa.Value{instruction.X, instruction.Y} {
+		for index, operand := range []ssa.Value{instruction.X, instruction.Y} {
 			if c.ownRepresentation(operand.Type(), point) {
 				// A constructor may inspect its representation before it is valid.
 				continue
 			}
 			// Comparing pointers observes identity or absence, not domain state.
 			if _, pointer := operand.Type().Underlying().(*types.Pointer); !pointer {
-				check(operand, "operand", wholeValue)
+				check(operand, "operand", wholeValue, index)
 			}
 		}
 	case *ssa.Convert:
 		if !c.representationConversion(instruction.X.Type(), instruction.Type(), point) {
-			check(instruction.X, "conversion", wholeValue)
+			check(instruction.X, "conversion", wholeValue, 0)
 		}
 	case *ssa.ChangeType:
 		if !types.Identical(instruction.Type(), instruction.X.Type()) && !c.representationConversion(instruction.X.Type(), instruction.Type(), point) {
-			check(instruction.X, "conversion", wholeValue)
+			check(instruction.X, "conversion", wholeValue, 0)
 		}
 	case *ssa.Store:
 		if c.checkYieldReturn(instruction, point, context) {
@@ -250,9 +252,44 @@ func (c *zeroChecker) checkInstruction(instruction ssa.Instruction, point flowPo
 		}
 		if address, ok := c.collectionAddress(instruction.Addr); ok {
 			if !c.freshStorage(address.root) {
-				check(instruction.Val, "assignment", wholeValue)
+				check(instruction.Val, "assignment", wholeValue, 0)
 			}
 		}
+	}
+}
+
+func (c *zeroChecker) checkCall(instruction ssa.CallInstruction, point flowPoint, context flowContext, executingDefer bool) {
+	call := instruction.Common()
+	if typeOnlyCall(call) {
+		return
+	}
+	_, deferred := instruction.(*ssa.Defer)
+	if (!deferred || executingDefer) && c.checkCollectionBuiltin(instruction, point, context) {
+		return
+	}
+	if deferred && !executingDefer {
+		if _, builtin := call.Value.(*ssa.Builtin); builtin {
+			return // Collection builtins observe their captured backing storage at execution.
+		}
+	}
+	check := func(value ssa.Value, operation string, index int) {
+		use := c.argumentUse(call, index)
+		if use == outputStorage || !c.interestingType(value.Type()) {
+			return
+		}
+		if deferred && deferredReference(value) != executingDefer {
+			return
+		}
+		useContext := context
+		useContext.use = use
+		if problem := c.problem(value, nil, value.Type(), point, useContext, make(map[valueVisit]bool)); problem != nil {
+			ref := zeroUse{pos: instructionPosition(instruction, point), call: call, argument: index}
+			c.report(ref, problem, operation, value)
+		}
+	}
+	check(call.Value, "receiver", -1)
+	for index, argument := range call.Args {
+		check(argument, "argument", index)
 	}
 }
 
@@ -342,6 +379,25 @@ func (problem *zeroProblem) afterUnknownMutation(pos token.Pos, operation, targe
 }
 
 func (c *zeroChecker) zeroType(t types.Type, path string, use valueUse) *zeroProblem {
+	visit := zeroTypeVisit{t, use}
+	problem, cached := c.zeroTypes[visit]
+	if !cached {
+		problem = c.zeroTypeShape(t, use)
+		if c.zeroTypes == nil {
+			c.zeroTypes = make(map[zeroTypeVisit]*zeroProblem)
+		}
+		c.zeroTypes[visit] = problem
+	}
+	if problem == nil {
+		return nil
+	}
+	// Callers attach their own location and provenance to the cached shape.
+	result := *problem
+	result.path = fieldPath(path, result.path)
+	return &result
+}
+
+func (c *zeroChecker) zeroTypeShape(t types.Type, use valueUse) *zeroProblem {
 	if optionalPayload(t) != nil {
 		return nil
 	}
@@ -349,28 +405,26 @@ func (c *zeroChecker) zeroType(t types.Type, path string, use valueUse) *zeroPro
 		return nil
 	}
 	if p := c.policies.lookup(t); p != nil && !p.fact.ZeroValid {
-		return &zeroProblem{name: p.name, typ: p.typ, path: path, reason: reasonZeroValue}
+		return &zeroProblem{name: p.name, typ: p.typ, reason: reasonZeroValue}
 	}
 	use = c.useForType(t, use)
 	switch t := t.Underlying().(type) {
 	case *types.Struct:
-		return c.zeroFields(t, path, use)
+		return c.zeroFields(t, "", use)
 	case *types.Array:
 		if t.Len() != 0 {
-			return c.zeroType(t.Elem(), path+"[0]", use)
+			return c.zeroType(t.Elem(), "[0]", use)
 		}
 	}
 	return nil
 }
 
 func (c *zeroChecker) zeroFields(structure *types.Struct, path string, use valueUse) *zeroProblem {
-	for i := range structure.NumFields() {
-		if !use.includesField(structure, i) {
-			continue
-		}
-		field := structure.Field(i)
-		if problem := c.zeroType(field.Type(), fieldPath(path, field.Name()), use); problem != nil {
-			return problem
+	for selected := range c.jsonShape.fields(structure, use.json()) {
+		if !selected.indirect {
+			if problem := c.zeroType(selected.field.Type(), fieldPath(path, selected.path), use); problem != nil {
+				return problem
+			}
 		}
 	}
 	return nil
@@ -388,6 +442,21 @@ func fieldPath(parent, field string) string {
 
 func isErrorType(t types.Type) bool {
 	return types.Implements(t, types.Universe.Lookup("error").Type().Underlying().(*types.Interface))
+}
+
+func isBuiltinError(t types.Type) bool {
+	return types.Identical(t, types.Universe.Lookup("error").Type())
+}
+
+func (c *zeroChecker) errorStatus(t types.Type) bool {
+	if c.policies.lookup(t) != nil {
+		return false
+	}
+	switch t.Underlying().(type) {
+	case *types.Interface, *types.Pointer, *types.Map, *types.Slice, *types.Chan, *types.Signature:
+		return isErrorType(t)
+	}
+	return false
 }
 
 func zeroConstant(value *ssa.Const) bool {

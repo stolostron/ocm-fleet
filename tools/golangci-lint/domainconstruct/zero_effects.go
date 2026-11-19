@@ -55,6 +55,9 @@ func (c *zeroChecker) mutationIn(call *ssa.CallCommon, storage mutationTarget, p
 		return kind
 	}
 	kind := c.findMutation(call, storage, point)
+	if c.work.exhausted() {
+		return mutationUnknown
+	}
 	if c.mutations == nil {
 		c.mutations = make(map[mutationQuery]mutationKind)
 	}
@@ -63,16 +66,16 @@ func (c *zeroChecker) mutationIn(call *ssa.CallCommon, storage mutationTarget, p
 }
 
 func (c *zeroChecker) findMutation(call *ssa.CallCommon, storage mutationTarget, point flowPoint) mutationKind {
+	if _, global := storage.root.(*ssa.Global); global {
+		return mutationUnknown
+	}
 	seen := make(map[ssa.Value]bool)
 	if c.mayReferenceStorage(call.Value, storage, point, seen) {
 		return mutationUnknown
 	}
 	kind := mutationReadOnly
 	fact := c.callContract(call)
-	offset := 0
-	if function := call.StaticCallee(); function != nil && function.Signature.Recv() != nil && !call.IsInvoke() {
-		offset = 1
-	}
+	offset := callArgumentIndex(call, 0)
 	for index, argument := range call.Args {
 		if c.mayReferenceStorage(argument, storage, point, seen) {
 			effect := mutationUnknown
@@ -100,6 +103,9 @@ func (c *zeroChecker) findMutation(call *ssa.CallCommon, storage mutationTarget,
 }
 
 func (c *zeroChecker) mayReferenceStorage(value ssa.Value, storage mutationTarget, point flowPoint, seen map[ssa.Value]bool) bool {
+	if !c.work.take() {
+		return true
+	}
 	if target, ok := c.collectionAddress(value); ok && storage.overlaps(target) {
 		return true
 	}
@@ -123,11 +129,12 @@ func (c *zeroChecker) mayReferenceStorage(value ssa.Value, storage mutationTarge
 		return c.mayReferenceStorage(value.X, storage, point, seen)
 	case *ssa.Slice:
 		if view, ok := c.collectionOf(value); ok {
+			view.end = view.capEnd
 			return c.collectionMayReference(view, storage, point, seen, make(map[memoryVisit]bool))
 		}
 		return c.mayReferenceStorage(value.X, storage, point, seen)
 	case *ssa.Field:
-		if origin := c.projectedReference(value.X, []int{value.Field}, make(map[valueVisit]bool), make(map[memoryVisit]bool)); origin != nil {
+		if origin := c.projectedReference(value.X, []int{value.Field}, make(map[valueVisit]bool), nil); origin != nil {
 			return c.mayReferenceStorage(origin, storage, point, seen)
 		}
 	case *ssa.UnOp:
@@ -151,6 +158,9 @@ func (c *zeroChecker) mayReferenceStorage(value ssa.Value, storage mutationTarge
 		}
 	}
 	if view, ok := c.collectionOf(value); ok {
+		if _, slice := value.Type().Underlying().(*types.Slice); slice {
+			view.end = view.capEnd
+		}
 		if c.collectionMayReference(view, storage, point, seen, make(map[memoryVisit]bool)) {
 			return true
 		}
@@ -178,7 +188,7 @@ func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage
 	}
 	switch t.Underlying().(type) {
 	case *types.Pointer, *types.Interface, *types.Signature, *types.Slice:
-		if origin := c.storedReference(location, point, make(map[memoryVisit]bool)); origin != nil {
+		if origin := c.storedReference(location, point); origin != nil {
 			return c.mayReferenceStorage(origin, storage, point, seen)
 		}
 	}
@@ -188,6 +198,15 @@ func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage
 // Walk stored elements rather than enumerating an array's declared length.
 // Variadic calls and append commonly package output pointers as []any.
 func (c *zeroChecker) collectionMayReference(view collectionView, storage mutationTarget, point flowPoint, values map[ssa.Value]bool, seen map[memoryVisit]bool) bool {
+	if view.size() == 0 {
+		return false
+	}
+	if !c.work.take() {
+		return true
+	}
+	if view.storage.root != storage.root && borrowedRoot(view.storage.root) && borrowedRoot(storage.root) {
+		return true
+	}
 	if view.storage.root == storage.root && pathPrefix(storage.path, view.storage.path) {
 		if len(storage.path) == len(view.storage.path) {
 			if storage.elements == nil || rangesOverlap(view.start, view.end, storage.elements.start, storage.elements.end) {
@@ -223,11 +242,13 @@ func (c *zeroChecker) collectionMayReference(view collectionView, storage mutati
 				continue
 			}
 		}
-		key := pathKey(destination.path)
-		if written[key] {
-			continue
+		if !slices.Contains(destination.path, -1) {
+			key := pathKey(destination.path)
+			if written[key] {
+				continue
+			}
+			written[key] = true
 		}
-		written[key] = true
 		if c.mayReferenceStorage(store.Val, storage, point, values) {
 			return true
 		}
@@ -241,7 +262,10 @@ func (c *zeroChecker) collectionMayReference(view collectionView, storage mutati
 }
 
 func (storage mutationTarget) overlaps(target address) bool {
-	if target.root != storage.root || !pathPrefix(target.path, storage.path) && !pathPrefix(storage.path, target.path) {
+	if target.root != storage.root {
+		return borrowedRoot(target.root) && borrowedRoot(storage.root)
+	}
+	if !storagePathsOverlap(target.path, storage.path) {
 		return false
 	}
 	if storage.elements != nil && len(target.path) > len(storage.path) {
@@ -249,4 +273,12 @@ func (storage mutationTarget) overlaps(target address) bool {
 		return index < 0 || index >= storage.elements.start && (storage.elements.end < 0 || index < storage.elements.end)
 	}
 	return true
+}
+
+func borrowedRoot(value ssa.Value) bool {
+	switch value.(type) {
+	case *ssa.Global, *ssa.Parameter, *ssa.FreeVar:
+		return true
+	}
+	return false
 }

@@ -71,7 +71,7 @@ An inactive payload may be zero. Booleans such as `created` or `changed`
 keep their ordinary meaning. See
 [zero-value flow checks](../../tools/golangci-lint/README.md#zero-value-flow).
 
-See the [optional representation benchmarks](../pkg/optional/README.md) for
+See the [optional representation benchmarks](../pkg/optional/benchmarks.md) for
 the storage tradeoffs.
 
 ## Adding a new aggregate

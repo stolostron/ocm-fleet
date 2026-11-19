@@ -28,7 +28,7 @@ type memoryVisit struct {
 }
 
 func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point flowPoint, context flowContext, seen map[valueVisit]bool) (result *zeroProblem) {
-	if !context.possible || !c.interestingType(t) {
+	if !context.possible || !c.interestingType(t) || !c.work.take() {
 		return nil
 	}
 	context.use = c.useForType(t, context.use)
@@ -127,7 +127,7 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 			if index, ok := value.X.(*ssa.IndexAddr); ok {
 				return c.elementAtProblem(index.X, index.Index, path, t, instructionPoint(value), point, context, seen)
 			}
-			if location, ok := addressOf(value.X); ok {
+			if location, ok := c.collectionAddress(value.X); ok {
 				location.path = append(location.path, path...)
 				return c.memoryAtProblem(location, t, instructionPoint(value), point, context, seen, make(map[memoryVisit]bool))
 			}
@@ -250,9 +250,9 @@ func (c *zeroChecker) tupleProblem(value *ssa.Extract, t types.Type, context flo
 	case *ssa.Call:
 		results := tuple.Type().(*types.Tuple)
 		for index := range results.Len() {
-			if index != value.Index && isErrorType(results.At(index).Type()) {
-				guardIndex, success, reason = index, isZero, reasonUncheckedError
-				break
+			if index != value.Index && c.errorStatus(results.At(index).Type()) &&
+				!c.tupleGuardChecked(tuple, index, isZero, context) {
+				return c.uncheckedCallResult(tuple, value.Index, t, reasonUncheckedError, context.use)
 			}
 		}
 	case *ssa.Lookup:
@@ -273,9 +273,6 @@ func (c *zeroChecker) tupleProblem(value *ssa.Extract, t types.Type, context flo
 		}
 	}
 	if call, ok := value.Tuple.(*ssa.Call); ok {
-		if guardIndex >= 0 && !c.tupleGuardChecked(value.Tuple, guardIndex, success, context) {
-			return c.uncheckedCallResult(call, value.Index, t, reason, context.use)
-		}
 		if value.Index == 0 && c.contracts.hasPresence(callObject(&call.Call)) &&
 			!c.tupleGuardChecked(value.Tuple, 1, notZero, context) {
 			if optionalGet(callObject(&call.Call)) {
@@ -318,7 +315,7 @@ func (c *zeroChecker) uncheckedCallResult(call *ssa.Call, result int, t types.Ty
 		for _, rule := range fact.Payloads {
 			if rule.Result == result {
 				for _, boxed := range rule.Types {
-					if problem := c.payloadProblem(boxed, reason); problem != nil {
+					if problem := c.payloadProblem(boxed, reason, use); problem != nil {
 						return problem
 					}
 				}
@@ -346,19 +343,22 @@ func (c *zeroChecker) failedResultProblem(t types.Type, reason zeroReason, use v
 		return c.failedResultProblem(t.Elem(), reason, use, seen)
 	case *types.Slice:
 		return c.failedResultProblem(t.Elem(), reason, use, seen)
+	case *types.Array:
+		if t.Len() != 0 {
+			if problem := c.failedResultProblem(t.Elem(), reason, use, seen); problem != nil {
+				problem.path = fieldPath("[0]", problem.path)
+				return problem
+			}
+		}
 	case *types.Map:
 		if problem := c.failedResultProblem(t.Key(), reason, wholeValue, seen); problem != nil {
 			return problem
 		}
 		return c.failedResultProblem(t.Elem(), reason, use, seen)
 	case *types.Struct:
-		for index := range t.NumFields() {
-			if !use.includesField(t, index) {
-				continue
-			}
-			field := t.Field(index)
-			if problem := c.failedResultProblem(field.Type(), reason, use, seen); problem != nil {
-				problem.path = fieldPath(field.Name(), problem.path)
+		for selected := range c.jsonShape.fields(t, use.json()) {
+			if problem := c.failedResultProblem(selected.field.Type(), reason, use, seen); problem != nil {
+				problem.path = fieldPath(selected.path, problem.path)
 				return problem
 			}
 		}
@@ -402,15 +402,12 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 	}
 	if p := c.policies.lookup(t); p == nil || p.fact.ZeroValid {
 		if structure, ok := t.Underlying().(*types.Struct); ok {
-			for index := range structure.NumFields() {
-				if !context.use.includesField(structure, index) {
-					continue
-				}
-				field := structure.Field(index)
-				child := address{location.root, append(slices.Clone(location.path), index)}
-				if problem := c.memoryAtProblem(child, field.Type(), point, use, context, values, seen); problem != nil {
-					problem.path = fieldPath(field.Name(), problem.path)
-					return problem
+			for selected := range c.jsonShape.fields(structure, context.use.json()) {
+				if child, read, known := c.fieldStorage(location, structure, selected, point, use); known {
+					if problem := c.memoryAtProblem(child, selected.field.Type(), read, use, context, values, seen); problem != nil {
+						problem.path = fieldPath(selected.path, problem.path)
+						return problem
+					}
 				}
 			}
 			return nil
@@ -419,16 +416,42 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 	return c.memoryHistoryProblem(location, t, point, use, context, values, seen)
 }
 
+func (c *zeroChecker) fieldStorage(location address, shape *types.Struct, field structField, point, use flowPoint) (address, flowPoint, bool) {
+	if !field.indirect {
+		location.path = append(slices.Clone(location.path), field.indices...)
+		return location, point, true
+	}
+	location.path = slices.Clone(location.path)
+	for _, index := range field.indices[:len(field.indices)-1] {
+		location.path = append(location.path, index)
+		t := shape.Field(index).Type()
+		if pointer, ok := t.Underlying().(*types.Pointer); ok {
+			origin := c.storedReference(location, point)
+			root, known := c.collectionAddress(origin)
+			if !known {
+				return address{}, flowPoint{}, false
+			}
+			location, point, t = root, use, pointer.Elem()
+		}
+		shape = t.Underlying().(*types.Struct)
+	}
+	location.path = append(location.path, field.indices[len(field.indices)-1])
+	return location, point, true
+}
+
 // Guard facts describe the observation above. Once an intervening effect rules
 // out that proof, tracing earlier storage must not reapply it before the effect.
 func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point, use flowPoint, context flowContext, values map[valueVisit]bool, seen map[memoryVisit]bool) *zeroProblem {
 	visit := memoryVisit{point, location.root, pathKey(location.path)}
-	if seen[visit] {
+	if seen[visit] || !c.work.take() {
 		return nil
 	}
 	seen[visit] = true
 	defer delete(seen, visit)
 	for index := point.index - 1; index >= 0; index-- {
+		if !c.work.take() {
+			return nil
+		}
 		instruction := point.block.Instrs[index]
 		if allocation, ok := instruction.(ssa.Value); ok && allocation == location.root {
 			if source, call, result, known := c.rootSource(allocation); known {
@@ -466,25 +489,51 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 				}
 			}
 		}
-		if call, ok := instruction.(ssa.CallInstruction); ok {
-			before := flowPoint{point.block, index}
+		before := flowPoint{point.block, index}
+		if _, scheduled := instruction.(*ssa.Defer); scheduled {
+			continue
+		}
+		call, _ := instruction.(ssa.CallInstruction)
+		if _, cleanup := instruction.(*ssa.RunDefers); cleanup {
+			if deferred := c.deferredAt(before); deferred != nil {
+				call = deferred
+			}
+		}
+		if call != nil {
 			pos := mutationPosition(call, before)
 			if c.decoderInitializes(call, location, before, context) {
 				return nil
 			}
 			if c.decoderMayInvalidate(call, mutationTarget{address: location}, before, context) {
-				return c.failedResultProblem(t, reasonUncheckedError, context.use, make(map[types.Type]valueUse)).
-					withValue(c.valueName(location.root, location.path)).
+				problem := c.failedResultProblem(t, reasonUncheckedError, context.use, make(map[types.Type]valueUse))
+				if problem == nil {
+					problem = c.memoryHistoryProblem(location, t, before, use, context, values, seen).uncertain()
+				}
+				return problem.withValue(c.valueName(location.root, location.path)).
 					step("mutation", pos, c.callName(call.Common())+" may leave partially decoded state without checked success")
 			}
-			switch c.callMutation(call.Common(), location, before) {
+			if builtin, ok := call.Common().Value.(*ssa.Builtin); ok && builtin.Name() == "clear" {
+				if destination, ok := c.collectionOf(call.Common().Args[0]); ok && destination.storage.root == location.root &&
+					len(location.path) > len(destination.storage.path) && pathPrefix(location.path, destination.storage.path) {
+					destination = boundedView(destination, context)
+					offset := int64(location.path[len(destination.storage.path)])
+					if destination.end >= 0 && offset >= destination.start && offset < destination.end {
+						return c.zeroType(t, "", context.use).step("source", pos, "clear sets collection elements to zero")
+					}
+				}
+			}
+			effect := c.callMutation(call.Common(), location, before)
+			if _, asynchronous := instruction.(*ssa.Go); asynchronous && effect != mutationReadOnly {
+				effect = mutationUnknown
+			}
+			switch effect {
 			case mutationZero:
 				return c.zeroType(t, "", context.use).withValue(c.valueName(location.root, location.path)).step("source", pos, "helper writes zero").
 					step("mutation", pos, "definite zero write by "+c.callName(call.Common()))
 			case mutationNonzero:
 				return nil
 			case mutationUnknown:
-				if c.iteratorInitializes(call.Common(), location, t, before, context) {
+				if _, synchronous := instruction.(*ssa.Call); synchronous && c.iteratorInitializes(call.Common(), location, t, before, context) {
 					return nil
 				}
 				prior := c.memoryHistoryProblem(location, t, before, use, context, values, seen)
@@ -500,6 +549,9 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 	}
 	var alternatives zeroAlternatives
 	for index, predecessor := range point.block.Preds {
+		if c.work.exhausted() {
+			return alternatives.problem().uncertain()
+		}
 		edge := c.edgeContext(context, point.block, index)
 		if !edge.possible {
 			continue

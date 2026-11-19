@@ -213,13 +213,43 @@ test("domain audit rejects invalid metadata without guessing from prose", async 
   }
 });
 
+test("domain audit preserves headline delimiters and Unicode provenance", () => {
+  const finding = domainFinding({
+    FromLinter: "domainzero",
+    Pos: { Filename: "value.go", Line: 5, Column: 2 },
+    Text: `a headline \\| rule: stays literal
+  | rule: domainzero.invalid-zero; certainty: known; reason: zero-value
+  | operation: return; value: "raw"; type: "domain.ID"; path: ""
+  | source: previous\u2028value ("source.go", line 2, column 4)`,
+  });
+  assert.equal(finding.Message, "a headline | rule: stays literal");
+  assert.equal(finding.Provenance[0].Message, "previous\u2028value");
+});
+
+test("domain audit keeps a completed report after a typecheck failure", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "domain-audit-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const reportPath = join(directory, "server.json");
+  const previous = '{"Issues": []}\n';
+  await writeFile(reportPath, previous);
+  await assert.rejects(
+    writeDomainReports({
+      workspace: directory,
+      reportPath,
+      report: { Issues: [{ FromLinter: "typecheck" }] },
+    }),
+    /domain audit incomplete because type checking failed/,
+  );
+  assert.equal(await readFile(reportPath, "utf8"), previous);
+});
+
 test("domain audit separates application and test helpers and writes navigable provenance", async (t) => {
   const { directory } = await fixture(t);
   const reportPath = join(directory, ".nx/reports/domainconstruct/server.json");
   const issue = (filename, text) => ({
     FromLinter: "domainzero",
     Text: text,
-    Pos: { Filename: join(directory, filename), Line: 12, Column: 3 },
+    Pos: { Filename: filename, Line: 12, Column: 3 },
   });
   const text = (
     message,
@@ -276,6 +306,10 @@ test("domain audit separates application and test helpers and writes navigable p
   );
   assert.equal(main.Issues.length, 1);
   assert.equal(tests.Issues.length, 4);
+  assert.equal(
+    main.Issues[0].Pos.Filename,
+    join(directory, "server/internal/application/service.go"),
+  );
   assert.deepEqual(main.Issues[0].Domain.Pos, main.Issues[0].Pos);
   assert.equal(main.Issues[0].Domain.Provenance[1].Kind, "mutation");
   assert.equal(

@@ -11,8 +11,9 @@ import (
 )
 
 type zeroUse struct {
-	pos  token.Pos // Original instruction position, retained for deduplication.
-	call *ssa.CallCommon
+	pos      token.Pos // Original instruction position, retained for deduplication.
+	call     *ssa.CallCommon
+	argument int // SSA operand index, or -1 for the callee or its invoke receiver.
 }
 
 // A use site describes the value as it appears in source. Its path excludes the
@@ -31,7 +32,7 @@ type sourceExpression struct {
 // Resolve source positions and labels only for findings that survive
 // deduplication. The expression cache also serves diagnostic text, without
 // indexing other calls.
-func (c *zeroChecker) useSite(use zeroUse, value ssa.Value, operation, path string) zeroUseSite {
+func (c *zeroChecker) useSite(use zeroUse, operation, path string) zeroUseSite {
 	site := zeroUseSite{pos: use.pos, operation: operation, path: path}
 	if use.call == nil {
 		return site
@@ -44,7 +45,8 @@ func (c *zeroChecker) useSite(use zeroUse, value ssa.Value, operation, path stri
 		return site
 	}
 	selector, _ := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-	if value == use.call.Value {
+	index := use.argument
+	if index == -1 {
 		if use.call.IsInvoke() && selector != nil {
 			site.pos = selector.X.Pos()
 		} else {
@@ -52,51 +54,40 @@ func (c *zeroChecker) useSite(use zeroUse, value ssa.Value, operation, path stri
 		}
 		return site
 	}
-	for index, argument := range use.call.Args {
-		if argument != value {
-			continue
-		}
-		if index == 0 && !use.call.IsInvoke() && use.call.Signature().Recv() != nil {
-			site.operation = "receiver"
-		}
-		sourceIndex := index
-		if selector != nil && !use.call.IsInvoke() {
-			if selection := c.pass.TypesInfo.Selections[selector]; selection != nil {
-				if index == 0 && selection.Kind() == types.MethodExpr {
+	if index == 0 && !use.call.IsInvoke() && use.call.Signature().Recv() != nil {
+		site.operation = "receiver"
+	}
+	sourceIndex := index
+	if selector != nil && !use.call.IsInvoke() {
+		if selection := c.pass.TypesInfo.Selections[selector]; selection != nil {
+			switch selection.Kind() {
+			case types.MethodExpr:
+				if index == 0 {
 					site.operation = "receiver"
 				}
-				if selection.Kind() == types.MethodVal {
-					if index == 0 {
-						site.operation = "receiver"
-						site.pos = selector.X.Pos()
-						return site
-					}
-					sourceIndex-- // SSA includes the implicit receiver before arguments.
+			case types.MethodVal:
+				if index == 0 {
+					site.operation = "receiver"
+					site.pos = selector.X.Pos()
+					return site
 				}
+				sourceIndex-- // SSA includes the implicit receiver before arguments.
 			}
 		}
-		if index == len(use.call.Args)-1 && use.call.Signature().Variadic() && !call.Ellipsis.IsValid() {
-			if element, remainder, ok := splitElementPath(path); ok {
-				if element < len(call.Args)-sourceIndex {
-					sourceIndex += element
-					site.path = remainder
-					if site.operation == "argument" {
-						site.operation = "variadic-argument"
-					}
-				} else {
-					sourceIndex = len(call.Args)
-				}
+	}
+	if index == len(use.call.Args)-1 && use.call.Signature().Variadic() && !call.Ellipsis.IsValid() {
+		if element, remainder, ok := splitElementPath(path); ok {
+			sourceIndex += element
+			site.path = remainder
+			if site.operation == "argument" {
+				site.operation = "variadic-argument"
 			}
 		}
-		if sourceIndex < len(call.Args) {
-			site.pos = call.Args[sourceIndex].Pos()
-			return site
-		}
-		if len(call.Args) == 1 {
-			site.pos = call.Args[0].Pos() // A tuple-producing call supplies several SSA arguments.
-			return site
-		}
-		break
+	}
+	if sourceIndex < len(call.Args) {
+		site.pos = call.Args[sourceIndex].Pos()
+	} else if len(call.Args) == 1 {
+		site.pos = call.Args[0].Pos() // A tuple-producing call supplies several SSA arguments.
 	}
 	return site
 }

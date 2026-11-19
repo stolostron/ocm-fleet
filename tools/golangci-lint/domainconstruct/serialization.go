@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"reflect"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
@@ -28,12 +27,18 @@ type serializationChecker struct {
 	contracts    *contractSet
 	calls        map[token.Pos]*ast.CallExpr
 	reported     map[serializationReport]bool
+	jsonShape    jsonFieldCache
 	callPosition token.Pos
 }
 
 type serializationReport struct {
 	pos                      token.Pos
 	rule, operation, message string
+}
+
+type encodingOperand struct {
+	node                   ast.Node
+	codec, operation, path string
 }
 
 type serializationProblem struct {
@@ -61,7 +66,7 @@ func runSerialization(pass *analysis.Pass) (any, error) {
 			switch node := node.(type) {
 			case *ast.TypeSpec:
 				if object, ok := pass.TypesInfo.Defs[node.Name].(*types.TypeName); ok {
-					if p := c.policies.declaration(object.Type()); p != nil {
+					if p := c.policies[object]; p != nil {
 						c.checkDeclaration(node, p)
 					}
 				}
@@ -106,8 +111,7 @@ func (c *serializationChecker) checkDeclaration(node *ast.TypeSpec, p *policy) {
 			invalid("constructors-required", "domain:serialization requires domain:constructors")
 			continue
 		}
-		decoder := codecMethod(p.typ, decoderMethod(codec), true)
-		if decoder == nil || !validDecoder(decoder.Type().(*types.Signature), codec) {
+		if !supportsNativeDecode(p.typ, codec) {
 			invalid("decoder-required", fmt.Sprintf("%s serialization requires a pointer %s method with the standard decoding signature", codec, decoderMethod(codec)))
 			continue
 		}
@@ -117,7 +121,8 @@ func (c *serializationChecker) checkDeclaration(node *ast.TypeSpec, p *policy) {
 			// JSON can encode primitive representations without a custom hook.
 			// Composite domain state needs a value hook, including when nested
 			// in a non-addressable interface or map value.
-			if _, scalar := p.typ.Underlying().(*types.Basic); scalar {
+			if basic, scalar := p.typ.Underlying().(*types.Basic); scalar &&
+				basic.Info()&(types.IsBoolean|types.IsInteger|types.IsFloat|types.IsString) != 0 {
 				continue
 			}
 			if encoder == nil {
@@ -149,7 +154,7 @@ func (c *serializationChecker) checkCall(call *ast.CallExpr) {
 		if signature != nil {
 			for _, index := range boundary.Results {
 				if index < signature.Results().Len() {
-					c.checkType(call, signature.Results().At(index).Type(), boundary.Codec, "result")
+					c.checkType(encodingOperand{node: call, codec: boundary.Codec, operation: "result"}, signature.Results().At(index).Type())
 				}
 			}
 		}
@@ -157,7 +162,7 @@ func (c *serializationChecker) checkCall(call *ast.CallExpr) {
 			instance := c.pass.TypesInfo.Instances[identifier]
 			for _, index := range boundary.TypeParameters {
 				if index < instance.TypeArgs.Len() {
-					c.checkType(call, instance.TypeArgs.At(index), boundary.Codec, "type-argument")
+					c.checkType(encodingOperand{node: call, codec: boundary.Codec, operation: "type-argument"}, instance.TypeArgs.At(index))
 				}
 			}
 		}
@@ -207,23 +212,32 @@ func (c *serializationChecker) arguments(call *ast.CallExpr, function *types.Fun
 
 func (c *serializationChecker) checkExpression(expression ast.Expr, codec, operation string) {
 	// Explicit boxing preserves the concrete type at this source boundary.
-	if call, ok := expression.(*ast.CallExpr); ok && c.pass.TypesInfo.Types[call.Fun].IsType() && len(call.Args) == 1 && emptyInterface(c.pass.TypesInfo.TypeOf(call)) {
-		c.checkExpression(call.Args[0], codec, operation)
-		return
+	if call, ok := ast.Unparen(expression).(*ast.CallExpr); ok && c.pass.TypesInfo.Types[call.Fun].IsType() && len(call.Args) == 1 {
+		if _, boxed := c.pass.TypesInfo.TypeOf(call).Underlying().(*types.Interface); boxed {
+			c.checkExpression(call.Args[0], codec, operation)
+			return
+		}
 	}
-	c.checkType(expression, c.pass.TypesInfo.TypeOf(expression), codec, operation)
+	c.checkType(encodingOperand{node: expression, codec: codec, operation: operation}, c.pass.TypesInfo.TypeOf(expression))
 }
 
-func (c *serializationChecker) checkType(node ast.Node, t types.Type, codec, operation string) {
+func (c *serializationChecker) checkType(operand encodingOperand, t types.Type) {
 	if t == nil {
 		return
 	}
-	if problem := c.encodingProblem(t, codec, make(map[encodingVisit]bool)); problem != nil {
+	if problem := c.encodingProblem(t, operand.codec, make(map[encodingVisit]bool)); problem != nil {
+		problem.path = fieldPath(operand.path, problem.path)
 		path := ""
 		if problem.path != "" {
 			path = "at path " + problem.path + ": "
 		}
-		c.report(node, "unsupported-codec", operation, "codec-not-declared",
+		if problem.reason == "json-string-map-key" {
+			c.report(operand.node, "unsupported-codec", operand.operation, problem.reason,
+				fmt.Sprintf("%s%s needs a plain string map key for a checked JSON round trip", path, typeName(problem.typ)),
+				problem.typ, problem.path)
+			return
+		}
+		c.report(operand.node, "unsupported-codec", operand.operation, "codec-not-declared",
 			fmt.Sprintf("%s%s does not declare %s serialization; use a snapshot or declare a checked native round trip", path, typeName(problem.typ), problem.codec),
 			problem.typ, problem.path)
 	}
@@ -262,21 +276,22 @@ func (c *serializationChecker) encodingProblem(t types.Type, codec string, seen 
 			problem.path = fieldPath("[key]", problem.path)
 			return problem
 		}
+		if codec == "json" && c.policies.lookup(shape.Key()) != nil {
+			if key, basic := shape.Key().Underlying().(*types.Basic); basic && key.Info()&types.IsString != 0 {
+				return &serializationProblem{typ: shape.Key(), path: "[key]", codec: codec, reason: "json-string-map-key"}
+			}
+		}
 		return c.encodingProblem(shape.Elem(), codec, seen)
 	case *types.Struct:
 		if standardPlainType(t) {
 			return nil
 		}
-		for index := range shape.NumFields() {
-			field := shape.Field(index)
-			if !field.Exported() {
+		for selected := range c.jsonShape.fields(shape, codec == "json") {
+			if codec != "json" && !selected.field.Exported() {
 				continue
 			}
-			if codec == "json" && jsonFieldIgnored(shape.Tag(index)) {
-				continue
-			}
-			if problem := c.encodingProblem(field.Type(), codec, seen); problem != nil {
-				problem.path = fieldPath(field.Name(), problem.path)
+			if problem := c.encodingProblem(selected.field.Type(), codec, seen); problem != nil {
+				problem.path = fieldPath(selected.path, problem.path)
 				return problem
 			}
 		}
@@ -284,15 +299,14 @@ func (c *serializationChecker) encodingProblem(t types.Type, codec string, seen 
 	return nil
 }
 
-func jsonFieldIgnored(tag string) bool {
-	return reflect.StructTag(tag).Get("json") == "-"
-}
-
 func (c *serializationChecker) snapshotProblem(t types.Type, seen map[types.Type]bool) *serializationProblem {
 	if seen[t] {
 		return nil
 	}
 	seen[t] = true
+	if optionalPayload(t) != nil {
+		return &serializationProblem{typ: t, reason: "optional-in-snapshot"}
+	}
 	if c.policies.lookup(t) != nil {
 		return &serializationProblem{typ: t, reason: "domain-value-in-snapshot"}
 	}

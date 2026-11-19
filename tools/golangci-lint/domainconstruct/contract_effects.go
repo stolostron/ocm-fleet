@@ -52,6 +52,7 @@ func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockS
 	// Early exits and control flow prevent claiming a definite postcondition.
 	writes := make(map[*ast.StarExpr]mutationKind)
 	straight := true
+	var lastWrite token.Pos
 	for _, statement := range body.List {
 		switch statement := statement.(type) {
 		case *ast.AssignStmt:
@@ -63,6 +64,7 @@ func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockS
 							write = mutationZero
 						}
 						writes[target] = write
+						lastWrite = statement.End()
 					}
 				}
 			}
@@ -76,6 +78,10 @@ func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockS
 		if node == nil {
 			ancestors = ancestors[:len(ancestors)-1]
 			return true
+		}
+		if call, ok := node.(*ast.CallExpr); ok && lastWrite.IsValid() && call.Pos() >= lastWrite &&
+			!b.pass.TypesInfo.Types[call.Fun].IsType() {
+			kind = mutationUnknown
 		}
 		if id, ok := node.(*ast.Ident); ok && b.pass.TypesInfo.ObjectOf(id) == parameter {
 			parent := ancestors[len(ancestors)-1]
@@ -104,6 +110,8 @@ func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockS
 							}
 						case *ast.IncDecStmt:
 							readOnly = false
+						case *ast.RangeStmt:
+							readOnly = ast.Unparen(enclosing.Key) != parent && ast.Unparen(enclosing.Value) != parent
 						case *ast.UnaryExpr:
 							readOnly = enclosing.Op != token.AND
 						case *ast.SelectorExpr:

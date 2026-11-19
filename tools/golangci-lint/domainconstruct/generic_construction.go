@@ -2,6 +2,7 @@ package domainconstruct
 
 import (
 	"go/ast"
+	"go/constant"
 	"go/types"
 )
 
@@ -28,6 +29,10 @@ func (c *checker) checkGenericConstruction(call *ast.CallExpr, ancestors []ast.N
 
 func (c *checker) checkGenericSource(source valueSource, target types.Type, call *ast.CallExpr, function *types.Func, ancestors []ast.Node) bool {
 	if source.Kind == sourceConversion {
+		argument := source.Values[0]
+		if literalZeroConversion(argument, target) || c.genericIdentityConversion(argument, target, call) {
+			return true
+		}
 		if p := c.policy(target); p != nil && !c.approved(p, ancestors) && !constructorCall(p, target, function) {
 			c.reportConstruction(call, p)
 			return false
@@ -50,6 +55,34 @@ func (c *checker) checkGenericSource(source valueSource, target types.Type, call
 		}
 	}
 	return true
+}
+
+func (c *checker) genericIdentityConversion(source valueSource, target types.Type, call *ast.CallExpr) bool {
+	if source.Kind != sourceParameter {
+		return false
+	}
+	if argument := callParameter(c.pass.TypesInfo, call, source.Parameter); argument != nil {
+		t := projectedType(c.pass.TypesInfo.TypeOf(argument), source.Path)
+		return t != nil && types.Identical(t, target)
+	}
+	return false
+}
+
+func literalZeroConversion(source valueSource, target types.Type) bool {
+	if source.Kind != sourceZero {
+		return false
+	}
+	if basic, ok := target.Underlying().(*types.Basic); ok {
+		switch source.ZeroKind {
+		case constant.String:
+			return basic.Info()&types.IsString != 0
+		case constant.Bool:
+			return basic.Info()&types.IsBoolean != 0
+		case constant.Int, constant.Float, constant.Complex:
+			return basic.Info()&types.IsNumeric != 0
+		}
+	}
+	return false
 }
 
 func constructorCall(p *policy, target types.Type, function *types.Func) bool {

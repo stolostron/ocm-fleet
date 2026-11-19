@@ -4,6 +4,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/ssa"
 )
@@ -27,13 +28,40 @@ func callObject(call *ssa.CallCommon) *types.Func {
 }
 
 func contractArgument(call *ssa.CallCommon, index int) ssa.Value {
-	if function := call.StaticCallee(); function != nil && function.Signature.Recv() != nil && !call.IsInvoke() {
-		index++
+	if index == -1 {
+		if call.IsInvoke() {
+			return call.Value
+		}
+		if closure, ok := call.Value.(*ssa.MakeClosure); ok && len(closure.Bindings) == 1 {
+			if method, ok := closure.Fn.(*ssa.Function); ok && strings.HasPrefix(method.Synthetic, "bound method wrapper") {
+				return closure.Bindings[0]
+			}
+		}
 	}
-	if index < len(call.Args) {
+	if index := callArgumentIndex(call, index); index >= 0 && index < len(call.Args) {
 		return call.Args[index]
 	}
 	return nil
+}
+
+// Declared parameter indices exclude the receiver. A method-expression thunk
+// takes it as an explicit argument, while an invoke or bound closure keeps it
+// separate from Args.
+func callArgumentIndex(call *ssa.CallCommon, index int) int {
+	if call.IsInvoke() {
+		return index
+	}
+	signature := call.Signature()
+	if signature.Recv() != nil {
+		return index + 1
+	}
+	if function := callObject(call); function != nil {
+		declared := function.Type().(*types.Signature)
+		if declared.Recv() != nil && signature.Params().Len() == declared.Params().Len()+1 {
+			return index + 1
+		}
+	}
+	return index
 }
 
 func (c *zeroChecker) callTruth(call *ssa.Call, result int, context flowContext, seen map[ssa.Value]bool) truth {

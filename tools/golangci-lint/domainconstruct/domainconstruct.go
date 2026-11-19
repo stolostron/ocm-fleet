@@ -32,6 +32,16 @@ type checker struct {
 func run(pass *analysis.Pass) (any, error) {
 	c := &checker{pass: pass, policies: make(policySet), contracts: pass.ResultOf[contractsAnalyzer].(*contractSet)}
 	c.collectPolicies()
+	for _, imported := range pass.AllObjectFacts() {
+		object, typeName := imported.Object.(*types.TypeName)
+		fact, construction := imported.Fact.(*constructionFact)
+		if typeName && construction && c.policies[object] == nil {
+			c.policies[object] = &policy{name: object.Pkg().Name() + "." + object.Name(), typ: object.Type(), fact: fact}
+		}
+	}
+	if len(c.policies) == 0 {
+		return c.policies, nil
+	}
 	for _, file := range pass.Files {
 		var ancestors []ast.Node
 		ast.Inspect(file, func(node ast.Node) bool {
@@ -46,30 +56,39 @@ func run(pass *analysis.Pass) (any, error) {
 			return true
 		})
 	}
-	for _, imported := range pass.AllObjectFacts() {
-		object, typeName := imported.Object.(*types.TypeName)
-		fact, construction := imported.Fact.(*constructionFact)
-		if typeName && construction && c.policies[object] == nil {
-			c.policies[object] = &policy{name: object.Pkg().Name() + "." + object.Name(), typ: object.Type(), fact: fact}
-		}
-	}
 	return c.policies, nil
 }
 
 func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 	switch node := node.(type) {
 	case *ast.CallExpr:
-		if c.pass.TypesInfo.Types[node.Fun].IsType() && !c.checkConversion(node, ancestors) {
-			return false
+		if c.pass.TypesInfo.Types[node.Fun].IsType() {
+			if !c.checkConversion(node, ancestors) {
+				return false
+			}
+		} else {
+			c.checkCallTransfers(node, ancestors)
 		}
 		if !c.checkGenericConstruction(node, ancestors) {
 			return false
 		}
 	case *ast.CompositeLit:
 		if p := c.policy(c.pass.TypesInfo.TypeOf(node)); p != nil &&
-			!c.approved(p, ancestors) && !c.isZero(node) {
+			!c.approved(p, ancestors) && !c.zeroCompositeContents(node) {
 			c.reportConstruction(node, p)
 			return false
+		}
+		c.checkLiteralTransfers(node, ancestors)
+	case *ast.ValueSpec:
+		c.checkTransfers(node.Values, len(node.Names), func(index int) types.Type {
+			return c.pass.TypesInfo.Defs[node.Names[index]].Type()
+		}, ancestors)
+	case *ast.ReturnStmt:
+		if len(node.Results) > 0 {
+			results := c.enclosingResults(ancestors)
+			c.checkTransfers(node.Results, results.Len(), func(index int) types.Type {
+				return results.At(index).Type()
+			}, ancestors)
 		}
 	case *ast.AssignStmt:
 		for _, target := range node.Lhs {
@@ -83,6 +102,9 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 				}
 			}
 		}
+		c.checkTransfers(node.Rhs, len(node.Lhs), func(index int) types.Type {
+			return c.pass.TypesInfo.TypeOf(node.Lhs[index])
+		}, ancestors)
 	case *ast.IncDecStmt:
 		if !c.checkWrite(node.X, ancestors) {
 			return false
@@ -94,8 +116,8 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 	case *ast.RangeStmt:
 		if node.Tok == token.ASSIGN {
 			for _, target := range []ast.Expr{node.Key, node.Value} {
-				if target != nil && !c.checkWrite(target, ancestors) {
-					return false
+				if target != nil {
+					c.checkWrite(target, ancestors)
 				}
 			}
 		}
@@ -108,10 +130,20 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 			}
 		}
 	case *ast.SliceExpr:
-		if p := c.policy(c.pass.TypesInfo.TypeOf(node.X)); p != nil && isArrayRepresentation(p.typ) && !c.approved(p, ancestors) {
-			c.reportProtected(node, p, "domainconstruct.mutable-exposure", "slice", "mutable-contents",
-				fmt.Sprintf("do not expose mutable contents of %s", p.name))
-			return false
+		t := c.pass.TypesInfo.TypeOf(node.X)
+		if pointer, ok := t.Underlying().(*types.Pointer); ok {
+			t = pointer.Elem()
+		}
+		if _, array := t.Underlying().(*types.Array); array {
+			p := c.policy(t)
+			if p == nil {
+				p = c.fieldOwner(node.X)
+			}
+			if p != nil && !c.approved(p, ancestors) {
+				c.reportProtected(node, p, "domainconstruct.mutable-exposure", "slice", "mutable-contents",
+					fmt.Sprintf("do not expose mutable contents of %s", p.name))
+				return false
+			}
 		}
 	}
 
@@ -125,7 +157,7 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 	}
 	if c.pass.TypesInfo.Types[expr].Value != nil && !c.constantCopy(expr) {
 		if c.constantObservation(expr, ancestors) {
-			return false
+			return true
 		}
 		if !c.isZero(expr) {
 			c.reportConstruction(expr, p)
@@ -146,11 +178,6 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 	return true
 }
 
-func isArrayRepresentation(t types.Type) bool {
-	_, array := t.Underlying().(*types.Array)
-	return array
-}
-
 func (c *checker) checkConversion(call *ast.CallExpr, ancestors []ast.Node) bool {
 	if len(call.Args) != 1 {
 		return true
@@ -167,7 +194,8 @@ func (c *checker) checkConversion(call *ast.CallExpr, ancestors []ast.Node) bool
 		c.reportConstruction(call, p)
 		return false
 	}
-	if _, pointer := types.Unalias(source).(*types.Pointer); pointer {
+	_, boxed := target.Underlying().(*types.Interface)
+	if _, pointer := types.Unalias(source).(*types.Pointer); pointer && !boxed {
 		if p := c.policy(source); p != nil && !c.approved(p, ancestors) {
 			c.reportProtected(call, p, "domainconstruct.mutable-exposure", "conversion", "mutable-representation",
 				fmt.Sprintf("do not expose mutable representation of %s", p.name))
@@ -190,8 +218,15 @@ func (c *checker) fieldOwner(expr ast.Expr) *policy {
 	switch expr := ast.Unparen(expr).(type) {
 	case *ast.SelectorExpr:
 		if selection := c.pass.TypesInfo.Selections[expr]; selection != nil && selection.Kind() == types.FieldVal {
-			if p := c.policy(c.pass.TypesInfo.TypeOf(expr.X)); p != nil {
-				return p
+			owner := selection.Recv()
+			for _, index := range selection.Index() {
+				if pointer, ok := owner.Underlying().(*types.Pointer); ok {
+					owner = pointer.Elem()
+				}
+				if p := c.policy(owner); p != nil {
+					return p
+				}
+				owner = owner.Underlying().(*types.Struct).Field(index).Type()
 			}
 			return c.fieldOwner(expr.X)
 		}
@@ -201,6 +236,8 @@ func (c *checker) fieldOwner(expr ast.Expr) *policy {
 		}
 		return c.fieldOwner(expr.X)
 	case *ast.StarExpr:
+		return c.fieldOwner(expr.X)
+	case *ast.SliceExpr:
 		return c.fieldOwner(expr.X)
 	}
 	return nil
@@ -243,9 +280,18 @@ func (c *checker) constantObservation(expr ast.Expr, ancestors []ast.Node) bool 
 			case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
 				return true
 			}
+			if c.pass.TypesInfo.Types[parent].Value != nil {
+				expr = parent
+				continue
+			}
+		case *ast.UnaryExpr:
+			if c.pass.TypesInfo.Types[parent].Value != nil {
+				expr = parent
+				continue
+			}
 		case *ast.CaseClause:
 			for _, item := range parent.List {
-				if ast.Unparen(item) == expr {
+				if ast.Unparen(item) == ast.Unparen(expr) {
 					return true
 				}
 			}
@@ -256,10 +302,34 @@ func (c *checker) constantObservation(expr ast.Expr, ancestors []ast.Node) bool 
 }
 
 func (c *checker) isZero(expr ast.Expr) bool {
-	if literal, ok := ast.Unparen(expr).(*ast.CompositeLit); ok {
-		return len(literal.Elts) == 0
+	expr = ast.Unparen(expr)
+	if literal, ok := expr.(*ast.CompositeLit); ok {
+		_, address := c.pass.TypesInfo.TypeOf(literal).Underlying().(*types.Pointer)
+		return !address && c.zeroCompositeContents(literal)
 	}
-	return constantZero(c.pass.TypesInfo.Types[expr].Value)
+	value := c.pass.TypesInfo.Types[expr]
+	return value.IsNil() || constantZero(value.Value)
+}
+
+func (c *checker) zeroCompositeContents(literal *ast.CompositeLit) bool {
+	t := c.pass.TypesInfo.TypeOf(literal)
+	if pointer, ok := t.Underlying().(*types.Pointer); ok {
+		// A pointer element can elide the address operator in a literal.
+		t = pointer.Elem()
+	}
+	switch t.Underlying().(type) {
+	case *types.Array, *types.Struct:
+		for _, element := range literal.Elts {
+			if pair, ok := element.(*ast.KeyValueExpr); ok {
+				element = pair.Value
+			}
+			if !c.isZero(element) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func (c *checker) reportConstruction(node ast.Node, p *policy) {

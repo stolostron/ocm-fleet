@@ -34,7 +34,7 @@ func PositionMultilineArgument() {
 
 func PositionRepeatedArgument() {
 	var bad ID
-	acceptPositionRepeated( /* position */ bad, bad) // want "rule: domainzero[.]invalid-zero"
+	acceptPositionRepeated( /* position */ bad /* position */, bad) // want "rule: domainzero[.]invalid-zero" "rule: domainzero[.]invalid-zero"
 }
 
 func PositionMethodReceiver() {

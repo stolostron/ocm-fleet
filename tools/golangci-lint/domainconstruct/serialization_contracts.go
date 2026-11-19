@@ -93,6 +93,9 @@ func parseBoundary(signature *types.Signature, fields []string) (codecBoundary, 
 		}
 		seen[selector] = true
 		for value := range strings.SplitSeq(values, ",") {
+			if value == "" {
+				return boundary, fmt.Errorf("use each boundary selector once with a nonempty comma-separated list")
+			}
 			switch selector {
 			case "encode", "decode":
 				index := parameterIndex(signature, value)
@@ -109,6 +112,10 @@ func parseBoundary(signature *types.Signature, fields []string) (codecBoundary, 
 					t := parameter.Type()
 					if signature.Variadic() && index == signature.Params().Len()-1 {
 						t = t.Underlying().(*types.Slice).Elem()
+					}
+					_, generic := types.Unalias(t).(*types.TypeParam)
+					if generic {
+						return boundary, fmt.Errorf("decode boundary parameter %s must be a pointer or interface destination", value)
 					}
 					switch t.Underlying().(type) {
 					case *types.Pointer, *types.Interface:
@@ -133,7 +140,7 @@ func parseBoundary(signature *types.Signature, fields []string) (codecBoundary, 
 				if err != nil || index < 0 || index >= signature.Results().Len() {
 					return boundary, fmt.Errorf("boundary result index %s is out of range", value)
 				}
-				if isErrorType(signature.Results().At(index).Type()) {
+				if isBuiltinError(signature.Results().At(index).Type()) {
 					return boundary, fmt.Errorf("boundary result index %s selects an error, not a payload", value)
 				}
 				boundary.Results = append(boundary.Results, index)
@@ -166,7 +173,7 @@ func parameterIndex(signature *types.Signature, name string) int {
 func errorResult(signature *types.Signature) int {
 	result := -1
 	for index := range signature.Results().Len() {
-		if isErrorType(signature.Results().At(index).Type()) {
+		if isBuiltinError(signature.Results().At(index).Type()) {
 			if result >= 0 {
 				return -1
 			}
@@ -203,25 +210,27 @@ func codecMethod(t types.Type, name string, pointer bool) *types.Func {
 }
 
 func validDecoder(signature *types.Signature, codec string) bool {
-	if signature.Recv() == nil || signature.Params().Len() != 1 || signature.Results().Len() != 1 || errorResult(signature) != 0 {
+	if signature.Recv() == nil || signature.Variadic() || signature.Params().Len() != 1 ||
+		signature.Results().Len() != 1 || !isBuiltinError(signature.Results().At(0).Type()) {
 		return false
 	}
 	if _, pointer := signature.Recv().Type().(*types.Pointer); !pointer {
 		return false
 	}
 	if codec == "sql" {
-		return emptyInterface(signature.Params().At(0).Type())
+		return types.Identical(signature.Params().At(0).Type(), types.Universe.Lookup("any").Type())
 	}
 	return byteSlice(signature.Params().At(0).Type())
 }
 
 func validEncoder(signature *types.Signature, codec string) bool {
-	if signature.Params().Len() != 0 || signature.Results().Len() != 2 || errorResult(signature) != 1 {
+	if signature.Params().Len() != 0 || signature.Results().Len() != 2 ||
+		!isBuiltinError(signature.Results().At(1).Type()) {
 		return false
 	}
 	if codec == "sql" {
-		named := domainType(signature.Results().At(0).Type())
-		return named != nil && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == "database/sql/driver" && named.Obj().Name() == "Value"
+		named, ok := types.Unalias(signature.Results().At(0).Type()).(*types.Named)
+		return ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == "database/sql/driver" && named.Obj().Name() == "Value"
 	}
 	return byteSlice(signature.Results().At(0).Type())
 }
@@ -231,9 +240,16 @@ func byteSlice(t types.Type) bool {
 	return ok && types.Identical(slice.Elem(), types.Typ[types.Byte])
 }
 
-func emptyInterface(t types.Type) bool {
-	value, ok := t.Underlying().(*types.Interface)
-	return ok && value.NumMethods() == 0
+func supportsNativeDecode(t types.Type, codec string) bool {
+	method := codecMethod(t, decoderMethod(codec), true)
+	if method == nil {
+		return false
+	}
+	signature := method.Type().(*types.Signature)
+	if !validDecoder(signature, codec) {
+		return false
+	}
+	return types.Identical(signature.Recv().Type().(*types.Pointer).Elem(), t)
 }
 
 // boundaries resolves by Go object identity, never by a caller's spelling of a

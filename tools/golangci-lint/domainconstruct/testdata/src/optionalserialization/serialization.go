@@ -12,6 +12,11 @@ type Snapshot struct { // want "snapshot.*contains.*optionalvalues.ID"
 	Name optional.Optional[optionalvalues.ID]
 }
 
+//domain:snapshot
+type ScalarSnapshot struct { // want "snapshot.*Name.*optional.Optional"
+	Name optional.Optional[string]
+}
+
 func Serialization(value optional.Optional[optionalvalues.ID]) {
 	_, _ = json.Marshal(value) // want "does not declare json serialization"
 	_ = json.Unmarshal(nil, &value) // want "does not declare json serialization"

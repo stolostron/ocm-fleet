@@ -56,6 +56,8 @@ The same run writes `server.md`, with separate main and test Markdown and JSON
 reports. Test scope includes test files and recognized test support packages;
 mixed-purpose ordinary files count as main code. Links target files, with line
 and column numbers alongside them so they work in VS Code.
+When type checking fails, the audit reports the failure and retains the last
+complete report.
 Each domain issue has a `Domain` object containing its rule, certainty, operation,
 source expression, full type identity, member path, reason, primary location, and
 ordered provenance. The [diagnostic format](#diagnostic-format) keeps these fields
@@ -368,8 +370,8 @@ consumers should use the explicit fields for decisions.
 ### Zero-value flow
 
 `domainzero` uses the construction type policies. It rejects a
-`//domain:zero-valid` struct whose required fields recursively contain an
-invalid-zero value. Absent optionals, nil optional pointers, and empty
+`//domain:zero-valid` struct or nonempty array whose required values
+recursively contain an invalid zero. Absent optionals, nil optional pointers, and empty
 containers are valid in those checks. See
 [Zero values and optionality](../../server/docs/domain.md#zero-values-and-optionality)
 for deciding when to accept zero and how to represent absence.
@@ -424,8 +426,8 @@ does not validate an earlier zero copy. This uses the same unchanged-storage
 proof as repeated scalar reads. Construction, serialization, and zero-comparison
 findings remain independent: nonzero does not establish all domain invariants.
 
-Results paired with an error need a successful error check before use; forwarding
-the result and its matching error is also allowed. This includes pointer results:
+Results paired with errors need a successful check of each error status before
+use. Forwarding the result with its matching statuses is also allowed. This includes pointer results:
 `nil` remains valid optional absence, but a failed result may instead contain a
 non-nil pointer to an invalid value. Interface results retain concrete payload
 types visible in the producing function, including across packages. Checking
@@ -493,9 +495,9 @@ No general optional-type registration directive, arbitrary field relationship,
 or separate presence-method/unchecked-getter correlation is inferred.
 
 Boolean comparisons retain their relationships, including repeated reads of
-unchanged table fields and `wantErr` assertions followed by a terminating testing call. The standard
-`testing.TB` interface has the same termination contract; a nonfatal assertion
-does not establish success. Returns inside iterator range loops follow the same
+unchanged table fields and `wantErr` assertions followed by a terminating testing
+call. A call through `testing.TB` establishes termination when it resolves to a
+standard concrete testing type. Returns inside iterator range loops follow the same
 result/error rules as ordinary returns.
 
 Outside a declared absence path, a zero payload requires a provably non-nil error.
@@ -588,6 +590,12 @@ justification as production code.
 
 Branch facts stay independent for each path. Alternative tracing stops once
 later paths cannot change the selected finding, its certainty, or its provenance.
+Contract inference limits branch work, recursive source paths, and convergence
+rounds. SSA queries share a work budget across paths and related lookups.
+An incomplete proof leaves unknown state and can miss cases beyond that limit.
+Completed type, reference, and boxed-value traversals can reuse results at the
+same observation point. A query with a different set of facts analyzes that
+state independently.
 Boolean refinement uses a per-function comparison index, and mutation
 reachability is reused for the same call, storage field, range, and flow point;
 neither shortcut caches assumptions from a different branch.

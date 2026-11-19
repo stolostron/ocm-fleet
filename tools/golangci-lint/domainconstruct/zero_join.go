@@ -24,16 +24,23 @@ func (c *zeroChecker) joinedViewTruth(view collectionView, point flowPoint, cont
 		return isZero
 	}
 	visit := collectionVisit{point, view.storage.root, pathKey(view.storage.path), view.start, view.end}
-	if seen[visit] {
+	if seen[visit] || !c.work.take() {
 		return unknown
 	}
 	seen[visit] = true
 	defer delete(seen, visit)
 	state := isZero
 	for index := point.index - 1; index >= 0; index-- {
+		if !c.work.take() {
+			return unknown
+		}
 		instruction := point.block.Instrs[index]
 		if value, ok := instruction.(ssa.Value); ok && value == view.storage.root {
-			return state
+			switch value.(type) {
+			case *ssa.Alloc, *ssa.MakeSlice:
+				return state
+			}
+			return unknown
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
 			if destination, ok := c.collectionAddress(store.Addr); ok && destination.root == view.storage.root {
@@ -49,24 +56,37 @@ func (c *zeroChecker) joinedViewTruth(view collectionView, point flowPoint, cont
 				}
 				actual := c.valueTruth(store.Val, context, values)
 				if actual == notZero {
-					return notZero
+					if view.end >= 0 {
+						return notZero
+					}
+					state = unknown
 				}
 				if actual == unknown {
 					state = unknown
 				}
 				covered = coverRange(covered, offset, offset+1)
-			} else if c.mayReferenceStorage(store.Val, mutationTarget{view.storage, &elementRange{view.start, view.end}}, flowPoint{point.block, index}, make(map[ssa.Value]bool)) {
-				return unknown
+			} else {
+				target := mutationTarget{view.storage, &elementRange{view.start, view.end}}
+				before := flowPoint{point.block, index}
+				if c.mayReferenceStorage(store.Addr, target, before, make(map[ssa.Value]bool)) ||
+					c.mayReferenceStorage(store.Val, target, before, make(map[ssa.Value]bool)) {
+					return unknown
+				}
 			}
+		}
+		if _, scheduled := instruction.(*ssa.Defer); scheduled {
+			continue
 		}
 		if call, ok := instruction.(ssa.CallInstruction); ok {
 			builtin, builtinCall := call.Common().Value.(*ssa.Builtin)
 			if builtinCall && (builtin.Name() == "len" || builtin.Name() == "cap") || typeOnlyCall(call.Common()) {
 				continue
 			}
-			if builtinCall && builtin.Name() == "clear" {
+			_, synchronous := instruction.(*ssa.Call)
+			if synchronous && builtinCall && builtin.Name() == "clear" {
 				if target, ok := c.collectionOf(call.Common().Args[0]); ok && sameStorage(target.storage, view.storage) {
-					if target.start <= view.start && (target.end >= 0 && view.end >= 0 && target.end >= view.end || target.value == view.value || sameLength(target.length, view.length)) {
+					if target.start <= view.start && (target.end >= 0 && view.end >= 0 && target.end >= view.end ||
+						target.value == view.value || target.lengthBase == view.lengthBase && sameLength(target.length, view.length)) {
 						return state
 					}
 					if target.end >= 0 {
@@ -76,8 +96,16 @@ func (c *zeroChecker) joinedViewTruth(view collectionView, point flowPoint, cont
 				}
 			}
 			if builtinCall {
-				if (builtin.Name() == "copy" || builtin.Name() == "append" || builtin.Name() == "clear") && c.mayReferenceStorage(call.Common().Args[0], mutationTarget{view.storage, &elementRange{view.start, view.end}}, flowPoint{point.block, index}, make(map[ssa.Value]bool)) {
-					return unknown
+				if builtin.Name() == "copy" || builtin.Name() == "append" || builtin.Name() == "clear" {
+					target := mutationTarget{view.storage, &elementRange{view.start, view.end}}
+					before := flowPoint{point.block, index}
+					if destination, known := c.builtinWriteView(call.Common()); known {
+						if c.collectionMayReference(destination, target, before, make(map[ssa.Value]bool), make(map[memoryVisit]bool)) {
+							return unknown
+						}
+					} else if c.mayReferenceStorage(call.Common().Args[0], target, before, make(map[ssa.Value]bool)) {
+						return unknown
+					}
 				}
 			} else if c.collectionMutation(call.Common(), view, flowPoint{point.block, index}) != mutationReadOnly {
 				return unknown

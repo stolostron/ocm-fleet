@@ -48,7 +48,7 @@ type Step struct {
 // also survives hosts that discard Category, including golangci-lint.
 func (finding Finding) Diagnostic() analysis.Diagnostic {
 	var message strings.Builder
-	message.WriteString(finding.Message)
+	message.WriteString(escape(finding.Message))
 	fmt.Fprintf(&message, "\n  | rule: %s; certainty: %s; reason: %s", finding.Rule, finding.Certainty, finding.Reason)
 	fmt.Fprintf(&message, "\n  | operation: %s; value: %s; type: %s; path: %s",
 		finding.Operation, quote(finding.Value), quote(finding.Type), quote(finding.Path))

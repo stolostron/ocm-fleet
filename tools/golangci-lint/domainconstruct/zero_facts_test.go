@@ -68,6 +68,28 @@ func TestMemoryAcrossJoinsAllocations(t *testing.T) {
 	}
 }
 
+func TestPhiTruthReusesSharedInputs(t *testing.T) {
+	var source strings.Builder
+	source.WriteString("package flow\nfunc run(flags []bool) *int { a, b := new(int), new(int)\n")
+	for index := range 24 {
+		fmt.Fprintf(&source, "if flags[%d] { a, b = b, a }\n", index)
+	}
+	source.WriteString("return a\n}")
+	function := buildFlowFunction(t, source.String())
+	c := newFlowChecker(function)
+	for _, block := range function.Blocks {
+		if ret, ok := block.Instrs[len(block.Instrs)-1].(*ssa.Return); ok {
+			work := workBudget(128)
+			c.work = &work
+			if got := c.valueTruth(ret.Results[0], c.contextAt(block), make(map[ssa.Value]bool)); got != notZero {
+				t.Errorf("shared phi result = %v, want nonzero", got)
+			}
+			return
+		}
+	}
+	t.Fatal("fixture has no return")
+}
+
 func TestBooleanEqualityRefinement(t *testing.T) {
 	function := buildFlowFunction(t, `package flow
 func run(first, second bool) bool {

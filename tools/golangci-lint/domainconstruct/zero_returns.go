@@ -11,7 +11,7 @@ import (
 func (c *zeroChecker) checkResults(results []ssa.Value, point flowPoint, context flowContext, pos token.Pos) {
 	success := context.clone()
 	for _, result := range results {
-		if isErrorType(result.Type()) && !c.assume(&success, result, isZero) {
+		if c.errorStatus(result.Type()) && !c.assume(&success, result, isZero) {
 			return
 		}
 	}
@@ -23,10 +23,10 @@ func (c *zeroChecker) checkResults(results []ssa.Value, point flowPoint, context
 		len(results) >= function.Signature.Results().Len() && !c.assume(&success, results[1], notZero) {
 		return
 	}
-	for _, result := range results {
-		if !isErrorType(result.Type()) {
+	for index, result := range results {
+		if !c.errorStatus(result.Type()) {
 			if problem := c.problem(result, nil, result.Type(), point, success, make(map[valueVisit]bool)); problem != nil {
-				c.report(zeroUse{pos: pos}, problem, "return", result)
+				c.report(zeroUse{pos: pos, argument: index}, problem, "return", result)
 			}
 		}
 	}

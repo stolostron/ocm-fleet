@@ -74,7 +74,47 @@ func JSONExcludedFields() {
 }
 
 func DifferentMapCodecs(value map[encodingvalues.TextID]encodingvalues.TextID) {
-	json.Marshal(value) // want "does not declare json serialization"
+	json.Marshal(value) // want "needs a plain string map key"
+}
+
+func BoxedJSONFields(bad encodingvalues.Unsupported, count int) {
+	json.Marshal(struct{ Value any `json:"-,"` }{Value: bad}) // want "does not declare json serialization"
+	json.Marshal(struct{ Value any `json:"-"` }{Value: bad})
+	dynamic := make([]any, count)
+	dynamic[0] = bad
+	json.Marshal(dynamic) // want "does not declare json serialization"
+	json.Marshal(&[1]any{bad}) // want "does not declare json serialization"
+	type embedded struct{ Value any }
+	json.Marshal(struct{ embedded }{embedded{Value: bad}}) // want "does not declare json serialization"
+	json.Marshal(struct {
+		embedded
+		Value string
+	}{embedded: embedded{Value: bad}})
+	target := new(struct{ Value any })
+	origin := &struct{ P *struct{ Value any } }{P: target}
+	snapshot := *origin
+	target.Value = bad
+	json.Marshal(snapshot) // want "does not declare json serialization"
+}
+
+func DecodeNestedCollection(data []byte) {
+	var target struct{ Items []struct{ ID encodingvalues.Unsupported } }
+	json.Unmarshal(data, &target) // want "at path Items.ID: .*does not declare json serialization"
+}
+
+func EncodeDistinctBoxedFields(bad encodingvalues.Unsupported) {
+	value := any(bad)
+	json.Marshal(struct{ First, Second any }{value, value}) // want "at path First: .*does not declare json serialization" "at path Second: .*does not declare json serialization"
+}
+
+func EncodeRecursiveBoxedFields(bad encodingvalues.Unsupported) {
+	type link struct {
+		Value any
+		Next *link
+	}
+	value := &link{Value: bad}
+	value.Next = value
+	json.Marshal(value) // want "at path Value: .*does not declare json serialization"
 }
 
 func BoxedValues(bad encodingvalues.Unsupported, id encodingvalues.ID, db *sql.DB) {

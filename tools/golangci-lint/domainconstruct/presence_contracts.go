@@ -70,7 +70,7 @@ func (b *contractBuilder) collectPresences() {
 
 func presenceSignature(signature *types.Signature) bool {
 	results := signature.Results()
-	return (results.Len() == 2 || results.Len() == 3 && isErrorType(results.At(2).Type())) &&
+	return (results.Len() == 2 || results.Len() == 3 && isBuiltinError(results.At(2).Type())) &&
 		types.Identical(results.At(1).Type(), types.Typ[types.Bool]) &&
 		!isErrorType(results.At(0).Type())
 }

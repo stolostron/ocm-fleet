@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"maps"
 	"reflect"
 
 	"golang.org/x/tools/go/analysis"
@@ -57,9 +58,16 @@ func (*sentinelContract) AFact() {}
 type contractBuilder struct {
 	pass   *analysis.Pass
 	set    *contractSet
-	decls  map[*types.Func]*ast.FuncDecl
+	decls  []contractDeclaration
 	values map[*types.Var]ast.Expr
 }
+
+type contractDeclaration struct {
+	function *types.Func
+	syntax   *ast.FuncDecl
+}
+
+const maxContractRounds = 16
 
 func runContracts(pass *analysis.Pass) (any, error) {
 	b := &contractBuilder{
@@ -71,7 +79,6 @@ func runContracts(pass *analysis.Pass) (any, error) {
 			sentinels:  make(map[*types.Var]bool),
 			writes:     make(map[*types.Var][]token.Pos),
 		},
-		decls:  make(map[*types.Func]*ast.FuncDecl),
 		values: make(map[*types.Var]ast.Expr),
 	}
 	b.collectBoundaries()
@@ -81,7 +88,10 @@ func runContracts(pass *analysis.Pass) (any, error) {
 			switch declaration := declaration.(type) {
 			case *ast.FuncDecl:
 				if declaration.Body != nil {
-					b.decls[pass.TypesInfo.Defs[declaration.Name].(*types.Func)] = declaration
+					b.decls = append(b.decls, contractDeclaration{
+						function: pass.TypesInfo.Defs[declaration.Name].(*types.Func),
+						syntax:   declaration,
+					})
 				}
 			case *ast.GenDecl:
 				if declaration.Tok == token.VAR {
@@ -105,6 +115,11 @@ func runContracts(pass *analysis.Pass) (any, error) {
 				for _, target := range node.Lhs {
 					b.recordWrite(target)
 				}
+			case *ast.RangeStmt:
+				if node.Tok == token.ASSIGN {
+					b.recordWrite(node.Key)
+					b.recordWrite(node.Value)
+				}
 			case *ast.UnaryExpr:
 				if node.Op == token.AND {
 					b.recordWrite(node.X)
@@ -113,51 +128,7 @@ func runContracts(pass *analysis.Pass) (any, error) {
 			return true
 		})
 	}
-	// A fact may depend on another local wrapper or sentinel. Add only newly
-	// established facts; recursive or unsupported bodies remain unknown.
-	for changed := true; changed; {
-		changed = false
-		for object, value := range b.values {
-			if !b.set.sentinels[object] && len(b.set.writes[object]) == 0 {
-				e := nilnessEvaluator{builder: b}
-				if e.converted(value, object.Type(), nil) == notZero {
-					b.set.sentinels[object] = true
-					changed = true
-				}
-			}
-		}
-		for object, declaration := range b.decls {
-			fact := b.inferErrors(object, declaration)
-			if effects := b.inferEffects(object, declaration); len(effects) != 0 {
-				if fact == nil {
-					fact = new(functionContract)
-				}
-				fact.Effects = effects
-			}
-			if payloads := b.inferPayloads(object, declaration); len(payloads) != 0 {
-				if fact == nil {
-					fact = new(functionContract)
-				}
-				fact.Payloads = payloads
-			}
-			if sources := b.inferSources(object, declaration); len(sources) != 0 {
-				if fact == nil {
-					fact = new(functionContract)
-				}
-				fact.Sources = sources
-			}
-			if lengths := b.inferLengths(object, declaration); len(lengths) != 0 {
-				if fact == nil {
-					fact = new(functionContract)
-				}
-				fact.Lengths = lengths
-			}
-			if !reflect.DeepEqual(b.set.functions[object], fact) {
-				b.set.functions[object] = fact
-				changed = true
-			}
-		}
-	}
+	b.inferContracts()
 	for object, fact := range b.set.functions {
 		if object.Pkg() == pass.Pkg && fact != nil {
 			pass.ExportObjectFact(object, fact)
@@ -181,6 +152,75 @@ func runContracts(pass *analysis.Pass) (any, error) {
 		}
 	}
 	return b.set, nil
+}
+
+func (b *contractBuilder) inferContracts() {
+	// Effects depend only on the function body. Compute them once and keep
+	// them even when dependent summaries do not reach a fixed point.
+	effects := make(map[*types.Func][]parameterEffect)
+	for _, declaration := range b.decls {
+		if inferred := b.inferEffects(declaration.function, declaration.syntax); len(inferred) != 0 {
+			effects[declaration.function] = inferred
+		}
+	}
+	for range maxContractRounds {
+		changed := false
+		for object, value := range b.values {
+			if !b.set.sentinels[object] && len(b.set.writes[object]) == 0 {
+				e := nilnessEvaluator{builder: b}
+				if e.converted(value, object.Type(), nil) == notZero {
+					b.set.sentinels[object] = true
+					changed = true
+				}
+			}
+		}
+		for _, declaration := range b.decls {
+			object, syntax := declaration.function, declaration.syntax
+			fact := b.inferErrors(object, syntax)
+			if effects := effects[object]; len(effects) != 0 {
+				if fact == nil {
+					fact = new(functionContract)
+				}
+				fact.Effects = effects
+			}
+			if payloads := b.inferPayloads(object, syntax); len(payloads) != 0 {
+				if fact == nil {
+					fact = new(functionContract)
+				}
+				fact.Payloads = payloads
+			}
+			if sources := b.inferSources(object, syntax); len(sources) != 0 {
+				if fact == nil {
+					fact = new(functionContract)
+				}
+				fact.Sources = sources
+			}
+			if lengths := b.inferLengths(object, syntax); len(lengths) != 0 {
+				if fact == nil {
+					fact = new(functionContract)
+				}
+				fact.Lengths = lengths
+			}
+			if !reflect.DeepEqual(b.set.functions[object], fact) {
+				if fact == nil {
+					delete(b.set.functions, object)
+				} else {
+					b.set.functions[object] = fact
+				}
+				changed = true
+			}
+		}
+		if !changed {
+			return
+		}
+	}
+	// The last round may contain facts derived from an unstable callee.
+	// Discard local dependent summaries together and retain imported facts.
+	maps.DeleteFunc(b.set.functions, func(object *types.Func, _ *functionContract) bool { return object.Pkg() == b.pass.Pkg })
+	maps.DeleteFunc(b.set.sentinels, func(object *types.Var, _ bool) bool { return object.Pkg() == b.pass.Pkg })
+	for object, effect := range effects {
+		b.set.functions[object] = &functionContract{Effects: effect}
+	}
 }
 
 func (b *contractBuilder) recordWrite(expression ast.Expr) {
@@ -266,6 +306,12 @@ func expressionObject(info *types.Info, expression ast.Expr) types.Object {
 }
 
 func callParameter(info *types.Info, call *ast.CallExpr, index int) ast.Expr {
+	if function, ok := expressionObject(info, call.Fun).(*types.Func); ok {
+		signature := function.Type().(*types.Signature)
+		if signature.Variadic() && index == signature.Params().Len()-1 && !call.Ellipsis.IsValid() {
+			return nil // The unexpanded slice and its first element are different values.
+		}
+	}
 	expression := ast.Unparen(call.Fun)
 	if selector, ok := expression.(*ast.SelectorExpr); ok {
 		if selection := info.Selections[selector]; selection != nil {

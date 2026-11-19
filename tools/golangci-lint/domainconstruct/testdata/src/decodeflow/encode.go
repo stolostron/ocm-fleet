@@ -2,6 +2,7 @@ package decodeflow
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 
 	"encodingvalues"
@@ -77,6 +78,81 @@ func (value *textHook) MarshalText() ([]byte, error) {
 func EncodeCustomHooks() {
 	json.Marshal(jsonHook{})                 // want "at path Nested.ID"
 	json.Marshal(&struct{ Hook textHook }{}) // want "at path Hook.ID"
+}
+
+type pointerHookOnly struct {
+	Hidden encodingvalues.ID `json:"-"`
+}
+
+func (*pointerHookOnly) MarshalJSON() ([]byte, error) { return []byte("null"), nil }
+
+func EncodeNativeFieldSelection() {
+	json.Marshal(struct{ hidden encodingvalues.ID }{})
+	json.Marshal(pointerHookOnly{})
+	json.Marshal(&pointerHookOnly{}) // want "at path Hidden"
+	json.Marshal(make([]pointerHookOnly, 1)) // want "at path \\[0\\][.]Hidden"
+	type embedded struct{ ID encodingvalues.ID }
+	json.Marshal(struct{ embedded }{}) // want "at path embedded.ID"
+	json.Marshal(struct {
+		embedded
+		ID string
+	}{})
+	type second struct{ ID encodingvalues.ID }
+	json.Marshal(struct{ embedded; second }{})
+}
+
+func successOnlyBox(ready bool, id encodingvalues.ID) (any, error) {
+	if ready {
+		return id, nil
+	}
+	return nil, errors.New("missing")
+}
+
+func overwrittenBox() (any, error) {
+	var box any = encodingvalues.ID("")
+	box = 1
+	return box, errors.New("missing")
+}
+
+func convertedBox(id encodingvalues.ID) (any, error) {
+	return any(string(id)), errors.New("missing")
+}
+
+func deferredFailureBox(id encodingvalues.ID) (value any, err error) {
+	defer func() { err = errors.New("missing") }()
+	return id, nil
+}
+
+func skippedBoxReplacement(skip bool) (any, error) {
+	var value any = encodingvalues.ID("")
+	if skip {
+		goto done
+	}
+	value = 1
+done:
+	return value, errors.New("missing")
+}
+
+func simultaneousBoxReplacement() (any, error) {
+	var value any = encodingvalues.ID("")
+	var result any
+	value, result = 1, value
+	return result, errors.New("missing")
+}
+
+func UseFailurePayloads(ready bool, id encodingvalues.ID) {
+	value, _ := successOnlyBox(ready, id)
+	json.Marshal(value)
+	value, _ = overwrittenBox()
+	json.Marshal(value)
+	value, _ = convertedBox(id)
+	json.Marshal(value)
+	value, _ = deferredFailureBox(id)
+	json.Marshal(value) // want "may be an empty .*ID"
+	value, _ = skippedBoxReplacement(ready)
+	json.Marshal(value) // want "may be an empty .*ID"
+	value, _ = simultaneousBoxReplacement()
+	json.Marshal(value) // want "may be an empty .*ID"
 }
 
 //domain:boundary json encode=value

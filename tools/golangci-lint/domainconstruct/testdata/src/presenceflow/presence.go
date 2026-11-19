@@ -188,7 +188,8 @@ func UncheckedFunctionAlias(found bool) {
 	Use(id) // want "reason: unchecked-presence"
 }
 
-func CheckedFatal(t testing.TB, found bool) {
+func CheckedFatal(test *testing.T, found bool) {
+	var t testing.TB = test
 	id, ok := Lookup(found)
 	if !ok {
 		t.Fatal("missing")

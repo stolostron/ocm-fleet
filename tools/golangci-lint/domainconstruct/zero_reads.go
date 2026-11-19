@@ -138,6 +138,12 @@ func (c *zeroChecker) storageUnchanged(storage address, start, end flowPoint, se
 		if _, cleanup := instruction.(*ssa.RunDefers); cleanup {
 			return false
 		}
+		if _, scheduled := instruction.(*ssa.Defer); scheduled {
+			continue
+		}
+		if sharedStorage(storage.root) && channelHandoff(instruction) {
+			return false
+		}
 		if store, ok := instruction.(*ssa.Store); ok {
 			target, known := c.collectionAddress(store.Addr)
 			if !known {
@@ -162,12 +168,9 @@ func (c *zeroChecker) storageUnchanged(storage address, start, end flowPoint, se
 			if builtin, ok := common.Value.(*ssa.Builtin); ok {
 				switch builtin.Name() {
 				case "clear", "copy", "append":
-					view, known := c.collectionOf(common.Args[0])
+					view, known := c.builtinWriteView(common)
 					if !known {
 						return false
-					}
-					if builtin.Name() == "append" {
-						view.end = -1 // Append may overwrite capacity beyond the current length.
 					}
 					if c.collectionMayReference(view, mutationTarget{address: storage}, point, make(map[ssa.Value]bool), make(map[memoryVisit]bool)) {
 						return false
@@ -190,4 +193,21 @@ func (c *zeroChecker) storageUnchanged(storage address, start, end flowPoint, se
 	}
 	seen[end.block] = true
 	return true
+}
+
+func sharedStorage(value ssa.Value) bool {
+	if allocation, ok := value.(*ssa.Alloc); ok {
+		return allocation.Heap
+	}
+	return true
+}
+
+func channelHandoff(instruction ssa.Instruction) bool {
+	switch instruction := instruction.(type) {
+	case *ssa.Send, *ssa.Select:
+		return true
+	case *ssa.UnOp:
+		return instruction.Op == token.ARROW
+	}
+	return false
 }

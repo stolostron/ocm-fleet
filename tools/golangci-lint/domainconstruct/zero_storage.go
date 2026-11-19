@@ -29,6 +29,7 @@ func (c *zeroChecker) indexStores(functions []*ssa.Function) {
 				if !ok {
 					continue
 				}
+				c.resetWork()
 				target, known := c.collectionAddress(store.Addr)
 				if !known || !localStorageRoot(target.root) || target.root.Parent() != function {
 					continue
@@ -41,6 +42,8 @@ func (c *zeroChecker) indexStores(functions []*ssa.Function) {
 
 func localStorageRoot(value ssa.Value) bool {
 	switch value.(type) {
+	case *ssa.MakeSlice:
+		return true
 	case *ssa.Alloc, *ssa.Call, *ssa.Extract:
 		_, pointer := value.Type().Underlying().(*types.Pointer)
 		return pointer
@@ -55,32 +58,34 @@ func localStorageRoot(value ssa.Value) bool {
 // Consider every store, including later writes, so cached answers need no flow
 // point or branch assumptions.
 func (c *zeroChecker) validZeroStorage(location address, t types.Type) bool {
+	return c.zeroType(t, "", wholeValue) == nil && c.onlyZeroStores(location, t, make(map[valueVisit]bool))
+}
+
+func (c *zeroChecker) onlyZeroStores(location address, t types.Type, seen map[valueVisit]bool) (valid bool) {
 	visit := valueVisit{location.root, pathKey(location.path), t}
 	if valid, found := c.zeroStorage[visit]; found {
 		return valid
 	}
-	valid := c.zeroType(t, "", wholeValue) == nil && c.onlyZeroStores(location, t, make(map[valueVisit]bool))
-	if c.zeroStorage == nil {
-		c.zeroStorage = make(map[valueVisit]bool)
-	}
-	c.zeroStorage[visit] = valid
-	return valid
-}
-
-func (c *zeroChecker) onlyZeroStores(location address, t types.Type, seen map[valueVisit]bool) bool {
 	stores, indexed := c.stores[location.root]
-	if !indexed {
+	if !indexed || !c.work.take() {
 		return false
 	}
 	if _, _, _, known := c.rootSource(location.root); known {
 		return false // A generic factory's initial contents need its source summary.
 	}
-	visit := valueVisit{location.root, pathKey(location.path), t}
 	if seen[visit] {
 		return false
 	}
 	seen[visit] = true
-	defer delete(seen, visit)
+	defer func() {
+		delete(seen, visit)
+		if !c.work.exhausted() {
+			if c.zeroStorage == nil {
+				c.zeroStorage = make(map[valueVisit]bool)
+			}
+			c.zeroStorage[visit] = valid
+		}
+	}()
 	for _, store := range stores {
 		if pathPrefix(location.path, store.target.path) {
 			path := location.path[len(store.target.path):]

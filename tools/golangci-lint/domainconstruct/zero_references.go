@@ -8,7 +8,18 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-func (c *zeroChecker) projectedReference(value ssa.Value, path []int, seen map[valueVisit]bool, memories map[memoryVisit]bool) ssa.Value {
+type referenceSearch struct {
+	active    map[memoryVisit]bool
+	completed map[memoryVisit]referenceResult
+	cycles    int
+}
+
+type referenceResult struct {
+	value ssa.Value
+	known bool
+}
+
+func (c *zeroChecker) projectedReference(value ssa.Value, path []int, seen map[valueVisit]bool, search *referenceSearch) ssa.Value {
 	visit := valueVisit{value, pathKey(path), value.Type()}
 	if seen[visit] {
 		return nil
@@ -24,14 +35,19 @@ func (c *zeroChecker) projectedReference(value ssa.Value, path []int, seen map[v
 			return zeroReference(value.Type(), path)
 		}
 	case *ssa.Field:
-		return c.projectedReference(value.X, append([]int{value.Field}, path...), seen, memories)
+		return c.projectedReference(value.X, append([]int{value.Field}, path...), seen, search)
 	case *ssa.ChangeType:
-		return c.projectedReference(value.X, path, seen, memories)
+		return c.projectedReference(value.X, path, seen, search)
 	case *ssa.UnOp:
 		if value.Op == token.MUL {
 			if location, ok := c.collectionAddress(value.X); ok {
 				location.path = append(slices.Clone(location.path), path...)
-				return c.storedReference(location, instructionPoint(value), memories)
+				point := instructionPoint(value)
+				if search == nil {
+					return c.storedReference(location, point)
+				}
+				origin, _ := c.referenceOrigin(location, point, search)
+				return origin
 			}
 		}
 	}
@@ -41,19 +57,36 @@ func (c *zeroChecker) projectedReference(value ssa.Value, path []int, seen map[v
 // storedReference recovers a local header or pointer without interpreting the
 // referenced contents at assignment time. Multiple predecessors must agree;
 // unknown effects and loop-carried mutations retain no assumed origin.
-func (c *zeroChecker) storedReference(location address, point flowPoint, seen map[memoryVisit]bool) ssa.Value {
-	value, _ := c.referenceOrigin(location, point, seen)
+func (c *zeroChecker) storedReference(location address, point flowPoint) ssa.Value {
+	search := &referenceSearch{active: make(map[memoryVisit]bool)}
+	value, _ := c.referenceOrigin(location, point, search)
 	return value
 }
 
-func (c *zeroChecker) referenceOrigin(location address, point flowPoint, seen map[memoryVisit]bool) (ssa.Value, bool) {
+func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search *referenceSearch) (origin ssa.Value, known bool) {
 	visit := memoryVisit{point, location.root, pathKey(location.path)}
-	if seen[visit] {
+	if result, found := search.completed[visit]; found {
+		return result.value, result.known
+	}
+	if search.active[visit] {
+		search.cycles++
 		return nil, true // No header write was found on this cycle.
 	}
-	seen[visit] = true
-	defer delete(seen, visit)
+	if !c.work.take() {
+		return nil, false
+	}
+	search.active[visit] = true
+	cycles := search.cycles
+	defer func() {
+		delete(search.active, visit)
+		if search.completed != nil && cycles == search.cycles && !c.work.exhausted() {
+			search.completed[visit] = referenceResult{origin, known}
+		}
+	}()
 	for index := point.index - 1; index >= 0; index-- {
+		if !c.work.take() {
+			return nil, false
+		}
 		instruction := point.block.Instrs[index]
 		if value, ok := instruction.(ssa.Value); ok && value == location.root {
 			value := zeroStoredReference(location)
@@ -66,22 +99,55 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, seen ma
 				}
 				if pathPrefix(location.path, target.path) {
 					path := location.path[len(target.path):]
-					value := c.projectedReference(store.Val, path, make(map[valueVisit]bool), seen)
+					value := c.projectedReference(store.Val, path, make(map[valueVisit]bool), search)
 					return value, value != nil
+				}
+				if storagePathsOverlap(target.path, location.path) {
+					return nil, false
 				}
 			}
 		}
+		if _, scheduled := instruction.(*ssa.Defer); scheduled {
+			continue
+		}
 		if call, ok := instruction.(ssa.CallInstruction); ok {
-			for _, argument := range call.Common().Args {
+			common := call.Common()
+			if builtin, ok := common.Value.(*ssa.Builtin); ok {
+				switch builtin.Name() {
+				case "append", "clear", "copy":
+					if destination, known := c.builtinWriteView(common); known && destination.storage.root == location.root &&
+						storagePathsOverlap(destination.storage.path, location.path) && destination.size() != 0 {
+						if len(location.path) <= len(destination.storage.path) {
+							return nil, false
+						}
+						offset := int64(location.path[len(destination.storage.path)])
+						if offset < 0 || offset >= destination.start && (destination.end < 0 || offset < destination.end) {
+							return nil, false
+						}
+					}
+				}
+				continue
+			}
+			if closure, ok := common.Value.(*ssa.MakeClosure); ok {
+				for _, binding := range closure.Bindings {
+					if target, ok := addressOf(binding); ok && target.root == location.root && storagePathsOverlap(target.path, location.path) {
+						return nil, false
+					}
+				}
+			}
+			for _, argument := range common.Args {
 				if target, ok := addressOf(argument); ok && target.root == location.root {
 					return nil, false
 				}
 			}
 		}
 	}
+	if len(point.block.Preds) > 1 && search.completed == nil {
+		search.completed = make(map[memoryVisit]referenceResult)
+	}
 	var result ssa.Value
 	for _, predecessor := range point.block.Preds {
-		incoming, known := c.referenceOrigin(location, flowPoint{predecessor, len(predecessor.Instrs)}, seen)
+		incoming, known := c.referenceOrigin(location, flowPoint{predecessor, len(predecessor.Instrs)}, search)
 		if !known {
 			return nil, false
 		}

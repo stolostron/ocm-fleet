@@ -121,7 +121,8 @@ func TableErrorAssertion(t *testing.T, raw string, wantErr bool) {
 	Accept(id)
 }
 
-func TableSuccessAssertion(t testing.TB, raw string, wantSuccess bool) {
+func TableSuccessAssertion(test *testing.T, raw string, wantSuccess bool) {
+	var t testing.TB = test
 	id, err := NewID(raw)
 	if (err == nil) != wantSuccess {
 		t.Fatal("unexpected result")
@@ -130,6 +131,17 @@ func TableSuccessAssertion(t testing.TB, raw string, wantSuccess bool) {
 		return
 	}
 	Accept(id)
+}
+
+type returningTB struct{ testing.TB }
+
+func (returningTB) Fatal(...any) {}
+
+func ObserveAfterOverriddenFatal() {
+	var t testing.TB = returningTB{}
+	t.Fatal("returns")
+	var id ID
+	Accept(id) // want "argument is an empty zeroflow.ID"
 }
 
 type errorCase struct {

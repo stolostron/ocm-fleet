@@ -77,7 +77,11 @@ func (c *zeroChecker) edgeContext(context flowContext, block *ssa.BasicBlock, in
 		return edge
 	}
 	c.assumeEdge(&edge, predecessor, block)
+	backEdge := block.Dominates(predecessor)
 	for value, state := range context.facts {
+		if instruction, ok := value.(ssa.Instruction); backEdge && ok && instruction.Block() != nil && block.Dominates(instruction.Block()) {
+			continue // The loop-local fact describes a different iteration.
+		}
 		if phi, ok := value.(*ssa.Phi); ok && phi.Block() == block {
 			value = phi.Edges[index]
 		}
@@ -217,19 +221,33 @@ func opposite(state truth) truth {
 }
 
 func (c *zeroChecker) valueTruth(value ssa.Value, context flowContext, seen map[ssa.Value]bool) truth {
+	return c.truthInContext(value, context, seen, nil)
+}
+
+func (c *zeroChecker) truthInContext(value ssa.Value, context flowContext, seen map[ssa.Value]bool, completed map[ssa.Value]truth) (result truth) {
 	if state := context.facts[value]; state != unknown {
+		return state
+	}
+	if state := completed[value]; state != unknown {
 		return state
 	}
 	if state := c.unchangedReadFact(value, context); state != unknown {
 		return state
 	}
-	if seen[value] {
+	if seen[value] || !c.work.take() {
 		return unknown
 	}
 	seen[value] = true
 	defer delete(seen, value)
+	if completed != nil {
+		defer func() {
+			if result != unknown {
+				completed[value] = result
+			}
+		}()
+	}
 	if origin := localLoadOrigin(value); origin != nil {
-		return c.valueTruth(origin, context, seen)
+		return c.truthInContext(origin, context, seen, completed)
 	}
 	switch value := value.(type) {
 	case *ssa.Const:
@@ -237,15 +255,19 @@ func (c *zeroChecker) valueTruth(value ssa.Value, context flowContext, seen map[
 			return isZero
 		}
 		return notZero
-	case *ssa.Alloc, *ssa.MakeInterface, *ssa.MakeChan, *ssa.MakeMap, *ssa.MakeSlice:
+	case *ssa.Alloc, *ssa.MakeChan, *ssa.MakeMap, *ssa.MakeSlice:
 		return notZero
+	case *ssa.MakeInterface:
+		if _, generic := types.Unalias(value.X.Type()).(*types.TypeParam); !generic {
+			return notZero
+		}
 	case *ssa.ChangeInterface:
-		return c.valueTruth(value.X, context, seen)
+		return c.truthInContext(value.X, context, seen, completed)
 	case *ssa.ChangeType:
-		return c.valueTruth(value.X, context, seen)
+		return c.truthInContext(value.X, context, seen, completed)
 	case *ssa.UnOp:
 		if value.Op == token.NOT {
-			if state := c.valueTruth(value.X, context, seen); state != unknown {
+			if state := c.truthInContext(value.X, context, seen, completed); state != unknown {
 				return opposite(state)
 			}
 		}
@@ -257,9 +279,12 @@ func (c *zeroChecker) valueTruth(value ssa.Value, context flowContext, seen map[
 			}
 		}
 	case *ssa.Phi:
+		if completed == nil {
+			completed = make(map[ssa.Value]truth)
+		}
 		state := unknown
 		for index, edge := range value.Edges {
-			actual := c.valueTruth(edge, context, seen)
+			actual := c.truthInContext(edge, context, seen, completed)
 			if actual == unknown || index > 0 && actual != state {
 				return unknown
 			}
@@ -277,14 +302,25 @@ func (c *zeroChecker) valueTruth(value ssa.Value, context flowContext, seen map[
 }
 
 // Static testing calls already use ctrlflow's non-return facts in buildssa.
-// Invoking the standard testing.TB contract needs the same interpretation.
+// A wrapper embedding testing.TB can override the method and return.
 func testingExit(call *ssa.CallCommon) bool {
 	if !call.IsInvoke() || call.Method.Pkg() == nil || call.Method.Pkg().Path() != "testing" {
 		return false
 	}
 	switch call.Method.Name() {
 	case "Fatal", "Fatalf", "FailNow", "Skip", "Skipf", "SkipNow":
-		return true
+		for receiver := call.Value; ; {
+			switch value := receiver.(type) {
+			case *ssa.ChangeInterface:
+				receiver = value.X
+			case *ssa.MakeInterface:
+				named := domainType(value.X.Type())
+				return named != nil && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == "testing" &&
+					(named.Obj().Name() == "T" || named.Obj().Name() == "B" || named.Obj().Name() == "F")
+			default:
+				return false
+			}
+		}
 	}
 	return false
 }
@@ -333,6 +369,9 @@ func localLoadOrigin(value ssa.Value) ssa.Value {
 			return store.Val
 		}
 		if escaped {
+			if channelHandoff(instruction) {
+				return nil
+			}
 			switch instruction.(type) {
 			case ssa.CallInstruction, *ssa.RunDefers, *ssa.Store:
 				return nil

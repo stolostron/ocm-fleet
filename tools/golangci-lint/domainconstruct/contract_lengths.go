@@ -141,14 +141,17 @@ func (b *contractBuilder) inferLengths(object *types.Func, declaration *ast.Func
 	var lengths []resultLength
 	for _, result := range results {
 		var common sourceLength
-		known := len(e.returns) != 0 && !e.jumping
+		known := len(e.returns) != 0 && !e.jumping && !e.escaped[signature.Results().At(result)]
+		if !known {
+			continue
+		}
 		for index, statement := range e.returns {
 			var length sourceLength
 			var ok bool
 			if len(statement.Results) == signature.Results().Len() {
 				length, ok = e.slice(statement.Results[result], 0)
 			} else if len(statement.Results) == 0 {
-				length, ok = e.variable(signature.Results().At(result), true, 0)
+				length, ok = e.variable(signature.Results().At(result), true, statement.Pos(), 0)
 			}
 			if !ok || index > 0 && common != length {
 				known = false
@@ -172,8 +175,8 @@ func (e *lengthEvaluator) recordWrite(target, source ast.Expr) {
 	}
 }
 
-func (e *lengthEvaluator) variable(variable *types.Var, fromLen bool, depth int) (sourceLength, bool) {
-	if e.escaped[variable] || depth > 8 {
+func (e *lengthEvaluator) variable(variable *types.Var, fromLen bool, use token.Pos, depth int) (sourceLength, bool) {
+	if e.escaped[variable] || depth > 8 || variable.Pkg() != nil && variable.Parent() == variable.Pkg().Scope() {
 		return sourceLength{}, false
 	}
 	for index := range e.signature.Params().Len() {
@@ -181,7 +184,8 @@ func (e *lengthEvaluator) variable(variable *types.Var, fromLen bool, depth int)
 			return sourceLength{Constant: -1, Parameter: index, FromLen: fromLen}, true
 		}
 	}
-	if e.writes[variable] == 1 && e.initializes[variable] && e.definitions[variable] != nil && e.definitions[variable].Pos() < e.firstReturn {
+	if e.writes[variable] == 1 && e.initializes[variable] && e.definitions[variable] != nil &&
+		e.definitions[variable].Pos() < min(use, e.firstReturn) {
 		if fromLen {
 			return e.slice(e.definitions[variable], depth+1)
 		}
@@ -203,7 +207,7 @@ func (e *lengthEvaluator) slice(expression ast.Expr, depth int) (sourceLength, b
 	}
 	if identifier, ok := expression.(*ast.Ident); ok {
 		if variable, ok := expressionObject(e.builder.pass.TypesInfo, identifier).(*types.Var); ok {
-			return e.variable(variable, true, depth+1)
+			return e.variable(variable, true, expression.Pos(), depth+1)
 		}
 	}
 	if call, ok := expression.(*ast.CallExpr); ok {
@@ -244,7 +248,7 @@ func (e *lengthEvaluator) length(expression ast.Expr, depth int) (sourceLength, 
 	}
 	if identifier, ok := expression.(*ast.Ident); ok {
 		if variable, ok := expressionObject(e.builder.pass.TypesInfo, identifier).(*types.Var); ok {
-			return e.variable(variable, false, depth+1)
+			return e.variable(variable, false, expression.Pos(), depth+1)
 		}
 	}
 	if call, ok := expression.(*ast.CallExpr); ok && len(call.Args) == 1 {
