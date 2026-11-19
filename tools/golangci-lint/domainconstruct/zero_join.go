@@ -20,10 +20,14 @@ func (c *zeroChecker) joinedErrorTruth(value ssa.Value, point flowPoint, context
 }
 
 func (c *zeroChecker) joinedViewTruth(view collectionView, point flowPoint, context flowContext, values map[ssa.Value]bool, covered []elementRange, seen map[collectionVisit]bool) truth {
-	if view.end >= 0 && view.start >= view.end {
+	view = boundedView(view, context)
+	if view.size() == 0 {
 		return isZero
 	}
-	visit := collectionVisit{point, view.storage.root, pathKey(view.storage.path), view.start, view.end}
+	if view.dynamicStart {
+		return unknown
+	}
+	visit := collectionVisit{point, view.storage.root, pathKey(view.storage.path), view.start, view.end, context.cleanup.first}
 	if seen[visit] || !c.work.take() {
 		return unknown
 	}
@@ -85,6 +89,13 @@ func (c *zeroChecker) joinedViewTruth(view collectionView, point flowPoint, cont
 			_, synchronous := instruction.(*ssa.Call)
 			if synchronous && builtinCall && builtin.Name() == "clear" {
 				if target, ok := c.collectionOf(call.Common().Args[0]); ok && sameStorage(target.storage, view.storage) {
+					target = boundedView(target, context)
+					if target.size() == 0 || !rangesOverlap(target.start, target.possibleEnd(), view.start, view.end) {
+						continue
+					}
+					if target.dynamicStart {
+						return unknown
+					}
 					if target.start <= view.start && (target.end >= 0 && view.end >= 0 && target.end >= view.end ||
 						target.value == view.value || target.lengthBase == view.lengthBase && sameLength(target.length, view.length)) {
 						return state

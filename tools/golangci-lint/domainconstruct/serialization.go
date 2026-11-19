@@ -290,11 +290,27 @@ func (c *serializationChecker) encodingProblem(t types.Type, codec string, seen 
 			if codec != "json" && !selected.field.Exported() {
 				continue
 			}
+			if problem := c.promotedCodecProblem(shape, selected, codec); problem != nil {
+				return problem
+			}
 			if problem := c.encodingProblem(selected.field.Type(), codec, seen); problem != nil {
 				problem.path = fieldPath(selected.path, problem.path)
 				return problem
 			}
 		}
+	}
+	return nil
+}
+
+func (c *serializationChecker) promotedCodecProblem(shape *types.Struct, selected structField, codec string) *serializationProblem {
+	var path string
+	for _, index := range selected.indices[:len(selected.indices)-1] {
+		field := shape.Field(index)
+		path = fieldPath(path, field.Name())
+		if p := c.policies.lookup(field.Type()); p != nil && !p.supports(codec) {
+			return &serializationProblem{typ: field.Type(), path: path, codec: codec}
+		}
+		shape = compositeShape(field.Type()).(*types.Struct)
 	}
 	return nil
 }

@@ -82,7 +82,9 @@ func (c *zeroChecker) findMutation(call *ssa.CallCommon, storage mutationTarget,
 			if fact != nil {
 				for _, parameter := range fact.Effects {
 					if parameter.Parameter == index-offset {
-						effect = parameter.Kind
+						if !parameter.LocalStorageOnly || !borrowedRoot(storage.root) {
+							effect = parameter.Kind
+						}
 						break
 					}
 				}
@@ -127,6 +129,18 @@ func (c *zeroChecker) mayReferenceStorage(value ssa.Value, storage mutationTarge
 		return c.mayReferenceStorage(value.X, storage, point, seen)
 	case *ssa.ChangeType:
 		return c.mayReferenceStorage(value.X, storage, point, seen)
+	case *ssa.MakeMap:
+		for _, reference := range *value.Referrers() {
+			if !c.work.take() {
+				return true
+			}
+			update, ok := reference.(*ssa.MapUpdate)
+			if ok && update.Map == value && update.Block() == point.block && instructionPoint(update).index < point.index {
+				if c.mayReferenceStorage(update.Value, storage, point, seen) || c.mayReferenceStorage(update.Key, storage, point, seen) {
+					return true
+				}
+			}
+		}
 	case *ssa.Slice:
 		if view, ok := c.collectionOf(value); ok {
 			view.end = view.capEnd
@@ -191,6 +205,20 @@ func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage
 		if origin := c.storedReference(location, point); origin != nil {
 			return c.mayReferenceStorage(origin, storage, point, seen)
 		}
+		if borrowedRoot(location.root) {
+			// An intervening borrowed write can make the origin uncertain
+			// without ruling out the most recent write to this exact slot.
+			for index := point.index - 1; index >= 0; index-- {
+				if !c.work.take() {
+					return true
+				}
+				if store, ok := point.block.Instrs[index].(*ssa.Store); ok {
+					if target, known := c.collectionAddress(store.Addr); known && sameStorage(target, location) {
+						return c.mayReferenceStorage(store.Val, storage, point, seen)
+					}
+				}
+			}
+		}
 	}
 	return false
 }
@@ -204,6 +232,7 @@ func (c *zeroChecker) collectionMayReference(view collectionView, storage mutati
 	if !c.work.take() {
 		return true
 	}
+	view.end = view.possibleEnd()
 	if view.storage.root != storage.root && borrowedRoot(view.storage.root) && borrowedRoot(storage.root) {
 		return true
 	}
@@ -219,7 +248,7 @@ func (c *zeroChecker) collectionMayReference(view collectionView, storage mutati
 			}
 		}
 	}
-	visit := memoryVisit{point, view.storage.root, pathKey(view.storage.path)}
+	visit := memoryVisit{point: point, root: view.storage.root, path: pathKey(view.storage.path)}
 	if seen[visit] {
 		return false
 	}

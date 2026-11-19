@@ -41,7 +41,7 @@ type zeroChecker struct {
 	returns     map[token.Pos]bool
 	comparisons map[token.Pos]bool
 	expressions map[token.Pos]sourceExpression
-	deferred    map[*ssa.Function]*ssa.Defer
+	deferred    map[*ssa.Function][]*ssa.Defer
 	work        *workBudget
 }
 
@@ -204,9 +204,7 @@ func (c *zeroChecker) checkInstruction(instruction ssa.Instruction, point flowPo
 	case ssa.CallInstruction:
 		c.checkCall(instruction, point, context, false)
 	case *ssa.RunDefers:
-		if deferred := c.deferredAt(point); deferred != nil {
-			c.checkCall(deferred, point, context, true)
-		}
+		c.checkCleanup(point, context)
 	case *ssa.Return:
 		c.checkResults(instruction.Results, point, context, instructionPosition(instruction, point))
 	case *ssa.MapUpdate:

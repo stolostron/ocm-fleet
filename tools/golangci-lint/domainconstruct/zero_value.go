@@ -22,9 +22,10 @@ type address struct {
 }
 
 type memoryVisit struct {
-	point flowPoint
-	root  ssa.Value
-	path  string
+	point   flowPoint
+	root    ssa.Value
+	path    string
+	cleanup int
 }
 
 func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point flowPoint, context flowContext, seen map[valueVisit]bool) (result *zeroProblem) {
@@ -76,7 +77,7 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 			}
 		}
 	case *ssa.TypeAssert:
-		return c.problem(value.X, path, value.Type(), point, context, seen)
+		return c.assertedProblem(value, path, t, point, context, seen)
 	case *ssa.Slice, *ssa.MakeSlice:
 		return c.collectionProblem(value, point, context, seen)
 	case *ssa.Call:
@@ -152,7 +153,7 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 			return result
 		}
 		if assertion, ok := value.Tuple.(*ssa.TypeAssert); ok && value.Index == 0 {
-			return c.problem(assertion.X, path, t, point, context, seen)
+			return c.assertedProblem(assertion, path, t, point, context, seen)
 		}
 		if call, ok := value.Tuple.(*ssa.Call); ok {
 			if problem := c.callResultProblem(call, value.Index, path, t, point, context, seen); problem != nil {
@@ -167,6 +168,24 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 		return c.conditionalProblem(t, reasonUncheckedLookup, context.use)
 	}
 	return nil
+}
+
+func (c *zeroChecker) assertedProblem(assertion *ssa.TypeAssert, path []int, t types.Type, point flowPoint, context flowContext, seen map[valueVisit]bool) *zeroProblem {
+	boxed := assertion.X
+	for {
+		change, ok := boxed.(*ssa.ChangeInterface)
+		if !ok || !c.work.take() {
+			break
+		}
+		boxed = change.X
+	}
+	if concrete, ok := boxed.(*ssa.MakeInterface); ok && types.Identical(concrete.X.Type(), assertion.AssertedType) {
+		return c.problem(concrete.X, path, t, point, context, seen)
+	}
+	if !assertion.CommaOk {
+		t = assertion.AssertedType
+	}
+	return c.problem(assertion.X, path, t, point, context, seen)
 }
 
 // A pointer's construction contract describes its initial contents. Later
@@ -442,7 +461,7 @@ func (c *zeroChecker) fieldStorage(location address, shape *types.Struct, field 
 // Guard facts describe the observation above. Once an intervening effect rules
 // out that proof, tracing earlier storage must not reapply it before the effect.
 func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point, use flowPoint, context flowContext, values map[valueVisit]bool, seen map[memoryVisit]bool) *zeroProblem {
-	visit := memoryVisit{point, location.root, pathKey(location.path)}
+	visit := memoryVisit{point, location.root, pathKey(location.path), context.cleanup.first}
 	if seen[visit] || !c.work.take() {
 		return nil
 	}
@@ -490,18 +509,17 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 			}
 		}
 		before := flowPoint{point.block, index}
-		if _, scheduled := instruction.(*ssa.Defer); scheduled {
+		switch instruction.(type) {
+		case ssa.CallInstruction, *ssa.RunDefers:
+		default:
 			continue
 		}
-		call, _ := instruction.(ssa.CallInstruction)
-		if _, cleanup := instruction.(*ssa.RunDefers); cleanup {
-			if deferred := c.deferredAt(before); deferred != nil {
-				call = deferred
-			}
-		}
-		if call != nil {
+		for execution := range c.executedCallsAt(instruction, before, context) {
+			call, before, context := execution.call, execution.before, execution.context
+			_, asynchronous := call.(*ssa.Go)
+			conditional := execution.conditional || asynchronous
 			pos := mutationPosition(call, before)
-			if c.decoderInitializes(call, location, before, context) {
+			if !conditional && c.decoderInitializes(call, location, before, context) {
 				return nil
 			}
 			if c.decoderMayInvalidate(call, mutationTarget{address: location}, before, context) {
@@ -517,13 +535,18 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 					len(location.path) > len(destination.storage.path) && pathPrefix(location.path, destination.storage.path) {
 					destination = boundedView(destination, context)
 					offset := int64(location.path[len(destination.storage.path)])
-					if destination.end >= 0 && offset >= destination.start && offset < destination.end {
-						return c.zeroType(t, "", context.use).step("source", pos, "clear sets collection elements to zero")
+					end := destination.possibleEnd()
+					if destination.size() > 0 && offset >= destination.start && (end < 0 || offset < end) {
+						problem := c.zeroType(t, "", context.use)
+						if destination.dynamicStart || conditional {
+							problem = problem.uncertain()
+						}
+						return problem.step("source", pos, "clear sets collection elements to zero")
 					}
 				}
 			}
 			effect := c.callMutation(call.Common(), location, before)
-			if _, asynchronous := instruction.(*ssa.Go); asynchronous && effect != mutationReadOnly {
+			if conditional && effect != mutationReadOnly {
 				effect = mutationUnknown
 			}
 			switch effect {
@@ -533,7 +556,7 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 			case mutationNonzero:
 				return nil
 			case mutationUnknown:
-				if _, synchronous := instruction.(*ssa.Call); synchronous && c.iteratorInitializes(call.Common(), location, t, before, context) {
+				if _, synchronous := call.(*ssa.Call); synchronous && c.iteratorInitializes(call.Common(), location, t, before, context) {
 					return nil
 				}
 				prior := c.memoryHistoryProblem(location, t, before, use, context, values, seen)

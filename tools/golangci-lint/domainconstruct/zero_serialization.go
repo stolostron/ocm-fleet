@@ -72,6 +72,11 @@ func (use valueUse) json() bool {
 	return use == jsonFields || use == jsonAddressableFields
 }
 
+type decodeDestination struct {
+	value       ssa.Value // nil when a slot could not be recovered.
+	conditional bool
+}
+
 // Only a declared root decoder establishes valid domain state on nil error.
 // A plain envelope's nested hooks can be skipped for missing fields, so the
 // envelope cannot provide the same guarantee. Failure can leave partial writes.
@@ -85,16 +90,21 @@ func (c *zeroChecker) decoderInitializes(instruction ssa.CallInstruction, locati
 		for _, index := range boundary.Decode {
 			argument := contractArgument(call, index)
 			for _, destination := range c.decodeDestinations(argument, before, make(map[ssa.Value]bool)) {
-				target, known := c.collectionAddress(destination)
-				if !known || !(mutationTarget{address: location}).overlaps(target) {
+				target, known := c.collectionAddress(destination.value)
+				if !known {
+					conflicting = true
 					continue
 				}
-				pointer, ok := destination.Type().Underlying().(*types.Pointer)
+				if !(mutationTarget{address: location}).overlaps(target) {
+					continue
+				}
+				pointer, ok := destination.value.Type().Underlying().(*types.Pointer)
 				if !ok || target.root != location.root || !pathPrefix(location.path, target.path) ||
+					slices.Contains(target.path, -1) ||
 					!c.policies.lookup(pointer.Elem()).supports(boundary.Codec) ||
 					!supportsNativeDecode(pointer.Elem(), boundary.Codec) {
 					conflicting = true
-				} else {
+				} else if !destination.conditional {
 					initialized = true
 				}
 			}
@@ -139,20 +149,35 @@ func (c *zeroChecker) decoderMayInvalidate(instruction ssa.CallInstruction, stor
 	return false
 }
 
-// Recover concrete destinations from local boxing and variadic slices. A
-// reaching value must be unambiguous across predecessors; stale or branch-only
-// pointers never become a successful initialization fact.
-func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen map[ssa.Value]bool) []ssa.Value {
-	if value == nil || seen[value] {
-		return nil
+// Recover decode slots from local boxing and variadic storage. An unknown or
+// conditional output can conflict with a definite write but cannot prove one.
+func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen map[ssa.Value]bool) []decodeDestination {
+	if value == nil || seen[value] || !c.work.take() {
+		return []decodeDestination{{}}
 	}
 	seen[value] = true
 	defer delete(seen, value)
 	switch value := value.(type) {
+	case *ssa.Const:
+		if value.IsNil() {
+			return nil
+		}
 	case *ssa.MakeInterface:
 		return c.decodeDestinations(value.X, point, seen)
 	case *ssa.ChangeInterface:
 		return c.decodeDestinations(value.X, point, seen)
+	case *ssa.Phi:
+		var destinations []decodeDestination
+		for _, edge := range value.Edges {
+			for _, destination := range c.decodeDestinations(edge, point, seen) {
+				destination.conditional = true
+				destinations = append(destinations, destination)
+			}
+			if c.work.exhausted() {
+				return []decodeDestination{{}}
+			}
+		}
+		return destinations
 	case *ssa.UnOp:
 		if value.Op == token.MUL {
 			if location, known := c.collectionAddress(value.X); known {
@@ -163,15 +188,18 @@ func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen 
 		}
 	}
 	if _, pointer := value.Type().Underlying().(*types.Pointer); pointer {
-		return []ssa.Value{value}
+		return []decodeDestination{{value: value}}
 	}
 	view, ok := c.collectionOf(value)
 	if !ok || view.end < 0 || view.dynamicStart {
-		return nil
+		return []decodeDestination{{}}
 	}
-	var destinations []ssa.Value
-	visited := make(map[string]bool)
+	var destinations []decodeDestination
+	visited := make(map[int64]bool)
 	for _, store := range c.stores[view.storage.root] {
+		if !c.work.take() {
+			return []decodeDestination{{}}
+		}
 		if !pathPrefix(store.target.path, view.storage.path) || len(store.target.path) != len(view.storage.path)+1 {
 			continue
 		}
@@ -179,15 +207,15 @@ func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen 
 		if index < view.start || view.end >= 0 && index >= view.end {
 			continue
 		}
-		key := pathKey(store.target.path)
-		if visited[key] {
+		if visited[index] {
 			continue
 		}
-		visited[key] = true
+		visited[index] = true
 		location := address{root: view.storage.root, path: slices.Clone(store.target.path)}
-		if origin := c.storedReference(location, point); origin != nil {
-			destinations = append(destinations, c.decodeDestinations(origin, point, seen)...)
-		}
+		destinations = append(destinations, c.decodeDestinations(c.storedReference(location, point), point, seen)...)
+	}
+	if int64(len(visited)) != view.size() {
+		destinations = append(destinations, decodeDestination{})
 	}
 	return destinations
 }

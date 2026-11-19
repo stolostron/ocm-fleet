@@ -71,3 +71,70 @@ func Conversions(count Count, raw int) {
 	_ = genericZero[Count]()
 	_ = recast[Count](raw) // want "construct protection.Count through NewCount"
 }
+
+func countPair(count Count) (bool, Count)         { return true, count }
+func copyCount[T ~int, U ~int](_ bool, value U) T { return T(value) }
+
+func TupleIdentity(count Count, raw int) {
+	_ = copyCount[Count](countPair(count))
+	_ = copyCount[Count](true, raw) // want "construct protection.Count through NewCount"
+}
+
+func RangeTransfers(raw [][2]byte, keys map[[2]byte]int, channel <-chan [2]byte, iterator func(func([2]byte) bool), typed []ID, id ID) {
+	for _, id = range raw { // want "construct protection.ID through NewID"
+		consume(id)
+	}
+	for id = range keys { // want "construct protection.ID through NewID"
+		consume(id)
+	}
+	for id = range channel { // want "construct protection.ID through NewID"
+		consume(id)
+	}
+	for id = range iterator { // want "construct protection.ID through NewID"
+		consume(id)
+	}
+	for _, id = range typed {
+		consume(id)
+	}
+}
+
+func GenericRangeTransfers[S ~[][2]byte, Yield ~func([2]byte) bool](raw S, iterator func(Yield), id ID) {
+	for _, id = range raw { // want "construct protection.ID through NewID"
+		consume(id)
+	}
+	for id = range iterator { // want "construct protection.ID through NewID"
+		consume(id)
+	}
+}
+
+func ElidedPointerTransfer(id ID) {
+	_ = []*struct{ ID ID }{{ID: [2]byte{1}}} // want "construct protection.ID through NewID"
+	_ = []*struct{ ID ID }{{ID: id}}
+}
+
+//domain:constructors NewOuter
+type Outer struct{ Record } // want Outer:"requires constructors"
+
+func NewOuter(record Record) Outer {
+	outer := Outer{Record: record}
+	outer.number = 2        // want "modify protection.Record through NewRecord"
+	outer.Record.number = 3 // want "modify protection.Record through NewRecord"
+	_ = outer.array[:]      // want "do not expose mutable contents of protection.Record"
+	_ = &outer.number       // want "do not expose mutable contents of protection.Record"
+	outer.Record = record
+	return outer
+}
+
+//domain:constructors NewBox
+type Box struct { // want Box:"requires constructors"
+	Value any
+	Count int
+}
+
+func NewBox(value any) Box { return Box{Value: value} }
+
+func BoxedZeros() {
+	_ = Box{Value: 0}     // want "construct protection.Box through NewBox"
+	_ = Box{Value: false} // want "construct protection.Box through NewBox"
+	_ = Box{nil, 0}
+}

@@ -115,15 +115,11 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 		}
 	case *ast.RangeStmt:
 		if node.Tok == token.ASSIGN {
-			for _, target := range []ast.Expr{node.Key, node.Value} {
-				if target != nil {
-					c.checkWrite(target, ancestors)
-				}
-			}
+			c.checkRangeTransfers(node, ancestors)
 		}
 	case *ast.UnaryExpr:
 		if node.Op == token.AND {
-			if p := c.fieldOwner(node.X); p != nil && !c.approved(p, ancestors) {
+			if p := c.unapprovedOwner(node.X, ancestors); p != nil {
 				c.reportProtected(node, p, "domainconstruct.mutable-exposure", "address", "mutable-contents",
 					fmt.Sprintf("do not expose mutable contents of %s", p.name))
 				return false
@@ -136,10 +132,10 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 		}
 		if _, array := t.Underlying().(*types.Array); array {
 			p := c.policy(t)
-			if p == nil {
-				p = c.fieldOwner(node.X)
+			if p == nil || c.approved(p, ancestors) {
+				p = c.unapprovedOwner(node.X, ancestors)
 			}
-			if p != nil && !c.approved(p, ancestors) {
+			if p != nil {
 				c.reportProtected(node, p, "domainconstruct.mutable-exposure", "slice", "mutable-contents",
 					fmt.Sprintf("do not expose mutable contents of %s", p.name))
 				return false
@@ -206,7 +202,7 @@ func (c *checker) checkConversion(call *ast.CallExpr, ancestors []ast.Node) bool
 }
 
 func (c *checker) checkWrite(target ast.Expr, ancestors []ast.Node) bool {
-	if p := c.fieldOwner(target); p != nil && !c.approved(p, ancestors) {
+	if p := c.unapprovedOwner(target, ancestors); p != nil {
 		c.reportProtected(target, p, "domainconstruct.field-write", "assignment", "protected-field",
 			fmt.Sprintf("modify %s through %s", p.name, strings.Join(p.fact.Constructors, " or ")))
 		return false
@@ -214,7 +210,7 @@ func (c *checker) checkWrite(target ast.Expr, ancestors []ast.Node) bool {
 	return true
 }
 
-func (c *checker) fieldOwner(expr ast.Expr) *policy {
+func (c *checker) unapprovedOwner(expr ast.Expr, ancestors []ast.Node) *policy {
 	switch expr := ast.Unparen(expr).(type) {
 	case *ast.SelectorExpr:
 		if selection := c.pass.TypesInfo.Selections[expr]; selection != nil && selection.Kind() == types.FieldVal {
@@ -223,22 +219,22 @@ func (c *checker) fieldOwner(expr ast.Expr) *policy {
 				if pointer, ok := owner.Underlying().(*types.Pointer); ok {
 					owner = pointer.Elem()
 				}
-				if p := c.policy(owner); p != nil {
+				if p := c.policy(owner); p != nil && !c.approved(p, ancestors) {
 					return p
 				}
 				owner = owner.Underlying().(*types.Struct).Field(index).Type()
 			}
-			return c.fieldOwner(expr.X)
+			return c.unapprovedOwner(expr.X, ancestors)
 		}
 	case *ast.IndexExpr:
-		if p := c.policy(c.pass.TypesInfo.TypeOf(expr.X)); p != nil {
+		if p := c.policy(c.pass.TypesInfo.TypeOf(expr.X)); p != nil && !c.approved(p, ancestors) {
 			return p
 		}
-		return c.fieldOwner(expr.X)
+		return c.unapprovedOwner(expr.X, ancestors)
 	case *ast.StarExpr:
-		return c.fieldOwner(expr.X)
+		return c.unapprovedOwner(expr.X, ancestors)
 	case *ast.SliceExpr:
-		return c.fieldOwner(expr.X)
+		return c.unapprovedOwner(expr.X, ancestors)
 	}
 	return nil
 }
@@ -312,18 +308,15 @@ func (c *checker) isZero(expr ast.Expr) bool {
 }
 
 func (c *checker) zeroCompositeContents(literal *ast.CompositeLit) bool {
-	t := c.pass.TypesInfo.TypeOf(literal)
-	if pointer, ok := t.Underlying().(*types.Pointer); ok {
-		// A pointer element can elide the address operator in a literal.
-		t = pointer.Elem()
-	}
-	switch t.Underlying().(type) {
+	shape := compositeShape(c.pass.TypesInfo.TypeOf(literal))
+	switch shape.(type) {
 	case *types.Array, *types.Struct:
-		for _, element := range literal.Elts {
-			if pair, ok := element.(*ast.KeyValueExpr); ok {
-				element = pair.Value
+		for index, element := range literal.Elts {
+			value := element
+			if pair, keyed := element.(*ast.KeyValueExpr); keyed {
+				value = pair.Value
 			}
-			if !c.isZero(element) {
+			if !c.isZero(value) || boxedByConversion(c.pass.TypesInfo.TypeOf(value), c.literalElementType(shape, element, index)) {
 				return false
 			}
 		}

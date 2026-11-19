@@ -11,17 +11,22 @@ import (
 func (c *zeroChecker) checkResults(results []ssa.Value, point flowPoint, context flowContext, pos token.Pos) {
 	success := context.clone()
 	for _, result := range results {
-		if c.errorStatus(result.Type()) && !c.assume(&success, result, isZero) {
-			return
+		if c.errorStatus(result.Type()) {
+			if !c.assume(&success, result, isZero) {
+				return
+			}
+			success.statusMayChange = success.statusMayChange || c.deferChangesStatus(result)
 		}
 	}
 	function := point.block.Parent()
 	for function.Synthetic == "range-over-func yield" {
 		function = function.Parent()
 	}
-	if object, _ := function.Object().(*types.Func); c.contracts.hasPresence(object) &&
-		len(results) >= function.Signature.Results().Len() && !c.assume(&success, results[1], notZero) {
-		return
+	if object, _ := function.Object().(*types.Func); c.contracts.hasPresence(object) && len(results) >= function.Signature.Results().Len() {
+		if !c.assume(&success, results[1], notZero) {
+			return
+		}
+		success.statusMayChange = success.statusMayChange || c.deferChangesStatus(results[1])
 	}
 	for index, result := range results {
 		if !c.errorStatus(result.Type()) {

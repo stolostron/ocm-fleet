@@ -16,7 +16,7 @@ func TestContractInferenceBounds(t *testing.T) {
 		Requires: []*analysis.Analyzer{contractsAnalyzer},
 		Run: func(pass *analysis.Pass) (any, error) {
 			contracts := pass.ResultOf[contractsAnalyzer].(*contractSet)
-			for _, name := range []string{"Nested", "NestedGeneric", "Simple"} {
+			for _, name := range []string{"Nested", "NestedGeneric", "Simple", "LargeComposition", "SmallComposition", "AtSourceDepth", "ChoiceBeyondSourceDepth"} {
 				function := pass.Pkg.Scope().Lookup(name).(*types.Func)
 				contract := contracts.functions[function]
 				switch name {
@@ -24,9 +24,13 @@ func TestContractInferenceBounds(t *testing.T) {
 					if contract != nil && len(contract.Errors) != 0 {
 						t.Errorf("nested branch inference established an error fact: %v", contract.Errors)
 					}
-				case "NestedGeneric":
+				case "NestedGeneric", "LargeComposition", "ChoiceBeyondSourceDepth":
 					if contract != nil && len(contract.Sources) != 0 {
-						t.Errorf("nested branch inference established a source fact: %v", contract.Sources)
+						t.Errorf("%s exported a source beyond the work limit", name)
+					}
+				case "SmallComposition", "AtSourceDepth":
+					if contract == nil || len(contract.Sources) != 1 || contract.Sources[0].Value.Kind != sourceFields {
+						t.Errorf("%s lost its field sources: %v", name, contract)
 					}
 				case "Simple":
 					if contract == nil || len(contract.Errors) != 1 || contract.Errors[0].Parameter != -1 {
@@ -38,6 +42,31 @@ func TestContractInferenceBounds(t *testing.T) {
 		},
 	}
 	analysistest.Run(t, analysistest.TestData(), check, "contractbounds")
+}
+
+func TestContractRoundLimitRetainsIndependentFacts(t *testing.T) {
+	check := &analysis.Analyzer{
+		Name:     "checkcontractchain",
+		Doc:      "check retained and unfinished contracts",
+		Requires: []*analysis.Analyzer{contractsAnalyzer},
+		Run: func(pass *analysis.Pass) (any, error) {
+			contracts := pass.ResultOf[contractsAnalyzer].(*contractSet)
+			for _, name := range []string{"Independent", "AlsoIndependent", "First", "DependencyOnUnfinished"} {
+				function := pass.Pkg.Scope().Lookup(name).(*types.Func)
+				fact := contracts.functions[function]
+				want := name == "Independent" || name == "AlsoIndependent"
+				if hasSource := fact != nil && len(fact.Sources) == 1; hasSource != want {
+					t.Errorf("%s source retained = %v, want %v", name, hasSource, want)
+				}
+			}
+			sentinel := pass.Pkg.Scope().Lookup("IndependentError").(*types.Var)
+			if !contracts.sentinels[sentinel] {
+				t.Error("round limit discarded independent sentinel")
+			}
+			return nil, nil
+		},
+	}
+	analysistest.Run(t, analysistest.TestData(), check, "contractchain")
 }
 
 func TestProjectSourceBoundsRecursivePaths(t *testing.T) {

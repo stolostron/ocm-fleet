@@ -1,6 +1,9 @@
 package zeroflow
 
-import "errors"
+import (
+	"errors"
+	"iter"
+)
 
 func CopyInspectsOnlyReadSlots(valid ID, use func(ID)) {
 	source := []ID{valid, ""}
@@ -101,4 +104,62 @@ func ShiftedFillDoesNotCoverView(valid ID, length int, use func([]ID)) {
 		values[i] = valid
 	}
 	use(values[1:][:length]) // want "argument may contain an empty zeroflow.ID"
+}
+
+func DeferredClearChangesReturnedCollection(valid ID) []ID {
+	values := []ID{valid}
+	defer clear(values)
+	return values // want "return contains an empty zeroflow.ID"
+}
+
+func DeferredDisjointClear(valid ID) []ID {
+	values := []ID{valid, valid}
+	defer clear(values[1:])
+	return values[:1]
+}
+
+func DeferredCopyReadsAfterEarlierCleanup(valid ID) []ID {
+	source := []ID{valid}
+	destination := []ID{valid}
+	defer copy(destination, source)
+	defer clear(source)
+	return destination // want "return contains an empty zeroflow.ID"
+}
+
+func eraseScalar(raw *string) { *raw = "" }
+func unrelatedCleanup()       {}
+
+func DeferredWriteInOrderedCleanup(valid ID) (result ID) {
+	result = valid
+	defer eraseScalar((*string)(&result))
+	defer unrelatedCleanup()
+	return // want "return produces an empty zeroflow.ID"
+}
+
+func DeferredUseAfterRepair(use func(*ID)) {
+	var raw string
+	defer use((*ID)(&raw))
+	defer writeValidRaw(&raw)
+}
+
+func DeferredUseBeforeRepair(use func(*ID)) {
+	var raw string
+	defer writeValidRaw(&raw)
+	defer use((*ID)(&raw)) // want "argument is an empty zeroflow.ID"
+}
+
+func IteratorFailureClearedAtExit(values iter.Seq[bool], valid ID) (id ID, err error) {
+	defer func() { err = nil }()
+	for range values {
+		return "", errors.New("failure") // want "return may produce an empty zeroflow.ID"
+	}
+	return valid, nil
+}
+
+func IteratorFailureWithUnrelatedDefer(values iter.Seq[bool], valid ID) (ID, error) {
+	defer unrelatedCleanup()
+	for range values {
+		return "", errors.New("failure")
+	}
+	return valid, nil
 }

@@ -42,7 +42,8 @@ func (c *zeroChecker) iteratorInitializes(call *ssa.CallCommon, location address
 					continue
 				}
 				writes = append(writes, reference)
-				if !c.returns[reference.Pos()] && (c.problem(reference.Val, nil, t, instructionPoint(reference), c.contextAt(reference.Block()), make(map[valueVisit]bool)) != nil || c.work.exhausted()) {
+				if (!c.returns[reference.Pos()] || context.statusMayChange) &&
+					(c.problem(reference.Val, nil, t, instructionPoint(reference), c.contextAt(reference.Block()), make(map[valueVisit]bool)) != nil || c.work.exhausted()) {
 					valid = false
 				}
 			case *ssa.UnOp, *ssa.DebugRef:

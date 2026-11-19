@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"maps"
 	"reflect"
 
 	"golang.org/x/tools/go/analysis"
@@ -56,15 +55,22 @@ type sentinelContract struct{}
 func (*sentinelContract) AFact() {}
 
 type contractBuilder struct {
-	pass   *analysis.Pass
-	set    *contractSet
-	decls  []contractDeclaration
-	values map[*types.Var]ast.Expr
+	pass             *analysis.Pass
+	set              *contractSet
+	decls            []contractDeclaration
+	sentinels        []sentinelDeclaration
+	pending          map[types.Object]bool
+	dependsOnPending bool
 }
 
 type contractDeclaration struct {
 	function *types.Func
 	syntax   *ast.FuncDecl
+}
+
+type sentinelDeclaration struct {
+	variable *types.Var
+	value    ast.Expr
 }
 
 const maxContractRounds = 16
@@ -79,7 +85,6 @@ func runContracts(pass *analysis.Pass) (any, error) {
 			sentinels:  make(map[*types.Var]bool),
 			writes:     make(map[*types.Var][]token.Pos),
 		},
-		values: make(map[*types.Var]ast.Expr),
 	}
 	b.collectBoundaries()
 	b.collectPresences()
@@ -101,7 +106,7 @@ func runContracts(pass *analysis.Pass) (any, error) {
 							for index, name := range spec.Names {
 								object := pass.TypesInfo.Defs[name].(*types.Var)
 								if isErrorType(object.Type()) {
-									b.values[object] = spec.Values[index]
+									b.sentinels = append(b.sentinels, sentinelDeclaration{object, spec.Values[index]})
 								}
 							}
 						}
@@ -158,24 +163,43 @@ func (b *contractBuilder) inferContracts() {
 	// Effects depend only on the function body. Compute them once and keep
 	// them even when dependent summaries do not reach a fixed point.
 	effects := make(map[*types.Func][]parameterEffect)
+	b.pending = make(map[types.Object]bool, len(b.decls)+len(b.sentinels))
 	for _, declaration := range b.decls {
+		b.pending[declaration.function] = true
 		if inferred := b.inferEffects(declaration.function, declaration.syntax); len(inferred) != 0 {
 			effects[declaration.function] = inferred
 		}
 	}
+	for _, declaration := range b.sentinels {
+		if len(b.set.writes[declaration.variable]) == 0 {
+			b.pending[declaration.variable] = true
+		}
+	}
 	for range maxContractRounds {
 		changed := false
-		for object, value := range b.values {
-			if !b.set.sentinels[object] && len(b.set.writes[object]) == 0 {
-				e := nilnessEvaluator{builder: b}
-				if e.converted(value, object.Type(), nil) == notZero {
-					b.set.sentinels[object] = true
-					changed = true
-				}
+		for _, declaration := range b.sentinels {
+			object := declaration.variable
+			if !b.pending[object] {
+				continue
+			}
+			b.dependsOnPending = false
+			work := workBudget(maxInferenceWork)
+			e := nilnessEvaluator{builder: b, complete: true, work: &work}
+			nonNil := e.converted(declaration.value, object.Type(), nil) == notZero && e.complete
+			if !b.dependsOnPending {
+				delete(b.pending, object)
+			}
+			if b.set.sentinels[object] != nonNil {
+				b.set.sentinels[object] = nonNil
+				changed = true
 			}
 		}
 		for _, declaration := range b.decls {
 			object, syntax := declaration.function, declaration.syntax
+			if !b.pending[object] {
+				continue
+			}
+			b.dependsOnPending = false
 			fact := b.inferErrors(object, syntax)
 			if effects := effects[object]; len(effects) != 0 {
 				if fact == nil {
@@ -201,6 +225,9 @@ func (b *contractBuilder) inferContracts() {
 				}
 				fact.Lengths = lengths
 			}
+			if !b.dependsOnPending {
+				delete(b.pending, object)
+			}
 			if !reflect.DeepEqual(b.set.functions[object], fact) {
 				if fact == nil {
 					delete(b.set.functions, object)
@@ -214,12 +241,19 @@ func (b *contractBuilder) inferContracts() {
 			return
 		}
 	}
-	// The last round may contain facts derived from an unstable callee.
-	// Discard local dependent summaries together and retain imported facts.
-	maps.DeleteFunc(b.set.functions, func(object *types.Func, _ *functionContract) bool { return object.Pkg() == b.pass.Pkg })
-	maps.DeleteFunc(b.set.sentinels, func(object *types.Var, _ bool) bool { return object.Pkg() == b.pass.Pkg })
-	for object, effect := range effects {
-		b.set.functions[object] = &functionContract{Effects: effect}
+	// A pending lookup can change even when its current answer is empty.
+	// Retain summaries only after all the facts they read have settled.
+	for object := range b.pending {
+		switch object := object.(type) {
+		case *types.Var:
+			delete(b.set.sentinels, object)
+		case *types.Func:
+			if effect := effects[object]; len(effect) != 0 {
+				b.set.functions[object] = &functionContract{Effects: effect}
+			} else {
+				delete(b.set.functions, object)
+			}
+		}
 	}
 }
 
@@ -235,6 +269,7 @@ func (b *contractBuilder) function(object *types.Func) *functionContract {
 		return nil
 	}
 	object = object.Origin()
+	b.dependsOnPending = b.dependsOnPending || b.pending[object]
 	if fact := b.set.functions[object]; fact != nil {
 		return fact
 	}
@@ -252,6 +287,7 @@ func (b *contractBuilder) sentinel(object *types.Var) bool {
 	if len(b.set.writes[object]) != 0 {
 		return false
 	}
+	b.dependsOnPending = b.dependsOnPending || b.pending[object]
 	if b.set.sentinels[object] {
 		return true
 	}
@@ -305,13 +341,14 @@ func expressionObject(info *types.Info, expression ast.Expr) types.Object {
 	return nil
 }
 
-func callParameter(info *types.Info, call *ast.CallExpr, index int) ast.Expr {
-	if function, ok := expressionObject(info, call.Fun).(*types.Func); ok {
-		signature := function.Type().(*types.Signature)
-		if signature.Variadic() && index == signature.Params().Len()-1 && !call.Ellipsis.IsValid() {
-			return nil // The unexpanded slice and its first element are different values.
-		}
-	}
+type boundParameter struct {
+	expression ast.Expr
+	actual     types.Type
+	formal     types.Type
+	result     int // -1 for a single-valued expression.
+}
+
+func callParameter(info *types.Info, call *ast.CallExpr, index int) boundParameter {
 	expression := ast.Unparen(call.Fun)
 	if selector, ok := expression.(*ast.SelectorExpr); ok {
 		if selection := info.Selections[selector]; selection != nil {
@@ -320,13 +357,27 @@ func callParameter(info *types.Info, call *ast.CallExpr, index int) ast.Expr {
 				index++ // The explicit receiver precedes the declared parameters.
 			case types.MethodVal:
 				if index == -1 {
-					return selector.X
+					return boundParameter{selector.X, info.TypeOf(selector.X), selection.Recv(), -1}
 				}
 			}
 		}
 	}
-	if index >= 0 && index < len(call.Args) {
-		return call.Args[index]
+	signature, ok := info.TypeOf(call.Fun).Underlying().(*types.Signature)
+	if !ok || index < 0 || index >= signature.Params().Len() {
+		return boundParameter{}
 	}
-	return nil
+	if signature.Variadic() && index == signature.Params().Len()-1 && !call.Ellipsis.IsValid() {
+		return boundParameter{} // A packed slice differs from its individual arguments.
+	}
+	formal := signature.Params().At(index).Type()
+	if len(call.Args) == 1 {
+		if tuple, ok := info.TypeOf(call.Args[0]).(*types.Tuple); ok && index < tuple.Len() {
+			return boundParameter{call.Args[0], tuple.At(index).Type(), formal, index}
+		}
+	}
+	if index < len(call.Args) {
+		argument := call.Args[index]
+		return boundParameter{argument, info.TypeOf(argument), formal, -1}
+	}
+	return boundParameter{}
 }

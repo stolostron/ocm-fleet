@@ -138,6 +138,10 @@ an explicit raw conversion inside a comparison still requires construction.
 Reading an existing typed constant, local or imported, is a copy. Deriving a new
 typed constant with an operator is construction. An untyped constant passed as a
 domain value still needs construction.
+Explicit range assignments are checked against the yielded types, including in
+generic code when the constraint fixes those types. Writing through an embedded
+field or exposing a pointer to it requires permission from its protected owners.
+Replacing an existing nested value requires permission from its enclosing owners.
 Simple generic helpers that convert a raw argument into a protected
 type are checked at their instantiated calls, including imported helpers.
 Calls to approved constructors remain ordinary Go calls; the checker does not
@@ -232,12 +236,15 @@ Encoding inputs are valid-value consumers, so encoding an uninitialized domain
 value still produces a `domainzero` finding. Standard JSON field encoding skips
 an exact `json:"-"` field in a plain envelope. A tag like `json:"-,"` names the
 field `-`. Types with custom JSON or text encoding hooks retain whole-value
-checks, including when a pointer receiver can supply the hook.
+checks, including when a pointer receiver can supply the hook. A visible field
+promoted from a protected embedded value also requires that owner's codec.
+The checker uses field evidence when selection completes within its budget.
 
 Decoder destinations accept zero output storage. A parameter selected for both
 encoding and decoding must already be valid. After the error is checked,
 the analyzer trusts a successfully decoded native root and its required
-members. It keeps tracking required fields in an ordinary envelope.
+members when it can establish the destination and distinguish it from other
+outputs. It keeps tracking required fields in an ordinary envelope.
 Scanning a primitive and converting it to a domain value still requires a
 constructor.
 
@@ -509,9 +516,12 @@ an imported sentinel's address is a diagnostic. It also infers small error
 wrappers from their bodies, including nil-preserving wrappers, and carries their
 contracts across packages. Names such as `ErrMissing` or `TerminalError` grant no
 exemption. Observing a context's `Done` receive establishes its later `Err()` or
-`context.Cause` failure contract for that context. Ordinary deferred cleanup
-preserves these rules. Map lookups, channel receives, and comma-ok type assertions
-need their successful `ok` check when they can otherwise introduce an invalid zero.
+`context.Cause` failure contract for that context. The checker follows small,
+statically ordered sequences of defers in reverse registration order. Values
+are captured at registration and referenced storage is observed during cleanup,
+after earlier cleanup effects. A possible deferred write can invalidate an
+earlier proof. Map lookups, channel receives, and comma-ok type assertions need
+their successful `ok` check when they can otherwise introduce an invalid zero.
 
 A checked or forwarded error can retain its original result guard through local
 branch merges. For example, `if err != nil { err = fmt.Errorf("lookup: %w", err) }`
@@ -531,8 +541,10 @@ interfaces or variadic arguments, and invalid contents after `clear` or a partia
 append-based construction, and complete sequential fills using `range` or an
 index from zero to the length. A fill must assign every element on every back
 edge; a `continue` that skips an assignment or a `break` does not establish that
-contract. Parsing each element and checking its error before continuing is
-supported, including assigning the result to its slot before checking the error.
+contract. A complete fill also requires stable backing storage, including when
+a channel operation can hand control to another owner. Parsing each element and
+checking its error before continuing is supported, including assigning the
+result to its slot before checking the error.
 Map writes check both keys and values; missing reads still need `ok` when zero
 is invalid. Element tracking uses ranges rather than expanding large arrays.
 Local and imported helper contracts preserve a returned slice's length when
@@ -591,7 +603,10 @@ justification as production code.
 Branch facts stay independent for each path. Alternative tracing stops once
 later paths cannot change the selected finding, its certainty, or its provenance.
 Contract inference limits branch work, recursive source paths, and convergence
-rounds. SSA queries share a work budget across paths and related lookups.
+rounds. Nested substitutions share a work budget and caps apply to the expanded
+facts before export. Independent facts can settle while unresolved contracts
+continue to converge. SSA queries share a work budget across paths and related
+lookups.
 An incomplete proof leaves unknown state and can miss cases beyond that limit.
 Completed type, reference, and boxed-value traversals can reuse results at the
 same observation point. A query with a different set of facts analyzes that

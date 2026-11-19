@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/types"
 	"slices"
+
+	"golang.org/x/exp/typeparams"
 )
 
 func (c *checker) checkCallTransfers(call *ast.CallExpr, ancestors []ast.Node) {
@@ -33,30 +35,28 @@ func (c *checker) checkCallTransfers(call *ast.CallExpr, ancestors []ast.Node) {
 
 func (c *checker) checkLiteralTransfers(literal *ast.CompositeLit, ancestors []ast.Node) {
 	info := c.pass.TypesInfo
-	shape := info.TypeOf(literal).Underlying()
+	shape := compositeShape(info.TypeOf(literal))
 	for index, element := range literal.Elts {
 		value := element
-		pair, keyed := element.(*ast.KeyValueExpr)
-		if keyed {
+		if pair, keyed := element.(*ast.KeyValueExpr); keyed {
 			value = pair.Value
-		}
-		var target types.Type
-		switch shape := shape.(type) {
-		case *types.Struct:
-			if keyed {
-				target = info.TypeOf(pair.Key)
-			} else {
-				target = shape.Field(index).Type()
+			if mapping, ok := shape.(*types.Map); ok {
+				c.checkTransfer(pair.Key, info.TypeOf(pair.Key), mapping.Key(), ancestors)
 			}
-		case *types.Slice:
-			target = shape.Elem()
-		case *types.Array:
-			target = shape.Elem()
-		case *types.Map:
-			c.checkTransfer(pair.Key, info.TypeOf(pair.Key), shape.Key(), ancestors)
-			target = shape.Elem()
 		}
-		c.checkTransfer(value, info.TypeOf(value), target, ancestors)
+		c.checkTransfer(value, info.TypeOf(value), c.literalElementType(shape, element, index), ancestors)
+	}
+}
+
+func (c *checker) checkRangeTransfers(statement *ast.RangeStmt, ancestors []ast.Node) {
+	key, value := rangeTypes(c.pass.TypesInfo.TypeOf(statement.X))
+	for _, binding := range []struct {
+		target ast.Expr
+		source types.Type
+	}{{statement.Key, key}, {statement.Value, value}} {
+		if binding.target != nil && c.checkWrite(binding.target, ancestors) {
+			c.checkTransfer(binding.target, binding.source, c.pass.TypesInfo.TypeOf(binding.target), ancestors)
+		}
 	}
 }
 
@@ -96,4 +96,77 @@ func (c *checker) enclosingResults(ancestors []ast.Node) *types.Tuple {
 		}
 	}
 	return nil
+}
+
+// A pointer element's literal can elide its address operator.
+func compositeShape(t types.Type) types.Type {
+	shape := t.Underlying()
+	if pointer, ok := shape.(*types.Pointer); ok {
+		return pointer.Elem().Underlying()
+	}
+	return shape
+}
+
+func (c *checker) literalElementType(shape types.Type, element ast.Expr, index int) types.Type {
+	switch shape := shape.(type) {
+	case *types.Struct:
+		if pair, keyed := element.(*ast.KeyValueExpr); keyed {
+			return c.pass.TypesInfo.TypeOf(pair.Key)
+		}
+		return shape.Field(index).Type()
+	case *types.Slice:
+		return shape.Elem()
+	case *types.Array:
+		return shape.Elem()
+	case *types.Map:
+		return shape.Elem()
+	}
+	return nil
+}
+
+func rangeTypes(t types.Type) (key, value types.Type) {
+	shape := rangeUnderlying(t)
+	if pointer, ok := shape.(*types.Pointer); ok {
+		shape = pointer.Elem().Underlying()
+	}
+	switch shape := shape.(type) {
+	case *types.Array:
+		return types.Typ[types.Int], shape.Elem()
+	case *types.Slice:
+		return types.Typ[types.Int], shape.Elem()
+	case *types.Map:
+		return shape.Key(), shape.Elem()
+	case *types.Chan:
+		return shape.Elem(), nil
+	case *types.Basic:
+		if shape.Info()&types.IsString != 0 {
+			return types.Typ[types.Int], types.Typ[types.Rune]
+		}
+		return t, nil
+	case *types.Signature:
+		yield, ok := rangeUnderlying(shape.Params().At(0).Type()).(*types.Signature)
+		if !ok {
+			return nil, nil
+		}
+		params := yield.Params()
+		switch params.Len() {
+		case 1:
+			return params.At(0).Type(), nil
+		case 2:
+			return params.At(0).Type(), params.At(1).Type()
+		}
+	}
+	return nil, nil
+}
+
+func rangeUnderlying(t types.Type) types.Type {
+	if parameter, ok := types.Unalias(t).(*types.TypeParam); ok {
+		terms, err := typeparams.NormalTerms(parameter)
+		if err != nil || len(terms) == 0 {
+			return nil
+		}
+		// The type checker requires a common shape for the range operand and yield.
+		return terms[0].Type().Underlying()
+	}
+	return t.Underlying()
 }

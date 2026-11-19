@@ -12,12 +12,17 @@ type resultLength struct {
 	Length sourceLength
 }
 
+type lengthDefinition struct {
+	value ast.Expr
+	end   token.Pos
+}
+
 // Length facts describe only the returned slice header, independently of its
 // contents. Filling its elements or updating a cursor does not change its length.
 type lengthEvaluator struct {
 	builder     *contractBuilder
 	signature   *types.Signature
-	definitions map[*types.Var]ast.Expr
+	definitions map[*types.Var]lengthDefinition
 	writes      map[*types.Var]int
 	escaped     map[*types.Var]bool
 	initializes map[*types.Var]bool
@@ -39,7 +44,7 @@ func (b *contractBuilder) inferLengths(object *types.Func, declaration *ast.Func
 	}
 	e := lengthEvaluator{
 		builder: b, signature: signature,
-		definitions: make(map[*types.Var]ast.Expr),
+		definitions: make(map[*types.Var]lengthDefinition),
 		writes:      make(map[*types.Var]int), escaped: make(map[*types.Var]bool),
 		initializes: make(map[*types.Var]bool),
 	}
@@ -91,22 +96,22 @@ func (b *contractBuilder) inferLengths(object *types.Func, declaration *ast.Func
 						source = node.Rhs[index]
 					}
 				}
-				e.recordWrite(target, source)
+				e.recordWrite(target, source, node.End())
 			}
 		case *ast.ValueSpec:
 			for index, name := range node.Names {
 				if len(node.Values) == len(node.Names) {
-					e.recordWrite(name, node.Values[index])
+					e.recordWrite(name, node.Values[index], node.End())
 				}
 			}
 		case *ast.IncDecStmt:
-			e.recordWrite(node.X, nil)
+			e.recordWrite(node.X, nil, node.End())
 		case *ast.RangeStmt:
 			if node.Key != nil {
-				e.recordWrite(node.Key, nil)
+				e.recordWrite(node.Key, nil, node.End())
 			}
 			if node.Value != nil {
-				e.recordWrite(node.Value, nil)
+				e.recordWrite(node.Value, nil, node.End())
 			}
 		case *ast.UnaryExpr:
 			if node.Op == token.AND {
@@ -166,11 +171,11 @@ func (b *contractBuilder) inferLengths(object *types.Func, declaration *ast.Func
 	return lengths
 }
 
-func (e *lengthEvaluator) recordWrite(target, source ast.Expr) {
+func (e *lengthEvaluator) recordWrite(target, source ast.Expr, end token.Pos) {
 	if identifier, ok := ast.Unparen(target).(*ast.Ident); ok {
 		if variable, ok := expressionObject(e.builder.pass.TypesInfo, identifier).(*types.Var); ok {
 			e.writes[variable]++
-			e.definitions[variable] = source
+			e.definitions[variable] = lengthDefinition{source, end}
 		}
 	}
 }
@@ -184,12 +189,14 @@ func (e *lengthEvaluator) variable(variable *types.Var, fromLen bool, use token.
 			return sourceLength{Constant: -1, Parameter: index, FromLen: fromLen}, true
 		}
 	}
-	if e.writes[variable] == 1 && e.initializes[variable] && e.definitions[variable] != nil &&
-		e.definitions[variable].Pos() < min(use, e.firstReturn) {
+	definition := e.definitions[variable]
+	// Each right-hand side reads the pre-assignment state, including later
+	// expressions in a simultaneous assignment.
+	if e.writes[variable] == 1 && e.initializes[variable] && definition.value != nil && definition.end <= min(use, e.firstReturn) {
 		if fromLen {
-			return e.slice(e.definitions[variable], depth+1)
+			return e.slice(definition.value, depth+1)
 		}
-		return e.length(e.definitions[variable], depth+1)
+		return e.length(definition.value, depth+1)
 	}
 	return sourceLength{}, false
 }
@@ -223,11 +230,11 @@ func (e *lengthEvaluator) slice(expression ast.Expr, depth int) (sourceLength, b
 					if result.Length.Parameter < 0 {
 						return result.Length, true
 					}
-					if argument := callParameter(e.builder.pass.TypesInfo, call, result.Length.Parameter); argument != nil {
+					if argument := callParameter(e.builder.pass.TypesInfo, call, result.Length.Parameter); argument.expression != nil && argument.result < 0 {
 						if result.Length.FromLen {
-							return e.slice(argument, depth+1)
+							return e.slice(argument.expression, depth+1)
 						}
-						return e.length(argument, depth+1)
+						return e.length(argument.expression, depth+1)
 					}
 				}
 			}

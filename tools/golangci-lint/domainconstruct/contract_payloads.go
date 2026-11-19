@@ -173,6 +173,12 @@ func (b *contractBuilder) payloadExpression(expression ast.Expr, result int, env
 	if t == nil {
 		return nil
 	}
+	if _, pointer := t.Underlying().(*types.Pointer); pointer {
+		if conversion, ok := expression.(*ast.CallExpr); ok && len(conversion.Args) == 1 &&
+			b.pass.TypesInfo.Types[conversion.Fun].IsType() && b.pass.TypesInfo.Types[conversion.Args[0]].IsNil() {
+			return nil // A boxed nil pointer does not contain a pointee.
+		}
+	}
 	if _, boxed := t.Underlying().(*types.Interface); !boxed {
 		work := workBudget(maxInferenceWork)
 		if described := describePayload(t, make(map[types.Type]bool), 0, &work); described.Kind != payloadUnknown {

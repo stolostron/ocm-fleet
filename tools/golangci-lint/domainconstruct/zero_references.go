@@ -58,13 +58,16 @@ func (c *zeroChecker) projectedReference(value ssa.Value, path []int, seen map[v
 // referenced contents at assignment time. Multiple predecessors must agree;
 // unknown effects and loop-carried mutations retain no assumed origin.
 func (c *zeroChecker) storedReference(location address, point flowPoint) ssa.Value {
+	if slices.Contains(location.path, -1) {
+		return nil
+	}
 	search := &referenceSearch{active: make(map[memoryVisit]bool)}
 	value, _ := c.referenceOrigin(location, point, search)
 	return value
 }
 
 func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search *referenceSearch) (origin ssa.Value, known bool) {
-	visit := memoryVisit{point, location.root, pathKey(location.path)}
+	visit := memoryVisit{point: point, root: location.root, path: pathKey(location.path)}
 	if result, found := search.completed[visit]; found {
 		return result.value, result.known
 	}
@@ -93,7 +96,10 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 			return value, value != nil
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
-			if target, ok := c.collectionAddress(store.Addr); ok && target.root == location.root {
+			if target, known := c.collectionAddress(store.Addr); known && (mutationTarget{address: location}).overlaps(target) {
+				if target.root != location.root {
+					return nil, false
+				}
 				if sameStorage(target, location) {
 					return store.Val, true
 				}
@@ -110,8 +116,14 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 		if _, scheduled := instruction.(*ssa.Defer); scheduled {
 			continue
 		}
+		if borrowedRoot(location.root) && channelHandoff(instruction) {
+			return nil, false
+		}
 		if call, ok := instruction.(ssa.CallInstruction); ok {
 			common := call.Common()
+			if _, launched := instruction.(*ssa.Go); launched && c.callMayMutate(common, location, flowPoint{point.block, index}) {
+				return nil, false
+			}
 			if builtin, ok := common.Value.(*ssa.Builtin); ok {
 				switch builtin.Name() {
 				case "append", "clear", "copy":
@@ -121,7 +133,7 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 							return nil, false
 						}
 						offset := int64(location.path[len(destination.storage.path)])
-						if offset < 0 || offset >= destination.start && (destination.end < 0 || offset < destination.end) {
+						if offset < 0 || offset >= destination.start && (destination.possibleEnd() < 0 || offset < destination.possibleEnd()) {
 							return nil, false
 						}
 					}

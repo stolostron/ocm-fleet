@@ -14,6 +14,8 @@ import (
 // supplies concrete type arguments. They describe construction, not validation.
 type sourceKind uint8
 
+const maxSourceDepth = 8
+
 const (
 	sourceUnknown sourceKind = iota
 	sourceZero
@@ -91,9 +93,17 @@ func (b *contractBuilder) inferSources(object *types.Func, declaration *ast.Func
 		}
 		var alternatives []valueSource
 		for _, returned := range e.returns {
+			// Count the expanded shape even when source subtrees share slices.
+			// Fact comparison and export consume the expanded representation.
+			if !sourceFits(returned[index], 0, &e.work) {
+				return nil
+			}
 			alternatives = append(alternatives, returned[index])
 		}
 		value := combineSources(alternatives)
+		if value.Kind == sourceChoice && !sourceFits(value, 0, &e.work) {
+			return nil
+		}
 		if value.Kind != sourceUnknown {
 			results = append(results, resultSource{index, value})
 		}
@@ -139,7 +149,7 @@ func (e *sourceEvaluator) statement(statement ast.Stmt, state sourceState) []sou
 	if !e.complete {
 		return nil
 	}
-	nilness := nilnessEvaluator{builder: e.builder, complete: true, work: e.work}
+	nilness := nilnessEvaluator{builder: e.builder, complete: true, work: &e.work}
 	switch statement := statement.(type) {
 	case *ast.ReturnStmt:
 		values := make([]valueSource, e.signature.Results().Len())
@@ -221,7 +231,6 @@ func (e *sourceEvaluator) statement(statement ast.Stmt, state sourceState) []sou
 			}
 		}
 		nilness.statement(statement, state.errors)
-		e.work = nilness.work
 		e.complete = e.complete && nilness.complete
 	case *ast.DeclStmt:
 		declaration, ok := statement.Decl.(*ast.GenDecl)
@@ -242,7 +251,6 @@ func (e *sourceEvaluator) statement(statement ast.Stmt, state sourceState) []sou
 			}
 		}
 		nilness.statement(statement, state.errors)
-		e.work = nilness.work
 		e.complete = e.complete && nilness.complete
 	case *ast.ExprStmt:
 		if call, ok := statement.X.(*ast.CallExpr); ok {
@@ -258,6 +266,10 @@ func (e *sourceEvaluator) statement(statement ast.Stmt, state sourceState) []sou
 }
 
 func (e *sourceEvaluator) expression(expression ast.Expr, state sourceState) valueSource {
+	if !e.complete || !e.work.take() {
+		e.complete = false
+		return valueSource{}
+	}
 	expression = ast.Unparen(expression)
 	if value := e.builder.pass.TypesInfo.Types[expression]; value.IsNil() || zeroLiteral(value.Value) {
 		source := valueSource{Kind: sourceZero}
@@ -286,6 +298,12 @@ func (e *sourceEvaluator) expression(expression ast.Expr, state sourceState) val
 		}
 	case *ast.CompositeLit:
 		if structure, ok := e.builder.pass.TypesInfo.TypeOf(expression).Underlying().(*types.Struct); ok {
+			count := workBudget(structure.NumFields())
+			if count > e.work {
+				e.complete = false
+				return valueSource{}
+			}
+			e.work -= count
 			fields := make([]valueSource, structure.NumFields())
 			for index := range fields {
 				fields[index].Kind = sourceZero
@@ -294,6 +312,10 @@ func (e *sourceEvaluator) expression(expression ast.Expr, state sourceState) val
 				if keyed, ok := element.(*ast.KeyValueExpr); ok {
 					field := expressionObject(e.builder.pass.TypesInfo, keyed.Key)
 					for position := range structure.NumFields() {
+						if !e.work.take() {
+							e.complete = false
+							return valueSource{}
+						}
 						if structure.Field(position) == field {
 							fields[position] = e.expression(keyed.Value, state)
 						}
@@ -314,6 +336,10 @@ func (e *sourceEvaluator) expression(expression ast.Expr, state sourceState) val
 }
 
 func (e *sourceEvaluator) call(call *ast.CallExpr, result int, state sourceState) valueSource {
+	if !e.complete || !e.work.take() {
+		e.complete = false
+		return valueSource{}
+	}
 	if e.builder.pass.TypesInfo.Types[call.Fun].IsType() && len(call.Args) == 1 {
 		if types.Identical(e.builder.pass.TypesInfo.TypeOf(call), e.builder.pass.TypesInfo.TypeOf(call.Args[0])) {
 			return e.expression(call.Args[0], state)
@@ -352,13 +378,24 @@ func (e *sourceEvaluator) call(call *ast.CallExpr, result int, state sourceState
 		if fact := e.builder.function(function); fact != nil {
 			for _, source := range fact.Sources {
 				if source.Result == result {
-					work := workBudget(maxInferenceWork)
-					return substituteSource(source.Value, func(parameter int) valueSource {
-						if argument := callParameter(e.builder.pass.TypesInfo, call, parameter); argument != nil {
-							return e.expression(argument, state)
+					arguments := make(map[int]valueSource)
+					bound, complete := substituteSource(source.Value, func(parameter int) valueSource {
+						if value, evaluated := arguments[parameter]; evaluated {
+							return value
 						}
-						return valueSource{}
-					}, 0, &work)
+						var value valueSource
+						if argument := callParameter(e.builder.pass.TypesInfo, call, parameter); argument.expression != nil {
+							if argument.result < 0 {
+								value = e.expression(argument.expression, state)
+							} else if spread, ok := ast.Unparen(argument.expression).(*ast.CallExpr); ok {
+								value = e.call(spread, argument.result, state)
+							}
+						}
+						arguments[parameter] = value
+						return value
+					}, 0, &e.work)
+					e.complete = e.complete && complete
+					return bound
 				}
 			}
 		}
@@ -389,16 +426,21 @@ func projectSource(source valueSource, path []int) valueSource {
 	return source
 }
 
-func substituteSource(source valueSource, parameter func(int) valueSource, depth int, work *workBudget) valueSource {
-	if depth > 8 || !work.take() {
-		return valueSource{}
+func substituteSource(source valueSource, parameter func(int) valueSource, depth int, work *workBudget) (valueSource, bool) {
+	if depth > maxSourceDepth || !work.take() {
+		return valueSource{}, false
 	}
 	if source.Kind == sourceParameter {
-		return projectSource(parameter(source.Parameter), source.Path)
+		argument := projectSource(parameter(source.Parameter), source.Path)
+		return argument, sourceFits(argument, depth, work)
 	}
 	source.Values = slices.Clone(source.Values)
 	for index, child := range source.Values {
-		source.Values[index] = substituteSource(child, parameter, depth+1, work)
+		bound, complete := substituteSource(child, parameter, depth+1, work)
+		if !complete {
+			return valueSource{}, false
+		}
+		source.Values[index] = bound
 	}
 	if source.Kind == sourceSlice && source.Length.Parameter >= 0 {
 		argument := parameter(source.Length.Parameter)
@@ -409,9 +451,21 @@ func substituteSource(source valueSource, parameter func(int) valueSource, depth
 		}
 	}
 	if source.Kind == sourceChoice {
-		return combineSources(source.Values)
+		return combineSources(source.Values), true
 	}
-	return source
+	return source, true
+}
+
+func sourceFits(source valueSource, depth int, work *workBudget) bool {
+	if depth > maxSourceDepth || !work.take() {
+		return false
+	}
+	for _, child := range source.Values {
+		if !sourceFits(child, depth+1, work) {
+			return false
+		}
+	}
+	return true
 }
 
 func combineSources(values []valueSource) valueSource {

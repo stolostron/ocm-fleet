@@ -73,6 +73,22 @@ func JSONExcludedFields() {
 	}{})
 }
 
+//domain:constructors NewProtectedRecord
+type ProtectedRecord struct {
+	Value string
+}
+
+func NewProtectedRecord(raw string) ProtectedRecord { return ProtectedRecord{Value: raw} }
+
+func PromotedPolicy(record ProtectedRecord) {
+	json.Marshal(struct{ ProtectedRecord }{record}) // want "at path ProtectedRecord: .*does not declare json serialization"
+	json.Marshal(struct {
+		ProtectedRecord
+		Value string
+	}{record, "shadow"})
+	json.Marshal(struct{ Payload any }{Payload: struct{ ProtectedRecord }{record}}) // want "at path Payload[.]ProtectedRecord: .*does not declare json serialization"
+}
+
 func DifferentMapCodecs(value map[encodingvalues.TextID]encodingvalues.TextID) {
 	json.Marshal(value) // want "needs a plain string map key"
 }

@@ -89,8 +89,8 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 		if len(source.Values) != 0 {
 			operand := source.Values[0]
 			if basic, ok := t.Underlying().(*types.Basic); ok && basic.Info()&types.IsString != 0 &&
-				operand.Kind == sourceZero && operand.ZeroKind == constant.Int {
-				return nil // Integer zero converts to a one-rune string.
+				integerSource(operand, &call.Call, path) {
+				return nil // An integer conversion always produces a one-rune string.
 			}
 			if problem, handled := c.narrowIntegerSource(operand, &call.Call, path, t, context.use); handled {
 				return problem
@@ -100,6 +100,22 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 		}
 	}
 	return nil
+}
+
+func integerSource(source valueSource, call *ssa.CallCommon, path []int) bool {
+	switch source.Kind {
+	case sourceZero:
+		return source.ZeroKind == constant.Int
+	case sourceParameter:
+		if argument := contractArgument(call, source.Parameter); argument != nil {
+			projection := append(append([]int(nil), source.Path...), path...)
+			if actual := projectedType(argument.Type(), projection); actual != nil {
+				basic, ok := actual.Underlying().(*types.Basic)
+				return ok && basic.Info()&types.IsInteger != 0
+			}
+		}
+	}
+	return false
 }
 
 func (c *zeroChecker) narrowIntegerSource(source valueSource, call *ssa.CallCommon, path []int, target types.Type, use valueUse) (*zeroProblem, bool) {
@@ -178,7 +194,8 @@ func (c *zeroChecker) sliceSourceView(source valueSource, call *ssa.Call, value 
 		argument := contractArgument(&call.Call, source.Length.Parameter)
 		if source.Length.FromLen {
 			if original, ok := c.collectionOf(argument); ok {
-				view.end, view.length = original.end-original.start, original.length
+				view.end, view.length = original.size(), original.length
+				view.lengthBase = original.lengthBase - original.start
 			}
 		} else if length, known := integerValue(argument); known {
 			view.end = length

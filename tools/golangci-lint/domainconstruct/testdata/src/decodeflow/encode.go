@@ -118,6 +118,21 @@ func convertedBox(id encodingvalues.ID) (any, error) {
 	return any(string(id)), errors.New("missing")
 }
 
+func nilPointerBox() (any, error) {
+	return (*encodingvalues.ID)(nil), errors.New("missing")
+}
+
+func nonnilPointerBox() (any, error) {
+	return new(encodingvalues.ID), errors.New("missing")
+}
+
+func UsePointerBoxes(use func(any)) {
+	value, _ := nilPointerBox()
+	use(value)
+	value, _ = nonnilPointerBox()
+	use(value) // want "argument may be an empty .*ID"
+}
+
 func deferredFailureBox(id encodingvalues.ID) (value any, err error) {
 	defer func() { err = errors.New("missing") }()
 	return id, nil

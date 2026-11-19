@@ -19,8 +19,9 @@ const (
 // summarized. Conditional writes, aliases, escaping addresses, and unsupported
 // bodies remain possible mutations; a function's name grants no contract.
 type parameterEffect struct {
-	Parameter int
-	Kind      mutationKind
+	Parameter        int
+	Kind             mutationKind
+	LocalStorageOnly bool
 }
 
 func (b *contractBuilder) inferEffects(object *types.Func, declaration *ast.FuncDecl) []parameterEffect {
@@ -39,15 +40,16 @@ func (b *contractBuilder) inferEffects(object *types.Func, declaration *ast.Func
 		if _, scalar := parameter.Type().Underlying().(*types.Basic); scalar {
 			continue // Scalar arguments cannot expose mutable caller storage.
 		}
-		if kind := b.parameterEffect(parameter, declaration.Body); kind != mutationUnknown {
-			effects = append(effects, parameterEffect{index, kind})
+		if kind, localOnly := b.parameterEffect(parameter, declaration.Body); kind != mutationUnknown {
+			effects = append(effects, parameterEffect{index, kind, localOnly})
 		}
 	}
 	return effects
 }
 
-func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockStmt) mutationKind {
+func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockStmt) (mutationKind, bool) {
 	kind := mutationReadOnly
+	localOnly := false
 	// Record only direct writes in the function's top-level statement list.
 	// Early exits and control flow prevent claiming a definite postcondition.
 	writes := make(map[*ast.StarExpr]mutationKind)
@@ -82,6 +84,14 @@ func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockS
 		if call, ok := node.(*ast.CallExpr); ok && lastWrite.IsValid() && call.Pos() >= lastWrite &&
 			!b.pass.TypesInfo.Types[call.Fun].IsType() {
 			kind = mutationUnknown
+		}
+		if assignment, ok := node.(*ast.AssignStmt); ok && lastWrite.IsValid() && assignment.Pos() >= lastWrite {
+			for _, target := range assignment.Lhs {
+				if variable, ok := expressionObject(b.pass.TypesInfo, target).(*types.Var); ok &&
+					variable.Pkg() != nil && variable.Parent() == variable.Pkg().Scope() {
+					localOnly = true // A borrowed argument may address the same global.
+				}
+			}
 		}
 		if id, ok := node.(*ast.Ident); ok && b.pass.TypesInfo.ObjectOf(id) == parameter {
 			parent := ancestors[len(ancestors)-1]
@@ -137,5 +147,5 @@ func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockS
 		ancestors = append(ancestors, node)
 		return true
 	})
-	return kind
+	return kind, localOnly
 }

@@ -32,14 +32,24 @@ func (view collectionView) size() int64 {
 	return max(0, view.end-view.start)
 }
 
+// A dynamically shifted view has a length, but can reach any slot between
+// its minimum start and the original backing capacity.
+func (view collectionView) possibleEnd() int64 {
+	if view.dynamicStart && view.size() != 0 {
+		return view.capEnd
+	}
+	return view.end
+}
+
 type elementRange struct{ start, end int64 }
 
 type collectionVisit struct {
-	point flowPoint
-	root  ssa.Value
-	path  string
-	start int64
-	end   int64
+	point   flowPoint
+	root    ssa.Value
+	path    string
+	start   int64
+	end     int64
+	cleanup int
 }
 
 func (c *zeroChecker) checkCollectionBuiltin(instruction ssa.CallInstruction, point flowPoint, context flowContext) bool {
@@ -278,9 +288,11 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 				}
 			}
 			if value.Max != nil {
-				view.capEnd = -1
-				if max, known := integerValue(value.Max); known && !view.dynamicStart {
-					view.capEnd = view.start + max
+				if !view.dynamicStart {
+					view.capEnd = -1
+					if max, known := integerValue(value.Max); known {
+						view.capEnd = view.start + max
+					}
 				}
 			}
 			view.start += low
@@ -324,10 +336,18 @@ func (c *zeroChecker) collectionStorageProblem(view collectionView, point flowPo
 }
 
 func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPoint, context flowContext, values map[valueVisit]bool, covered []elementRange, seen map[collectionVisit]bool) *zeroProblem {
-	if !context.possible || view.end >= 0 && view.start >= view.end || rangeCovered(covered, view.start, view.end) {
+	view = boundedView(view, context)
+	if !context.possible || view.size() == 0 {
 		return nil
 	}
-	visit := collectionVisit{point, view.storage.root, pathKey(view.storage.path), view.start, view.end}
+	if view.dynamicStart {
+		view.end, view.length, view.dynamicStart = view.possibleEnd(), nil, false
+		return c.collectionAtProblem(view, point, use, context, values, covered, seen).uncertain()
+	}
+	if rangeCovered(covered, view.start, view.end) {
+		return nil
+	}
+	visit := collectionVisit{point, view.storage.root, pathKey(view.storage.path), view.start, view.end, context.cleanup.first}
 	if seen[visit] || !c.work.take() {
 		return nil
 	}
@@ -379,6 +399,9 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 					remaining := destination.path[len(view.storage.path)+1:]
 					if len(remaining) == 0 {
 						if problem := c.problem(store.Val, nil, view.element, use, context, values); problem != nil {
+							if offset < 0 {
+								problem = problem.uncertain()
+							}
 							problem.path = fieldPath(elementLabel(offset), problem.path)
 							return problem.step("assignment", store.Pos(), "assign collection element "+elementLabel(offset))
 						}
@@ -389,31 +412,43 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 							return problem
 						}
 					}
-					if offset >= 0 {
-						covered = coverRange(covered, offset, offset+1)
+					if offset < 0 {
+						before := flowPoint{point.block, index}
+						return c.collectionAtProblem(view, before, use, context, values, covered, seen).
+							afterUnknownMutation(store.Pos(), "indexed write", "collection elements")
 					}
+					covered = coverRange(covered, offset, offset+1)
 				}
 			}
 		}
-		if _, scheduled := instruction.(*ssa.Defer); scheduled {
+		if rangeCovered(covered, view.start, view.end) {
+			return nil
+		}
+		before := flowPoint{point.block, index}
+		switch instruction.(type) {
+		case ssa.CallInstruction, *ssa.RunDefers:
+		default:
 			continue
 		}
-		if call, ok := instruction.(ssa.CallInstruction); ok {
+		for execution := range c.executedCallsAt(instruction, before, context) {
+			call, before, context := execution.call, execution.before, execution.context
 			common := call.Common()
 			if builtin, ok := common.Value.(*ssa.Builtin); ok {
-				if _, synchronous := instruction.(*ssa.Call); !synchronous {
+				if _, asynchronous := call.(*ssa.Go); asynchronous {
 					continue
 				}
-				before := flowPoint{point.block, index}
 				switch builtin.Name() {
 				case "clear":
-					if destination, ok := c.collectionOf(common.Args[0]); ok && sameStorage(destination.storage, view.storage) && rangesOverlap(destination.start, destination.end, view.start, view.end) {
+					if destination, ok := c.collectionOf(common.Args[0]); ok && sameStorage(destination.storage, view.storage) {
 						destination = boundedView(destination, context)
-						if problem := c.unfilledCollection(intersectView(view, destination.start, destination.end), covered, reasonCleared, context.use); problem != nil {
-							if destination.end < 0 {
+						if destination.size() == 0 || !rangesOverlap(destination.start, destination.possibleEnd(), view.start, view.end) {
+							continue
+						}
+						if problem := c.unfilledCollection(intersectView(view, destination.start, destination.possibleEnd()), covered, reasonCleared, context.use); problem != nil {
+							if destination.end < 0 || destination.dynamicStart || execution.conditional {
 								problem = problem.uncertain()
 							}
-							return problem.step("source", instruction.Pos(), "clear sets collection elements to zero")
+							return problem.step("source", call.Pos(), "clear sets collection elements to zero")
 						}
 					}
 				case "copy":
@@ -421,8 +456,8 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 						if source, ok := c.collectionOf(common.Args[1]); ok && !destination.dynamicStart && !source.dynamicStart {
 							destination, source = boundedView(destination, context), boundedView(source, context)
 							transferred := intersectView(view, destination.start, endFromCount(destination.start, minEnd(destination.size(), source.size())))
-							covers := copyCoversView(destination, source, view)
-							definite := destination.end >= 0 && source.end >= 0 || covers
+							covers := !execution.conditional && copyCoversView(destination, source, view)
+							definite := !execution.conditional && (destination.end >= 0 && source.end >= 0 || covers)
 							if problem := c.copiedCollectionProblem(source, transferred, destination.start, before, use, context, values, covered, seen); problem != nil {
 								if !definite {
 									problem = problem.uncertain()
@@ -450,7 +485,6 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 					}
 				}
 			} else {
-				before := flowPoint{point.block, index}
 				for _, remaining := range uncoveredViews(view, covered) {
 					storage := mutationTarget{remaining.storage, &elementRange{remaining.start, remaining.end}}
 					if c.decoderMayInvalidate(call, storage, before, context) {
@@ -632,7 +666,7 @@ func (c *zeroChecker) collectionAddress(value ssa.Value) (address, bool) {
 	if index, ok := value.(*ssa.IndexAddr); ok {
 		if view, ok := c.collectionOf(index.X); ok {
 			offset := -1
-			if fixed, known := integerValue(index.Index); known {
+			if fixed, known := integerValue(index.Index); known && !view.dynamicStart {
 				offset = int(view.start + fixed)
 			}
 			return address{root: view.storage.root, path: append(slices.Clone(view.storage.path), offset)}, true

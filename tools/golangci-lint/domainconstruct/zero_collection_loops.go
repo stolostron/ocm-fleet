@@ -12,7 +12,7 @@ import (
 // checks after an assignment are evaluated at the back edge, so early returns
 // on parse failure do not invalidate a successful fill.
 func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicBlock, use valueUse, seen map[valueVisit]bool) bool {
-	if len(exit.Preds) != 1 || len(header.Instrs) == 0 || !c.work.take() {
+	if view.dynamicStart || len(exit.Preds) != 1 || len(header.Instrs) == 0 || !c.work.take() {
 		return false
 	}
 	branch, ok := header.Instrs[len(header.Instrs)-1].(*ssa.If)
@@ -33,6 +33,7 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 		return false
 	}
 	assignments := make(map[*ssa.Store]bool)
+	handoff := false
 	for _, block := range header.Parent().Blocks {
 		if !header.Dominates(block) || exit.Dominates(block) {
 			continue
@@ -44,6 +45,7 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 			if _, scheduled := instruction.(*ssa.Defer); scheduled {
 				continue
 			}
+			handoff = handoff || channelHandoff(instruction)
 			if call, ok := instruction.(ssa.CallInstruction); ok {
 				point := flowPoint{block, index}
 				if builtin, builtinCall := call.Common().Value.(*ssa.Builtin); builtinCall {
@@ -63,7 +65,7 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 						return false
 					}
 					target, ok := c.collectionOf(indexed.X)
-					if !ok || target.start != 0 || !sameStorage(target.storage, view.storage) {
+					if !ok || target.dynamicStart || target.start != 0 || !sameStorage(target.storage, view.storage) {
 						return false
 					}
 					assignments[store] = true
@@ -73,7 +75,7 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 			}
 		}
 	}
-	if len(assignments) == 0 {
+	if len(assignments) == 0 || handoff && c.collectionSharedBeforeExit(view, exit) {
 		return false
 	}
 	for _, backEdge := range backEdges {
@@ -85,6 +87,41 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 		}
 	}
 	return true
+}
+
+func (c *zeroChecker) collectionSharedBeforeExit(view collectionView, exit *ssa.BasicBlock) bool {
+	if borrowedRoot(view.storage.root) {
+		return true
+	}
+	storage := mutationTarget{view.storage, &elementRange{view.start, view.end}}
+	for _, block := range exit.Parent().Blocks {
+		if exit.Dominates(block) {
+			continue
+		}
+		for index, instruction := range block.Instrs {
+			if !c.work.take() {
+				return true
+			}
+			point := flowPoint{block, index}
+			switch instruction := instruction.(type) {
+			case *ssa.Go:
+				if c.collectionMutation(instruction.Common(), view, point) != mutationReadOnly {
+					return true
+				}
+			case *ssa.Send:
+				if c.mayReferenceStorage(instruction.X, storage, point, make(map[ssa.Value]bool)) {
+					return true
+				}
+			case *ssa.Select:
+				for _, state := range instruction.States {
+					if state.Send != nil && c.mayReferenceStorage(state.Send, storage, point, make(map[ssa.Value]bool)) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (c *zeroChecker) filledOnPaths(view collectionView, header, block *ssa.BasicBlock, assignments map[*ssa.Store]bool, context flowContext, values map[valueVisit]bool, seen map[*ssa.BasicBlock]bool) bool {

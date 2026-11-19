@@ -16,7 +16,12 @@ type structField struct {
 	indirect bool
 }
 
-type jsonFieldCache map[*types.Struct][]structField
+type jsonFieldSelection struct {
+	fields   []structField
+	complete bool
+}
+
+type jsonFieldCache map[*types.Struct]jsonFieldSelection
 
 func (cache *jsonFieldCache) fields(shape *types.Struct, json bool) iter.Seq[structField] {
 	return func(yield func(structField) bool) {
@@ -29,15 +34,18 @@ func (cache *jsonFieldCache) fields(shape *types.Struct, json bool) iter.Seq[str
 			}
 			return
 		}
-		fields, known := (*cache)[shape]
+		selection, known := (*cache)[shape]
 		if !known {
-			fields = findJSONFields(shape)
+			selection = findJSONFields(shape)
 			if *cache == nil {
 				*cache = make(jsonFieldCache)
 			}
-			(*cache)[shape] = fields
+			(*cache)[shape] = selection
 		}
-		for _, field := range fields {
+		if !selection.complete {
+			return // Unseen fields may shadow the candidates we found.
+		}
+		for _, field := range selection.fields {
 			if !yield(field) {
 				return
 			}
@@ -54,10 +62,11 @@ type jsonFieldCandidate struct {
 // JSON promotes fields from anonymous structs and chooses the shallowest
 // field for each wire name. At equal depth a tagged field takes precedence.
 // Ties at the winning depth and tag precedence omit the name entirely.
-func findJSONFields(root *types.Struct) []structField {
+func findJSONFields(root *types.Struct) jsonFieldSelection {
 	candidates := make(map[string]jsonFieldCandidate)
 	active := make(map[*types.Struct]bool)
 	work := workBudget(maxInferenceWork)
+	complete := true
 	var collect func(*types.Struct, []int, string, bool)
 	collect = func(shape *types.Struct, indices []int, path string, indirect bool) {
 		if active[shape] {
@@ -67,6 +76,7 @@ func findJSONFields(root *types.Struct) []structField {
 		defer delete(active, shape)
 		for index := range shape.NumFields() {
 			if !work.take() {
+				complete = false
 				return
 			}
 			field := shape.Field(index)
@@ -111,8 +121,8 @@ func findJSONFields(root *types.Struct) []structField {
 		}
 	}
 	collect(root, nil, "", false)
-	if work.exhausted() {
-		return nil
+	if !complete {
+		return jsonFieldSelection{}
 	}
 	fields := make([]structField, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -121,7 +131,7 @@ func findJSONFields(root *types.Struct) []structField {
 		}
 	}
 	slices.SortFunc(fields, func(first, second structField) int { return slices.Compare(first.indices, second.indices) })
-	return fields
+	return jsonFieldSelection{fields, true}
 }
 
 func validJSONName(name string) bool {

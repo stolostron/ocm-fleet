@@ -61,8 +61,8 @@ func (c *checker) genericIdentityConversion(source valueSource, target types.Typ
 	if source.Kind != sourceParameter {
 		return false
 	}
-	if argument := callParameter(c.pass.TypesInfo, call, source.Parameter); argument != nil {
-		t := projectedType(c.pass.TypesInfo.TypeOf(argument), source.Path)
+	if argument := callParameter(c.pass.TypesInfo, call, source.Parameter); argument.expression != nil {
+		t := projectedType(argument.actual, source.Path)
 		return t != nil && types.Identical(t, target)
 	}
 	return false

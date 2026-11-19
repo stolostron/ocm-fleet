@@ -20,9 +20,11 @@ const (
 )
 
 type flowContext struct {
-	facts    map[ssa.Value]truth
-	possible bool
-	use      valueUse
+	facts           map[ssa.Value]truth
+	possible        bool
+	use             valueUse
+	cleanup         cleanupPosition
+	statusMayChange bool
 }
 
 func (context flowContext) clone() flowContext {
@@ -72,6 +74,8 @@ func (c *zeroChecker) edgeContext(context flowContext, block *ssa.BasicBlock, in
 	// far beyond this predecessor can carry many more facts than it dominates.
 	edge := c.contextAt(predecessor).cloneFor(len(context.facts))
 	edge.use = context.use
+	edge.cleanup = context.cleanup
+	edge.statusMayChange = context.statusMayChange
 	if testingExitBlock(predecessor) {
 		edge.possible = false
 		return edge
@@ -284,6 +288,11 @@ func (c *zeroChecker) truthInContext(value ssa.Value, context flowContext, seen 
 		}
 		state := unknown
 		for index, edge := range value.Edges {
+			if instruction, local := edge.(ssa.Instruction); local && instruction.Block() != nil &&
+				value.Block().Dominates(value.Block().Preds[index]) && value.Block().Dominates(instruction.Block()) {
+				// The current context cannot prove a value from a prior iteration.
+				return unknown
+			}
 			actual := c.truthInContext(edge, context, seen, completed)
 			if actual == unknown || index > 0 && actual != state {
 				return unknown
