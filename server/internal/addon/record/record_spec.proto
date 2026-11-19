@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package ocm.record.v1alpha;
+
+import "buf/validate/validate.proto";
+import "google/api/field_behavior.proto";
+
+// RecordSpec is a small, fully replaceable configuration record. Accepting a
+// record creates no external infrastructure; readiness means Fleet accepted it.
+message RecordSpec {
+  // Values are the desired configuration. An empty map clears the record.
+  map<string, string> values = 1 [
+    (google.api.field_behavior) = OPTIONAL,
+    (buf.validate.field).map = {
+      max_pairs: 32
+      keys: {string: {min_len: 1, max_len: 128}}
+      values: {string: {max_len: 1024}}
+    }
+  ];
+}

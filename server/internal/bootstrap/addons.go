@@ -16,6 +16,7 @@ import (
 
 	kindaddon "github.com/stolostron/ocm-fleet/server/internal/addon/kind"
 	kubernetesaddon "github.com/stolostron/ocm-fleet/server/internal/addon/kubernetes"
+	"github.com/stolostron/ocm-fleet/server/internal/addon/record"
 	"github.com/stolostron/ocm-fleet/server/internal/addon/scripted"
 	"github.com/stolostron/ocm-fleet/server/internal/application"
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
@@ -38,7 +39,7 @@ func buildTrustBundlePlacement(enabledAddons map[AddonName]bool) domain.Placemen
 	}
 }
 
-// assembleProductionAddons builds production Kind, Kubernetes, and scripted specs.
+// assembleProductionAddons builds the enabled production addon specs.
 // Agent construction stays at the composition edge because agents have
 // external dependencies (container runtimes, credentials, etc.) that AddonManager
 // should not own; Enable/Connect only register capabilities and wire
@@ -50,6 +51,19 @@ func assembleProductionAddons(
 ) ([]AddonSpec, error) {
 	enabled := deps.Config.AddonSet()
 	var specs []AddonSpec
+	if enabled[AddonRecord] {
+		specs = append(specs, AddonSpec{
+			Descriptor: record.Descriptor(),
+			Connect: application.ConnectInput{
+				Agent: record.NewAgent(deps.DeliveryReporter),
+				Targets: []domain.TargetInfo{domain.NewTargetInfo(
+					record.TargetID, record.TargetType, "Configuration Records", domain.TargetStateReady,
+					nil, nil, []domain.ManifestType{record.ManifestType},
+				)},
+				Schemas: []domain.ExtensionResourceSchema{record.Schema()},
+			},
+		})
+	}
 
 	if enabled[AddonKind] {
 		kindOpts := []kindaddon.AgentOption{
