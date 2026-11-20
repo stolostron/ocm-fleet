@@ -203,3 +203,8 @@ func EncodeAddressablePromotedChild() {
 	json.Marshal(&struct{ embeddedMarshaler }{}) // want "at path embeddedMarshaler.Child.ID"
 	json.Marshal(struct{ *embeddedMarshaler }{})
 }
+
+func EncodeBoxedAddressability() {
+	json.Marshal([]any{pointerMarshaler{}})
+	json.Marshal([]any{&pointerMarshaler{}}) // want "at path .*ID"
+}

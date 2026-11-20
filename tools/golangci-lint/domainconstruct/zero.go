@@ -32,6 +32,7 @@ type zeroChecker struct {
 	mutations   map[mutationQuery]mutationKind
 	reads       map[ssa.Value]storageRead
 	stores      map[ssa.Value][]storageWrite
+	copies      map[ssa.Value][]mutationTarget
 	zeroStorage map[valueVisit]bool
 	zeroTypes   map[zeroTypeVisit]*zeroProblem
 	jsonShape   jsonFieldCache

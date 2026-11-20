@@ -7,6 +7,28 @@ import (
 	"encodingvalues"
 )
 
+var initializerBytes, initializerError = json.Marshal(&struct{ Payload any }{Payload: encodingvalues.NewUnsupported("fixture")}) // want "Payload.*does not declare json serialization"
+
+var closureBytes, closureError = func() ([]byte, error) {
+	return json.Marshal(&struct{ Payload any }{Payload: encodingvalues.NewUnsupported("fixture")}) // want "Payload.*does not declare json serialization"
+}()
+
+func DecodeProtectedByteSlice(data []byte, decoder *json.Decoder) {
+	var levels []encodingvalues.ByteLevel
+	json.Unmarshal(data, &levels) // want "default JSON decoding.*encodingvalues.ByteLevel"
+	decoder.Decode(&levels)       // want "default JSON decoding.*encodingvalues.ByteLevel"
+	var boxed any = &levels
+	json.Unmarshal(data, boxed) // want "default JSON decoding.*encodingvalues.ByteLevel"
+	var nested struct{ Levels []encodingvalues.ByteLevel }
+	json.Unmarshal(data, &nested) // want "Levels.*default JSON decoding.*encodingvalues.ByteLevel"
+	var bytes []byte
+	json.Unmarshal(data, &bytes)
+	decoder.Decode(&bytes)
+	var checked encodingvalues.ByteLevels
+	json.Unmarshal(data, &checked)
+	decoder.Decode(&checked)
+}
+
 type PromotedEncoder struct {
 	encodingvalues.ID
 	Other encodingvalues.Unsupported

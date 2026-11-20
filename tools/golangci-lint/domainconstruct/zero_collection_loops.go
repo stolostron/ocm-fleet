@@ -10,9 +10,10 @@ import (
 // filledByLoop recognizes one complete sequential fill. The loop must have no
 // break into its exit and must write every element on every back edge. Error
 // checks after an assignment are evaluated at the back edge, so early returns
-// on parse failure do not invalidate a successful fill. A handoff on a fill
-// with shared backing storage can expose an intervening write.
-func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicBlock, use valueUse, seen map[valueVisit]bool) (complete bool, sharedHandoff ssa.Instruction) {
+// on parse failure do not invalidate a successful fill. References in each
+// element are observed at use. A handoff on a fill with shared backing storage
+// can expose an intervening write.
+func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicBlock, use flowPoint, mode valueUse, seen map[valueVisit]bool) (complete bool, sharedHandoff ssa.Instruction) {
 	if view.dynamicStart || len(exit.Preds) != 1 || len(header.Instrs) == 0 || !c.work.take() {
 		return false, nil
 	}
@@ -83,9 +84,9 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 	}
 	for _, backEdge := range backEdges {
 		context := c.contextAt(backEdge).clone()
-		context.use = use
+		context.use = mode
 		c.assumeEdge(&context, backEdge, header)
-		if !c.filledOnPaths(view, header, backEdge, assignments, context, seen, make(map[*ssa.BasicBlock]bool)) {
+		if !c.filledOnPaths(view, header, backEdge, assignments, use, context, seen, make(map[*ssa.BasicBlock]bool)) {
 			return false, nil
 		}
 	}
@@ -168,15 +169,15 @@ func (c *zeroChecker) storageSharedBefore(storage mutationTarget, point flowPoin
 	return false
 }
 
-func (c *zeroChecker) filledOnPaths(view collectionView, header, block *ssa.BasicBlock, assignments map[*ssa.Store]bool, context flowContext, values map[valueVisit]bool, seen map[*ssa.BasicBlock]bool) bool {
+func (c *zeroChecker) filledOnPaths(view collectionView, header, block *ssa.BasicBlock, assignments map[*ssa.Store]bool, use flowPoint, context flowContext, values map[valueVisit]bool, seen map[*ssa.BasicBlock]bool) bool {
 	if block == header || seen[block] || !c.work.take() {
 		return false
 	}
 	seen[block] = true
 	defer delete(seen, block)
-	for index, instruction := range slices.Backward(block.Instrs) {
+	for _, instruction := range slices.Backward(block.Instrs) {
 		if store, ok := instruction.(*ssa.Store); ok && assignments[store] {
-			return c.problem(store.Val, nil, view.element, flowPoint{block, index}, context, values) == nil && !c.work.exhausted()
+			return c.problem(store.Val, nil, view.element, use, context, values) == nil && !c.work.exhausted()
 		}
 	}
 	found := false
@@ -186,7 +187,7 @@ func (c *zeroChecker) filledOnPaths(view collectionView, header, block *ssa.Basi
 			continue
 		}
 		found = true
-		if !c.filledOnPaths(view, header, predecessor, assignments, edge, values, seen) {
+		if !c.filledOnPaths(view, header, predecessor, assignments, use, edge, values, seen) {
 			return false
 		}
 	}

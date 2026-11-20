@@ -6,6 +6,43 @@ import (
 	"sync"
 )
 
+func CollectionAfterHandoff(valid ID) []ID {
+	values := []ID{valid}
+	requests := make(chan []ID)
+	done := make(chan struct{})
+	go func() {
+		request := <-requests
+		request[0] = ""
+		close(done)
+	}()
+	requests <- values
+	<-done
+	return values // want "return may contain an empty zeroflow.ID"
+}
+
+func RepairCollectionAfterHandoff(valid ID) []ID {
+	values := []ID{valid}
+	requests := make(chan []ID)
+	done := make(chan struct{})
+	go func() {
+		request := <-requests
+		request[0] = ""
+		close(done)
+	}()
+	requests <- values
+	<-done
+	values[0] = valid
+	return values
+}
+
+func PrivateCollectionAfterHandoff(valid ID) []ID {
+	values := []ID{valid}
+	done := make(chan struct{})
+	go close(done)
+	<-done
+	return values
+}
+
 func publishFillTarget(values []ID) { published = values }
 
 func FillAfterPublishingCall(valid ID, writes chan<- int, ack <-chan struct{}) []ID {

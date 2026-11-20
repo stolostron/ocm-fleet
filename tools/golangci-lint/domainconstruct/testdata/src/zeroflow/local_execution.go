@@ -222,6 +222,25 @@ func InitializeOnRegistrationPath(enabled bool, valid ID, use func(*ID)) {
 	}
 }
 
+func ConditionalDeferInOrderedPair(enabled bool, use func([]ID)) {
+	values := make([]ID, 1)
+	defer unrelatedCleanup()
+	if enabled {
+		defer use(values) // want "argument contains an empty zeroflow.ID"
+	}
+}
+
+func RepairConditionalDeferInOrderedPair(enabled bool, valid ID, use func([]ID)) {
+	values := make([]ID, 1)
+	defer unrelatedCleanup()
+	if enabled {
+		defer use(values)
+	}
+	if enabled {
+		values[0] = valid
+	}
+}
+
 func IteratorFailureClearedAtExit(values iter.Seq[bool], valid ID) (id ID, err error) {
 	defer func() { err = nil }()
 	for range values {

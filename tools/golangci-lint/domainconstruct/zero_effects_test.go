@@ -14,11 +14,11 @@ func TestMutationReachabilityChargesStructDescent(t *testing.T) {
 	shape := types.NewStruct([]*types.Var{types.NewField(token.NoPos, nil, "Field", types.Typ[types.String], false)}, nil)
 	work := workBudget(1)
 	c := &zeroChecker{work: &work}
-	if !c.memoryMayReference(address{}, shape, mutationTarget{}, flowPoint{}, nil) {
+	if !c.memoryMayReference(address{}, shape, mutationTarget{}, flowPoint{}, flowPoint{}, nil) {
 		t.Fatal("descent past the work limit proved storage disjoint")
 	}
 	work = 3
-	if c.memoryMayReference(address{}, shape, mutationTarget{}, flowPoint{}, nil) {
+	if c.memoryMayReference(address{}, shape, mutationTarget{}, flowPoint{}, flowPoint{}, nil) {
 		t.Fatal("complete scalar field traversal retained a possible alias")
 	}
 }

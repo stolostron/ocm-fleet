@@ -243,10 +243,9 @@ func (e *nilnessEvaluator) conversionTruth(actual, target types.Type, value trut
 
 func implicitlyAddressedVariable(info *types.Info, selector *ast.SelectorExpr) *types.Var {
 	selection := info.Selections[selector]
-	if selection == nil || selection.Kind() != types.MethodVal || len(selection.Index()) != 1 {
-		return nil
-	}
-	if _, pointer := selection.Recv().Underlying().(*types.Pointer); pointer {
+	// A promoted pointer method also borrows the outer variable when all
+	// embedded fields on the path to its receiver are values.
+	if selection == nil || selection.Kind() != types.MethodVal || selection.Indirect() {
 		return nil
 	}
 	receiver := selection.Obj().Type().(*types.Signature).Recv()

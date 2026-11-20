@@ -1,5 +1,7 @@
 package protection
 
+import "maps"
+
 func SendProtected(out chan<- Record, raw struct {
 	number int
 	array  [1]int
@@ -32,6 +34,12 @@ func IntegerRangeConstruction(limit Count, plain int, values []Count) {
 	}
 	for range limit {
 	}
+	for item = range 0 {
+		_ = item
+	}
+	for item = range -1 { // want "construct protection.Count through NewCount"
+		_ = item
+	}
 }
 
 func AppendIntoOwnedSlice(record Record, rest []int) {
@@ -47,6 +55,29 @@ func ConvertOwnedSlice(record Record) {
 	_ = (*[1]int)(record.items) // want "do not expose mutable representation of protection.Record"
 	_ = (*[0]int)(record.items)
 	_ = [1]int(record.items)
+}
+
+func ReturnOwnedMap(record Record) map[int]int {
+	return record.keys // want "do not expose mutable contents of protection.Record"
+}
+
+func ReturnClonedMap(record Record) map[int]int { return maps.Clone(record.keys) }
+
+func ReturnMapEntry(record Record) int { return record.keys[0] }
+
+func SliceProtectedArray[P interface{ *ID }](value P) []byte {
+	return value[:] // want "do not expose mutable contents of protection.ID"
+}
+
+func UpdateProtectedArray[P interface{ *ID }](value P) {
+	value[0] = 0 // want "modify protection.ID through NewID"
+}
+
+type ordinaryArray [2]byte
+
+func SliceOrdinaryArray[P interface{ *ordinaryArray }](value P) []byte {
+	value[0] = 0
+	return value[:]
 }
 
 type hydrationChild struct{}

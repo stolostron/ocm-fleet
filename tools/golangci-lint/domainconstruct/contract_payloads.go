@@ -88,8 +88,8 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 	// A jump can bypass a replacement. A defer can change a named status
 	// after evaluating the expressions in a return statement.
 	var maySkipAssignment, mayChangeStatus, hasClosure bool
-	escaped := make(map[*types.Var]bool)
-	ast.Inspect(declaration.Body, func(node ast.Node) bool {
+	unstable := make(map[*types.Var]bool)
+	ast.PreorderStack(declaration.Body, nil, func(node ast.Node, ancestors []ast.Node) bool {
 		switch node := node.(type) {
 		case *ast.FuncLit:
 			hasClosure = true
@@ -101,18 +101,33 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 		case *ast.UnaryExpr:
 			if node.Op == token.AND {
 				if variable, ok := expressionObject(b.pass.TypesInfo, node.X).(*types.Var); ok {
-					escaped[variable] = true
+					unstable[variable] = true
 				}
 			}
 		case *ast.SelectorExpr:
 			if variable := implicitlyAddressedVariable(b.pass.TypesInfo, node); variable != nil {
-				escaped[variable] = true
+				unstable[variable] = true
+			}
+		case *ast.AssignStmt:
+			// A return can see a later assignment from the previous iteration.
+			if slices.ContainsFunc(ancestors, func(ancestor ast.Node) bool {
+				switch ancestor.(type) {
+				case *ast.ForStmt, *ast.RangeStmt:
+					return true
+				}
+				return false
+			}) {
+				for _, target := range node.Lhs {
+					if variable, ok := expressionObject(b.pass.TypesInfo, target).(*types.Var); ok {
+						unstable[variable] = true
+					}
+				}
 			}
 		case *ast.RangeStmt:
 			if node.Tok == token.ASSIGN {
 				for _, binding := range []ast.Expr{node.Key, node.Value} {
 					if variable, ok := expressionObject(b.pass.TypesInfo, binding).(*types.Var); ok {
-						escaped[variable] = true
+						unstable[variable] = true
 					}
 				}
 			}
@@ -122,7 +137,7 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 	bindings := make(map[*types.Var]payloadBinding)
 	bindTuple := func(variable *types.Var, statement ast.Node, values []ast.Expr, result, count int) {
 		delete(bindings, variable)
-		if variable == nil || escaped[variable] || maySkipAssignment || hasClosure || !direct[statement] ||
+		if variable == nil || unstable[variable] || maySkipAssignment || hasClosure || !direct[statement] ||
 			variable.Parent() == b.pass.Pkg.Scope() || len(values) != 1 || count < 2 {
 			return
 		}
@@ -298,7 +313,7 @@ func (b *contractBuilder) payloadExpression(expression ast.Expr, result int, env
 	}
 	if _, boxed := t.Underlying().(*types.Interface); !boxed {
 		work := workBudget(maxInferenceWork)
-		if described := describePayload(t, make(map[types.Type]bool), 0, &work); described.Kind != payloadUnknown {
+		if described := describePayload(t, make(map[types.Type]bool), 0, false, &work); described.Kind != payloadUnknown {
 			return []payloadType{described}
 		}
 	}
@@ -325,7 +340,7 @@ func (b *contractBuilder) payloadExpression(expression ast.Expr, result int, env
 	return nil
 }
 
-func describePayload(t types.Type, seen map[types.Type]bool, depth int, work *workBudget) payloadType {
+func describePayload(t types.Type, seen map[types.Type]bool, depth int, addressable bool, work *workBudget) payloadType {
 	if !work.take() || seen[t] || depth > maxPayloadDepth || optionalPayload(t) != nil {
 		return payloadType{}
 	}
@@ -335,26 +350,26 @@ func describePayload(t types.Type, seen map[types.Type]bool, depth int, work *wo
 	if named, ok := t.(*types.Named); ok {
 		object := named.Obj()
 		if object.Pkg() != nil && object.Parent() == object.Pkg().Scope() {
-			underlying := describePayload(named.Underlying(), seen, depth+1, work)
+			underlying := describePayload(named.Underlying(), seen, depth+1, addressable, work)
 			return payloadType{
 				Kind: payloadNamed, Package: object.Pkg().Path(), Name: object.Name(),
-				Fields: underlying.Fields, JSONElements: len(underlying.Fields) != 0 && usesDefaultJSONSlice(named),
+				Fields: underlying.Fields, JSONElements: len(underlying.Fields) != 0 && usesDefaultJSONElements(named, addressable),
 			}
 		}
 	}
 	switch t := t.Underlying().(type) {
 	case *types.Pointer:
-		return payloadType{Kind: payloadPointer, Fields: []payloadField{{Type: describePayload(t.Elem(), seen, depth+1, work)}}}
+		return payloadType{Kind: payloadPointer, Fields: []payloadField{{Type: describePayload(t.Elem(), seen, depth+1, true, work)}}}
 	case *types.Slice:
-		return payloadType{Kind: payloadCollection, Fields: []payloadField{{Type: describePayload(t.Elem(), seen, depth+1, work)}}}
+		return payloadType{Kind: payloadCollection, Fields: []payloadField{{Type: describePayload(t.Elem(), seen, depth+1, true, work)}}}
 	case *types.Array:
 		if t.Len() != 0 {
-			return payloadType{Kind: payloadCollection, Fields: []payloadField{{Type: describePayload(t.Elem(), seen, depth+1, work)}}}
+			return payloadType{Kind: payloadCollection, Fields: []payloadField{{Type: describePayload(t.Elem(), seen, depth+1, addressable, work)}}}
 		}
 	case *types.Map:
 		return payloadType{Kind: payloadCollection, Fields: []payloadField{
-			{Type: describePayload(t.Key(), seen, depth+1, work)},
-			{Type: describePayload(t.Elem(), seen, depth+1, work)},
+			{Type: describePayload(t.Key(), seen, depth+1, false, work)},
+			{Type: describePayload(t.Elem(), seen, depth+1, false, work)},
 		}}
 	case *types.Struct:
 		result := payloadType{Kind: payloadStruct}
@@ -365,23 +380,24 @@ func describePayload(t types.Type, seen map[types.Type]bool, depth int, work *wo
 			if work.exhausted() {
 				break
 			}
-			result.Fields = append(result.Fields, payloadField{field.Name(), describePayload(field.Type(), seen, depth+1, work)})
+			result.Fields = append(result.Fields, payloadField{field.Name(), describePayload(field.Type(), seen, depth+1, addressable, work)})
 		}
 		return result
 	}
 	return payloadType{}
 }
 
-func usesDefaultJSONSlice(t types.Type) bool {
-	if _, slice := t.Underlying().(*types.Slice); !slice {
+func usesDefaultJSONElements(t types.Type, addressable bool) bool {
+	switch t.Underlying().(type) {
+	case *types.Slice, *types.Array:
+	default:
 		return false
 	}
-	for _, hook := range []string{"MarshalJSON", "MarshalText"} {
-		if method := codecMethod(t, hook, true); method != nil && validEncoder(method.Type().(*types.Signature), "json") {
-			return false
-		}
+	use := jsonFields
+	if addressable {
+		use = jsonAddressableFields
 	}
-	return true
+	return jsonUseForType(t, use).json()
 }
 
 func mergePayloads(existing, added []payloadType) []payloadType {

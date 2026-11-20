@@ -12,7 +12,7 @@ import (
 )
 
 func TestLateZeroOperands(t *testing.T) {
-	const fields = 128
+	const fields = 192
 	var declarations strings.Builder
 	for index := range fields {
 		fmt.Fprintf(&declarations, "F%d ID\n", index)
@@ -37,7 +37,16 @@ func Use(valid ID) {
 func Store(m map[Wide]ID, valid ID) {
 	m[Wide{%s}] = "" // want "map value is an empty callbudget.ID"
 }
-`, declarations.String(), strings.Repeat("valid,", fields), strings.Repeat("valid,", fields), strings.Repeat("valid,", fields))
+
+func Return(valid ID) (Wide, ID) {
+	return Wide{%s}, "" // want "return produces an empty callbudget.ID"
+}
+
+func ReturnReverse(valid ID) (ID, Wide) {
+	return "", Wide{%s} // want "return produces an empty callbudget.ID"
+}
+`, declarations.String(), strings.Repeat("valid,", fields), strings.Repeat("valid,", fields),
+		strings.Repeat("valid,", fields), strings.Repeat("valid,", fields), strings.Repeat("valid,", fields))
 	dir, cleanup, err := analysistest.WriteFiles(map[string]string{"callbudget/callbudget.go": source})
 	if err != nil {
 		t.Fatal(err)

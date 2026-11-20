@@ -30,3 +30,23 @@ func ChoiceBeyondSourceDepth[T any](first bool, value T) struct{ Inner any } {
 	}
 	return struct{ Inner any }{}
 }
+
+type sourceCell[T any] struct{ Value T }
+
+func (c *sourceCell[T]) Reset() {
+	var zero T
+	c.Value = zero
+}
+
+type sourceOuter[T any] struct{ sourceCell[T] }
+
+func ResetPromotedSource[T any](input T) T {
+	value := sourceOuter[T]{sourceCell: sourceCell[T]{Value: input}}
+	value.Reset()
+	return value.Value
+}
+
+func KeepPromotedSource[T any](input T) T {
+	value := sourceOuter[T]{sourceCell: sourceCell[T]{Value: input}}
+	return value.Value
+}

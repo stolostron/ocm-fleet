@@ -53,6 +53,51 @@ func (id *ID) Scan(raw any) error {
 	return id.UnmarshalText([]byte(value))
 }
 
+//domain:constructors NewByteLevel
+//domain:serialization json
+type ByteLevel uint8
+
+func NewByteLevel(raw uint8) (ByteLevel, error) {
+	if raw == 0 {
+		return 0, errors.New("empty level")
+	}
+	return ByteLevel(raw), nil
+}
+
+func (level ByteLevel) MarshalJSON() ([]byte, error) { return json.Marshal(uint8(level)) }
+
+func (level *ByteLevel) UnmarshalJSON(data []byte) error {
+	var raw uint8
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	value, err := NewByteLevel(raw)
+	if err != nil {
+		return err
+	}
+	*level = value
+	return nil
+}
+
+type ByteLevels []ByteLevel
+
+func (levels *ByteLevels) UnmarshalJSON(data []byte) error {
+	var bytes []byte
+	if err := json.Unmarshal(data, &bytes); err != nil {
+		return err
+	}
+	checked := make(ByteLevels, 0, len(bytes))
+	for _, raw := range bytes {
+		value, err := NewByteLevel(raw)
+		if err != nil {
+			return err
+		}
+		checked = append(checked, value)
+	}
+	*levels = checked
+	return nil
+}
+
 //domain:constructors NewUnsupported
 type Unsupported string
 

@@ -160,6 +160,9 @@ func parseBoundary(signature *types.Signature, fields []string) (codecBoundary, 
 }
 
 func parameterIndex(signature *types.Signature, name string) int {
+	if name == "_" {
+		return -2
+	}
 	for index := range signature.Params().Len() {
 		if signature.Params().At(index).Name() == name {
 			return index
@@ -223,11 +226,16 @@ func codecMethod(t types.Type, name string, pointer bool) *types.Func {
 }
 
 func validDecoder(signature *types.Signature, codec string) bool {
-	if signature.Recv() == nil || signature.Variadic() || signature.Params().Len() != 1 ||
-		signature.Results().Len() != 1 || !isBuiltinError(signature.Results().At(0).Type()) {
+	if signature.Recv() == nil {
 		return false
 	}
-	if _, pointer := signature.Recv().Type().(*types.Pointer); !pointer {
+	_, pointer := signature.Recv().Type().(*types.Pointer)
+	return pointer && validDecoderSignature(signature, codec)
+}
+
+func validDecoderSignature(signature *types.Signature, codec string) bool {
+	if signature.Variadic() || signature.Params().Len() != 1 ||
+		signature.Results().Len() != 1 || !isBuiltinError(signature.Results().At(0).Type()) {
 		return false
 	}
 	if codec == "sql" {

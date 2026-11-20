@@ -5,6 +5,12 @@ import (
 	"reflect"
 )
 
+func EmptyStringSuffix(value ID) ID {
+	return value[len(value):] // want "return produces an empty zeroflow.ID"
+}
+
+func FullStringSuffix(value ID) ID { return value[0:] }
+
 func ZeroLookupKey(values map[ID]int) int {
 	var id ID
 	return values[id] // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\""

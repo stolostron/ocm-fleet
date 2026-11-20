@@ -139,20 +139,22 @@ Reading an existing typed constant, local or imported, is a copy. Deriving a new
 typed constant with an operator is construction. An untyped constant passed as a
 domain value still needs construction.
 Explicit range assignments are checked against the yielded types, including in
-generic code when the constraint fixes those types. Integer ranges synthesize
-new values and require construction permission when the iteration variable
-has a protected type. Map writes check implicit construction of the key.
+generic code when the constraint fixes those types. Integer ranges that can
+iterate synthesize new values and require construction permission when the
+iteration variable has a protected type. Map writes check implicit construction
+of the key.
 Channel sends and appended values follow ordinary transfer checks, including
 multiple results passed to `append`.
 Writing through an embedded field or exposing a pointer to it requires
 permission from its protected owners. Replacing an existing nested value
 requires permission from its enclosing owners. Directly returning a protected
-slice field or a view with accessible backing storage also exposes the
-representation. Converting a protected slice to a nonempty array pointer
-exposes the same storage. Appending into reusable capacity can modify that
-storage. A full slice expression with equal upper and capacity bounds forces
-an append with elements to allocate. Read-only slice views are allowed as
-inputs to `len` and as sources of `copy`.
+map field, slice field, or slice view with accessible backing storage also
+exposes the representation. The owner check covers slicing and index writes
+through exact generic pointers to protected arrays. Converting a protected
+slice to a nonempty array pointer exposes the same storage. Appending into
+reusable capacity can modify that storage. A full slice expression with equal
+upper and capacity bounds forces an append with elements to allocate. Read-only
+slice views are allowed as inputs to `len` and as sources of `copy`.
 Simple generic helpers that convert a raw argument into a protected
 type are checked at their instantiated calls, including imported helpers.
 Retained conversions use their instantiated targets even when the final result
@@ -239,12 +241,12 @@ func Send(payload any) error
 ```
 
 Selectors are comma-separated lists. Use `types=` for function type parameters,
-`encode=` and `decode=` for named parameters or a method receiver, and
+`encode=` and `decode=` for named parameters or a named method receiver, and
 `results=` for zero-based payload result indices. Decoding requires exactly one
 error result whose nil value means success. Declarations on functions and
 interface methods travel across packages as analysis facts. Declare the
 contract on each shared or forwarding port while concrete payload types are
-still visible.
+still visible. Blank identifiers cannot select a parameter or receiver.
 
 Encoding inputs are valid-value consumers, so encoding an uninitialized domain
 value still produces a `domainzero` finding. Standard JSON field encoding skips
@@ -252,10 +254,13 @@ an exact `json:"-"` field in a plain envelope. A tag like `json:"-,"` names the
 field `-`. Types with custom JSON or text encoding hooks retain whole-value
 checks, including when a pointer receiver can supply the hook. A field reached
 through an embedded pointer is addressable even when the outer value is passed
-by value. A visible field promoted from a protected embedded value also requires
-that owner's codec. An explicit promoted method call checks the selected
-receiver. Default field selection follows the encoder's breadth-first embedding
-and tag rules when the traversal completes within its budget.
+by value. A concrete value boxed in an interface is unaddressable. A boxed
+pointer still allows the encoder to use the pointee's pointer hook. A visible
+field promoted from a protected embedded value also requires that owner's codec.
+An explicit promoted method call checks the selected receiver. Default field
+selection follows the encoder's breadth-first embedding and tag rules when the
+traversal completes within its budget. Boxed payloads in package initializers
+and their closures are checked alongside function bodies.
 
 Decoder destinations accept zero output storage. A parameter selected for both
 encoding and decoding must already be valid. After the error is checked,
@@ -266,7 +271,11 @@ proof when they agree on the storage and runtime pointer type. An overlapping
 write through a merged pointer or a helper can invalidate the supplying slot's
 earlier origin. The checker keeps tracking required fields in an ordinary
 envelope. Default JSON decoding replaces a non-pointer interface payload and
-can follow a pointer stored in that slot.
+can follow a pointer stored in that slot. The stored pointer is a possible
+write target, since inputs such as `null` can replace the interface instead.
+Default JSON decoding of a base64 string into a slice of protected byte values
+can bypass the element decoder. Use a slice-level decoder that validates the
+decoded values.
 Decoding through a raw representation or a different domain type's codec can
 invalidate an earlier domain value even after the error check. Scanning a
 primitive and converting it to a domain value still requires a constructor.
@@ -547,7 +556,7 @@ non-nil error, while the zero of an interface type stays nil. Names such as
 checker follows small, statically ordered sequences of defers in reverse
 registration order. Across blocks it can follow a single nonrepeating
 registration or a definite registration followed by one provably later
-registration. A single conditional defer is checked on paths where the
+registration. Each supported conditional defer is checked on paths where its
 registration executes. Values, including keys passed to deferred `delete`, are
 captured at registration. Referenced storage is observed during cleanup after
 earlier cleanup effects. A reachable conditional write of a known zero can
@@ -580,14 +589,18 @@ edge; a `continue` that skips an assignment or a `break` does not establish that
 contract. A complete fill also requires stable backing storage. Channel and
 recognized synchronization operations can hand control to another owner after
 a view has been published, including through a helper that stores it in a
-global. The same sharing evidence can invalidate a guarded read, pre-handoff
-`errors.Join` contents, and an iterator flag's earlier initialization. Guarded
-lengths and exact offsets narrow the backing range affected by a copy or clear.
+global. The same sharing evidence can invalidate earlier writes to collection
+slots, a guarded read, pre-handoff `errors.Join` contents, and an iterator flag's
+earlier initialization. Later writes can reestablish validity in slots they
+replace. Guarded lengths and exact offsets narrow the backing range affected by
+a copy or clear.
 A slice-to-array pointer exposes the converted prefix. An array value records
 the elements at the copy, including when a later write changes the original
-slice. A copied field is traced to its source at the copy. Parsing each element
-and checking its error before continuing is supported, including assigning the
-result to its slot before checking the error.
+slice. A copied field is traced to its source at the copy. Storage reached
+through references in copied or loop-filled elements is observed at the use.
+Exact indexed reads check the selected field or converted type. Parsing each
+element and checking its error before continuing is supported, including
+assigning the result to its slot before checking the error.
 Map writes check both keys and values; missing reads still need `ok` when zero
 is invalid. Element tracking uses ranges rather than expanding large arrays.
 Local and imported helper contracts preserve a returned slice's length when
@@ -611,8 +624,9 @@ A source domain type that permits zero does not establish a nonzero contract
 when converted to a different type.
 Checking a primitive for nonzero can remove that particular zero uncertainty,
 but the construction rule still requires its other invariants to be established.
-Supported helper summaries
-retain the known origins described above. The checker does not
+Supported helper summaries retain the known origins described above. Taking a
+value's address can invalidate its inferred origin, including when calling a
+promoted pointer method implicitly takes the address. The checker does not
 prove arbitrary callee effects, global mutable storage, concurrent mutation,
 arbitrary callback execution, complex loop correlations or generic transformations,
 or reflection and unsafe writes. Dynamic slice offsets can require checking a
@@ -657,8 +671,9 @@ Contract inference limits branch work, recursive source paths, and convergence
 rounds. Nested substitutions share a work budget and caps apply to the expanded
 facts before export. Independent facts can settle while unresolved contracts
 continue to converge. SSA queries share a work budget across paths, field
-traversals, and related lookups. A direct scalar zero in a later call argument
-or map value can still be checked after the instruction's budget is exhausted.
+traversals, and related lookups. A direct scalar zero in a later call argument,
+map value, or return result can still be checked after the instruction's budget
+is exhausted.
 An incomplete proof leaves unknown state and can miss cases beyond that limit.
 Completed type, reference, and boxed-value traversals can reuse results at the
 same observation point. A query with a different set of facts analyzes that
@@ -675,9 +690,10 @@ text, so position mapping adds no syntax lookups to calls without findings.
 
 For fields whose zero is valid, a store index can avoid tracing every path when
 all assignments preserve that zero, including field copies. The proof includes
-writes after the read and falls back to normal flow analysis for cycles,
-unresolved origins, generic factory summaries, and explicit payloads. Required
-domain fields and boxed invalid values retain their usual checks.
+writes after the read and falls back to normal flow analysis for overlapping
+collection copies, cycles, unresolved origins, generic factory summaries, and
+explicit payloads. Required domain fields and boxed invalid values retain their
+usual checks.
 
 The analyzer tests include real SSA fixtures, allocation regression checks, and
 benchmarks for branch joins, optional fields, boolean refinement, and repeated

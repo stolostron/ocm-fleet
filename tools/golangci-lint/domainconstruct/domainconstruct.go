@@ -86,7 +86,7 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 	case *ast.ReturnStmt:
 		if len(node.Results) > 0 {
 			for _, result := range node.Results {
-				c.checkReturnedSlice(result, ancestors)
+				c.checkReturnedStorage(result, ancestors)
 			}
 			results := c.enclosingResults(ancestors)
 			c.checkTransfers(node.Results, results.Len(), func(index int) types.Type {
@@ -129,7 +129,7 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 			}
 		}
 	case *ast.SliceExpr:
-		t := c.pass.TypesInfo.TypeOf(node.X)
+		t := exactOperandType(c.pass.TypesInfo.TypeOf(node.X))
 		if pointer, ok := t.Underlying().(*types.Pointer); ok {
 			t = pointer.Elem()
 		}
@@ -247,7 +247,7 @@ func (c *checker) unapprovedOwner(expr ast.Expr, ancestors []ast.Node) *policy {
 			return c.unapprovedOwner(expr.X, ancestors)
 		}
 	case *ast.IndexExpr:
-		if p := c.policy(c.pass.TypesInfo.TypeOf(expr.X)); p != nil && !c.approved(p, ancestors) {
+		if p := c.policy(exactOperandType(c.pass.TypesInfo.TypeOf(expr.X))); p != nil && !c.approved(p, ancestors) {
 			return p
 		}
 		return c.unapprovedOwner(expr.X, ancestors)

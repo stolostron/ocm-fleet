@@ -25,37 +25,40 @@ type executedCall struct {
 
 func (c *zeroChecker) checkCleanup(point flowPoint, context flowContext) {
 	calls, ordered := c.defersAt(point)
-	if !ordered {
-		if len(calls) != 1 {
-			return
-		}
-		registration := calls[0].Block()
-		if c.blockReachedFromPredecessors(registration, registration.Preds) != isZero {
-			return
-		}
-		// With one reachable, nonrepeating registration, cleanup runs the
-		// call only on paths where the registration's guards held.
-		registered := c.contextAt(registration)
-		if !registered.possible {
-			return
-		}
-		context = context.cloneFor(len(registered.facts))
-		for value, state := range registered.facts {
-			if !c.work.take() || !c.assume(&context, value, state) {
-				return
-			}
-		}
+	if !ordered && len(calls) != 1 {
+		return
 	}
 	after := flowPoint{point.block, point.index + 1}
 	for index, call := range slices.Backward(calls) {
-		if ordered && !deferPrecedesPoint(call, point) {
-			continue
-		}
 		if !c.work.take() {
 			return
 		}
-		context.cleanup = cleanupPosition{point, index + 1}
-		c.checkCall(call, after, context, true)
+		callContext := context
+		if !ordered || !deferPrecedesPoint(call, point) {
+			registration := call.Block()
+			if !ordered && c.blockReachedFromPredecessors(registration, registration.Preds) != isZero {
+				continue
+			}
+			// A possible, nonrepeating defer runs only on paths where its
+			// own registration guards held.
+			registered := c.contextAt(registration)
+			if !registered.possible {
+				continue
+			}
+			callContext = context.cloneFor(len(registered.facts))
+			for value, state := range registered.facts {
+				if !c.work.take() {
+					return
+				}
+				if !c.assume(&callContext, value, state) {
+					break
+				}
+			}
+		}
+		if callContext.possible {
+			callContext.cleanup = cleanupPosition{point, index + 1}
+			c.checkCall(call, after, callContext, true)
+		}
 	}
 }
 

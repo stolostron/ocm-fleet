@@ -31,7 +31,14 @@ type boxedWalk struct {
 // concrete values boxed into any, including variadic calls, without tracing
 // arbitrary byte buffers or performing whole-program pointer analysis.
 func (c *serializationChecker) checkBoxedCalls() {
-	functions := c.pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA).SrcFuncs
+	input := c.pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
+	// Package-level initializer expressions and their closures are absent
+	// from SrcFuncs, which already includes user-declared init functions.
+	functions := []*ssa.Function{input.Pkg.Func("init")}
+	for index := 0; index < len(functions); index++ {
+		functions = append(functions, functions[index].AnonFuncs...)
+	}
+	functions = append(functions, input.SrcFuncs...)
 	storage := &zeroChecker{pass: c.pass, policies: c.policies, contracts: c.contracts, locating: make(map[ssa.Value]bool), work: new(workBudget)}
 	storage.indexStores(functions)
 	for _, function := range functions {
@@ -50,14 +57,14 @@ func (c *serializationChecker) checkBoxedCalls() {
 				for _, boundary := range c.contracts.boundariesFor(object, c.policies) {
 					for _, index := range boundary.Results {
 						if index < call.Common().Signature().Results().Len() {
-							c.checkType(newEncodingOperand(node, boundary.Codec, "result"), call.Common().Signature().Results().At(index).Type())
+							c.checkType(newEncodingOperand(node, boundary, "result"), call.Common().Signature().Results().At(index).Type())
 						}
 					}
 					if callee := call.Common().StaticCallee(); callee != nil {
 						arguments := callee.TypeArgs()
 						for _, index := range boundary.TypeParameters {
 							if index < len(arguments) {
-								c.checkType(newEncodingOperand(node, boundary.Codec, "type-argument"), arguments[index])
+								c.checkType(newEncodingOperand(node, boundary, "type-argument"), arguments[index])
 							}
 						}
 					}
@@ -71,8 +78,7 @@ func (c *serializationChecker) checkBoxedCalls() {
 							if len(arguments) != 0 {
 								source = arguments[0]
 							}
-							operand := newEncodingOperand(source, boundary.Codec, selection.operation)
-							operand.defaultJSONDecode = boundary.DefaultJSONDecode && selection.operation == "decode"
+							operand := newEncodingOperand(source, boundary, selection.operation)
 							argument := contractArgument(call.Common(), index)
 							if index == -1 && argument != nil && !call.Common().IsInvoke() && !exactMethodReceiver(call.Common(), argument) {
 								c.checkType(operand, object.Type().(*types.Signature).Recv().Type())

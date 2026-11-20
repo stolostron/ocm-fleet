@@ -192,12 +192,19 @@ func (c *zeroChecker) elementAtProblem(value, index ssa.Value, projection []int,
 	seen[visit] = true
 	defer delete(seen, visit)
 	if view, ok := c.collectionOf(value); ok {
+		view = boundedView(view, context)
 		if offset, known := integerValue(index); known {
 			view.start += offset
 			view.end = view.start + 1
+			if !view.dynamicStart && (len(projection) != 0 || !types.Identical(t, view.element)) {
+				// Inspect the requested field or converted type at this slot.
+				// The collection's element type may allow a zero representation.
+				location := view.storage
+				location.path = append(slices.Clone(location.path), int(view.start))
+				location.path = append(location.path, projection...)
+				return c.memoryAtProblem(location, t, point, use, context, seen, make(map[memoryVisit]bool))
+			}
 		}
-		// Element projections are checked after the containing element. A
-		// constructor's successful element already carries its field contract.
 		return c.collectionAtProblem(view, point, use, context, seen, nil, make(map[collectionVisit]bool))
 	}
 	if phi, ok := value.(*ssa.Phi); ok {
@@ -377,6 +384,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 	}
 	seen[visit] = true
 	defer delete(seen, visit)
+	checkedHandoff := false
 	for index := point.index - 1; index >= 0; index-- {
 		if !c.work.take() {
 			return nil
@@ -488,6 +496,14 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 			return nil
 		}
 		before := flowPoint{point.block, index}
+		if !checkedHandoff && storageHandoff(instruction) {
+			// Earlier handoffs have fewer opportunities to share the storage
+			// and no additional uncovered elements.
+			checkedHandoff = true
+			if problem := c.collectionHandoffProblem(view, covered, flowPoint{point.block, index + 1}, context.use); problem != nil {
+				return problem.step("mutation", instructionPosition(instruction, before), "shared collection storage may change during synchronization")
+			}
+		}
 		switch instruction.(type) {
 		case ssa.CallInstruction, *ssa.RunDefers:
 		default:
@@ -583,7 +599,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 		if !edge.possible {
 			continue
 		}
-		if filled, handoff := c.filledByLoop(view, predecessor, point.block, context.use, values); filled || handoff != nil {
+		if filled, handoff := c.filledByLoop(view, predecessor, point.block, use, context.use, values); filled || handoff != nil {
 			var problem *zeroProblem
 			if handoff != nil {
 				problem = c.unfilledCollection(view, covered, reasonInputMayBeZero, context.use).uncertain().
@@ -599,6 +615,24 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 		}
 	}
 	return alternatives.problem()
+}
+
+func (c *zeroChecker) collectionHandoffProblem(view collectionView, covered []elementRange, after flowPoint, use valueUse) *zeroProblem {
+	if _, arrayValue := view.storage.root.Type().Underlying().(*types.Array); arrayValue || !sharedStorage(view.storage.root) {
+		return nil
+	}
+	problem := c.failedResultProblem(view.element, reasonInputMayBeZero, use, make(map[types.Type]valueUse))
+	if problem == nil {
+		return nil
+	}
+	for _, remaining := range uncoveredViews(view, covered) {
+		storage := mutationTarget{remaining.storage, &elementRange{remaining.start, remaining.end}}
+		if c.storageSharedBefore(storage, after) && !c.work.exhausted() {
+			problem.path = fieldPath(elementLabel(remaining.start), problem.path)
+			return problem
+		}
+	}
+	return nil
 }
 
 func uncoveredViews(view collectionView, covered []elementRange) []collectionView {
@@ -633,9 +667,9 @@ func copyCoversView(destination, source, view collectionView) bool {
 	return ok && builtin.Name() == "len" && (destination.value == view.value || sameLength(destination.length, view.length))
 }
 
-// A scalar load can project one field of a copied element. Read the
-// corresponding source slot at the copy, including overlapping copies.
-func (c *zeroChecker) collectionWriteProblem(execution executedCall, location address, t types.Type,
+// Read a copied field in its source slot at the copy. Observe any storage it
+// references at use, when the copied value is consumed.
+func (c *zeroChecker) collectionWriteProblem(execution executedCall, location address, t types.Type, use flowPoint,
 	values map[valueVisit]bool, seen map[memoryVisit]bool) (problem *zeroProblem, definite, overlaps bool) {
 	common := execution.call.Common()
 	builtin, ok := common.Value.(*ssa.Builtin)
@@ -680,7 +714,7 @@ func (c *zeroChecker) collectionWriteProblem(execution executedCall, location ad
 	sourcePath := append(slices.Clone(source.storage.path), int(offset))
 	source.storage.path = append(sourcePath, location.path[base+1:]...)
 	before := execution.before
-	problem = c.memoryAtProblem(source.storage, t, before, before, context, values, seen).
+	problem = c.memoryAtProblem(source.storage, t, before, use, context, values, seen).
 		step("assignment", execution.call.Pos(), "copy collection field")
 	return problem, definite && source.end >= 0 && !c.work.exhausted(), true
 }

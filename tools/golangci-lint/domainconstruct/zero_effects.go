@@ -170,7 +170,7 @@ func (c *zeroChecker) mayReferenceStorage(value ssa.Value, storage mutationTarge
 	case *ssa.UnOp:
 		if value.Op == token.MUL {
 			if location, ok := addressOf(value.X); ok {
-				return c.memoryMayReference(location, value.Type(), storage, instructionPoint(value), seen)
+				return c.memoryMayReference(location, value.Type(), storage, instructionPoint(value), point, seen)
 			}
 		}
 	case *ssa.Phi:
@@ -197,23 +197,24 @@ func (c *zeroChecker) mayReferenceStorage(value ssa.Value, storage mutationTarge
 	}
 	if pointer, ok := value.Type().Underlying().(*types.Pointer); ok {
 		if location, ok := c.collectionAddress(value); ok {
-			return c.memoryMayReference(location, pointer.Elem(), storage, point, seen)
+			return c.memoryMayReference(location, pointer.Elem(), storage, point, point, seen)
 		}
 	}
 	return false
 }
 
-func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage mutationTarget, point flowPoint, seen map[ssa.Value]bool) bool {
+func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage mutationTarget, point, use flowPoint, seen map[ssa.Value]bool) bool {
 	if !c.work.take() {
 		return true
 	}
 	if array, ok := t.Underlying().(*types.Array); ok {
-		return c.collectionMayReference(collectionView{storage: location, element: array.Elem(), end: array.Len()}, storage, point, seen, make(map[memoryVisit]bool))
+		view := collectionView{storage: location, element: array.Elem(), end: array.Len()}
+		return c.collectionMayReferenceAt(view, storage, point, use, seen, make(map[memoryVisit]bool))
 	}
 	if structure, ok := t.Underlying().(*types.Struct); ok {
 		for index := range structure.NumFields() {
 			child := address{location.root, append(slices.Clone(location.path), index)}
-			if c.memoryMayReference(child, structure.Field(index).Type(), storage, point, seen) {
+			if c.memoryMayReference(child, structure.Field(index).Type(), storage, point, use, seen) {
 				return true
 			}
 		}
@@ -222,7 +223,7 @@ func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage
 	switch t.Underlying().(type) {
 	case *types.Pointer, *types.Interface, *types.Signature, *types.Slice:
 		if origin, _ := c.referenceAt(location, point); origin != nil {
-			return c.mayReferenceStorage(origin, storage, point, seen)
+			return c.mayReferenceStorage(origin, storage, use, seen)
 		}
 		if borrowedRoot(location.root) {
 			// An intervening borrowed write can make the origin uncertain
@@ -233,7 +234,7 @@ func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage
 				}
 				if store, ok := point.block.Instrs[index].(*ssa.Store); ok {
 					if target, known := c.collectionAddress(store.Addr); known && sameStorage(target, location) {
-						return c.mayReferenceStorage(store.Val, storage, point, seen)
+						return c.mayReferenceStorage(store.Val, storage, use, seen)
 					}
 				}
 			}
@@ -245,6 +246,12 @@ func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage
 // Walk stored elements rather than enumerating an array's declared length.
 // Variadic calls and append commonly package output pointers as []any.
 func (c *zeroChecker) collectionMayReference(view collectionView, storage mutationTarget, point flowPoint, values map[ssa.Value]bool, seen map[memoryVisit]bool) bool {
+	return c.collectionMayReferenceAt(view, storage, point, point, values, seen)
+}
+
+// Walk backwards to find the stored values, then follow their references at
+// the original use. An older slice header can still reach newer contents.
+func (c *zeroChecker) collectionMayReferenceAt(view collectionView, storage mutationTarget, point, use flowPoint, values map[ssa.Value]bool, seen map[memoryVisit]bool) bool {
 	if view.size() == 0 {
 		return false
 	}
@@ -297,12 +304,12 @@ func (c *zeroChecker) collectionMayReference(view collectionView, storage mutati
 			}
 			written[key] = true
 		}
-		if c.mayReferenceStorage(store.Val, storage, point, values) {
+		if c.mayReferenceStorage(store.Val, storage, use, values) {
 			return true
 		}
 	}
 	for _, predecessor := range point.block.Preds {
-		if c.collectionMayReference(view, storage, flowPoint{predecessor, len(predecessor.Instrs)}, values, seen) {
+		if c.collectionMayReferenceAt(view, storage, flowPoint{predecessor, len(predecessor.Instrs)}, use, values, seen) {
 			return true
 		}
 	}

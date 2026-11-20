@@ -30,7 +30,7 @@ func (c *zeroChecker) checkResults(results []ssa.Value, point flowPoint, context
 	}
 	for index, result := range results {
 		if !c.errorStatus(result.Type()) {
-			if problem := c.problem(result, nil, result.Type(), point, success, make(map[valueVisit]bool)); problem != nil {
+			if problem := c.operandProblem(result, point, success); problem != nil {
 				c.report(zeroUse{pos: pos, argument: index}, problem, "return", result)
 			}
 		}

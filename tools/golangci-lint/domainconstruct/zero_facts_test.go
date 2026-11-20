@@ -106,19 +106,18 @@ func run(first, second bool) bool {
 	if comparison == nil {
 		t.Fatal("fixture lost its boolean comparison")
 	}
-	for _, equal := range []truth{isZero, notZero} {
-		for _, first := range []truth{isZero, notZero} {
-			c := newFlowChecker(function)
-			context := flowContext{facts: make(map[ssa.Value]truth), possible: true}
-			c.assume(&context, comparison, equal)
-			c.assume(&context, function.Params[0], first)
-			want := first
-			if equal == isZero {
-				want = opposite(want)
-			}
-			if got := c.valueTruth(function.Params[1], context, make(map[ssa.Value]bool)); got != want {
-				t.Errorf("equal=%v, first=%v: second=%v, want %v", equal, first, got, want)
-			}
+	for _, test := range []struct{ equal, first, second truth }{
+		{notZero, notZero, notZero},
+		{notZero, isZero, isZero},
+		{isZero, notZero, isZero},
+		{isZero, isZero, notZero},
+	} {
+		c := newFlowChecker(function)
+		context := flowContext{facts: make(map[ssa.Value]truth), possible: true}
+		c.assume(&context, comparison, test.equal)
+		c.assume(&context, function.Params[0], test.first)
+		if got := c.valueTruth(function.Params[1], context, make(map[ssa.Value]bool)); got != test.second {
+			t.Errorf("equal=%v, first=%v: second=%v, want %v", test.equal, test.first, got, test.second)
 		}
 	}
 	// A comparison in the function does not establish equality until a branch

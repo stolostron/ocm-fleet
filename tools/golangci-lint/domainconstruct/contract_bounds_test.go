@@ -20,7 +20,7 @@ func TestDescribePayloadBoundsFieldsAtMaximumDepth(t *testing.T) {
 		shape = types.NewStruct([]*types.Var{types.NewField(token.NoPos, nil, "Nested", shape, false)}, nil)
 	}
 	work := workBudget(maxInferenceWork)
-	payload := describePayload(shape, make(map[types.Type]bool), 0, &work)
+	payload := describePayload(shape, make(map[types.Type]bool), 0, false, &work)
 	for range 8 {
 		if len(payload.Fields) != 1 {
 			t.Fatalf("lost the bounded path to the wide field")
@@ -39,7 +39,12 @@ func TestContractInferenceBounds(t *testing.T) {
 		Requires: []*analysis.Analyzer{contractsAnalyzer},
 		Run: func(pass *analysis.Pass) (any, error) {
 			contracts := pass.ResultOf[contractsAnalyzer].(*contractSet)
-			for _, name := range []string{"Nested", "NestedGeneric", "Simple", "LargeComposition", "SmallComposition", "AtSourceDepth", "ChoiceBeyondSourceDepth", "RecoveredSlice", "PlainSlice"} {
+			names := []string{
+				"Nested", "NestedGeneric", "Simple", "LargeComposition", "SmallComposition",
+				"AtSourceDepth", "ChoiceBeyondSourceDepth", "RecoveredSlice", "PlainSlice",
+				"ResetPromotedSource", "KeepPromotedSource",
+			}
+			for _, name := range names {
 				function := pass.Pkg.Scope().Lookup(name).(*types.Func)
 				contract := contracts.functions[function]
 				switch name {
@@ -64,8 +69,16 @@ func TestContractInferenceBounds(t *testing.T) {
 						t.Errorf("recovery can bypass the inferred length: %v", contract.Lengths)
 					}
 				case "PlainSlice":
-					if contract == nil || len(contract.Lengths) != 1 || contract.Lengths[0].Length.Constant != 1 {
+					if contract == nil || len(contract.Lengths) != 1 || contract.Lengths[0].Length.Parameter != -1 || contract.Lengths[0].Length.Constant != 1 {
 						t.Errorf("plain allocation lost its length fact: %v", contract)
+					}
+				case "ResetPromotedSource":
+					if contract != nil && len(contract.Sources) != 0 {
+						t.Errorf("promoted pointer method left stale sources: %v", contract.Sources)
+					}
+				case "KeepPromotedSource":
+					if contract == nil || len(contract.Sources) != 1 || contract.Sources[0].Value.Kind != sourceParameter {
+						t.Errorf("unchanged embedded field lost its source: %v", contract)
 					}
 				}
 			}
@@ -134,7 +147,7 @@ func TestDescribePayloadBoundsSharedTypeShapes(t *testing.T) {
 		return nodes
 	}
 	work := workBudget(maxInferenceWork)
-	payload := describePayload(shape, make(map[types.Type]bool), 0, &work)
+	payload := describePayload(shape, make(map[types.Type]bool), 0, false, &work)
 	if nodes := count(payload); nodes > maxInferenceWork || payload.Kind != payloadStruct {
 		t.Errorf("described %d nodes in payload kind %d with budget %d", nodes, payload.Kind, maxInferenceWork)
 	}

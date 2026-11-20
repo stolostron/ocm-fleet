@@ -92,9 +92,11 @@ func (c *checker) checkLiteralTransfers(literal *ast.CompositeLit, ancestors []a
 	}
 }
 
-func (c *checker) checkReturnedSlice(value ast.Expr, ancestors []ast.Node) {
+func (c *checker) checkReturnedStorage(value ast.Expr, ancestors []ast.Node) {
 	info := c.pass.TypesInfo
-	if _, slice := info.TypeOf(value).Underlying().(*types.Slice); !slice {
+	switch operandUnderlying(info.TypeOf(value)).(type) {
+	case *types.Slice, *types.Map:
+	default:
 		return
 	}
 	base := ast.Unparen(value)
@@ -127,6 +129,9 @@ func (c *checker) checkRangeTransfers(statement *ast.RangeStmt, ancestors []ast.
 	info := c.pass.TypesInfo
 	iterated := info.TypeOf(statement.X)
 	if basic, integer := operandUnderlying(iterated).(*types.Basic); integer && basic.Info()&types.IsInteger != 0 {
+		if bound := info.Types[statement.X].Value; bound != nil && constant.Sign(bound) <= 0 {
+			return
+		}
 		if key := statement.Key; key != nil && (statement.Tok != token.ASSIGN || c.checkWrite(key, ancestors)) {
 			// Integer ranges synthesize values even when Go gives the binding
 			// the same type as the bound. Other ranges transfer existing values.
@@ -259,4 +264,14 @@ func operandUnderlying(t types.Type) types.Type {
 		return terms[0].Type().Underlying()
 	}
 	return t.Underlying()
+}
+
+// An exact constraint retains the concrete operand's domain identity.
+func exactOperandType(t types.Type) types.Type {
+	if parameter, ok := types.Unalias(t).(*types.TypeParam); ok {
+		if terms, err := typeparams.NormalTerms(parameter); err == nil && len(terms) == 1 && !terms[0].Tilde() {
+			return terms[0].Type()
+		}
+	}
+	return t
 }

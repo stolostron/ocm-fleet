@@ -43,10 +43,11 @@ type encodingOperand struct {
 	defaultJSONDecode      bool
 }
 
-func newEncodingOperand(node ast.Node, codec, operation string) encodingOperand {
-	operand := encodingOperand{node: node, codec: codec, operation: operation}
-	if codec == "json" {
+func newEncodingOperand(node ast.Node, boundary codecBoundary, operation string) encodingOperand {
+	operand := encodingOperand{node: node, codec: boundary.Codec, operation: operation}
+	if boundary.Codec == "json" {
 		operand.use = jsonFields
+		operand.defaultJSONDecode = boundary.DefaultJSONDecode && operation == "decode"
 	}
 	return operand
 }
@@ -152,12 +153,12 @@ func (c *serializationChecker) checkCall(call *ast.CallExpr) {
 				if index == -1 {
 					receiver := callParameter(c.pass.TypesInfo, call, index)
 					if receiver.expression != nil {
-						c.checkType(newEncodingOperand(receiver.expression, boundary.Codec, selection.operation), receiver.actual)
+						c.checkType(newEncodingOperand(receiver.expression, boundary, selection.operation), receiver.actual)
 					}
 					continue
 				}
 				for _, argument := range c.arguments(call, function, index) {
-					c.checkExpression(argument, boundary.Codec, selection.operation)
+					c.checkExpression(argument, newEncodingOperand(argument, boundary, selection.operation))
 				}
 			}
 		}
@@ -165,7 +166,7 @@ func (c *serializationChecker) checkCall(call *ast.CallExpr) {
 		if signature != nil {
 			for _, index := range boundary.Results {
 				if index < signature.Results().Len() {
-					c.checkType(newEncodingOperand(call, boundary.Codec, "result"), signature.Results().At(index).Type())
+					c.checkType(newEncodingOperand(call, boundary, "result"), signature.Results().At(index).Type())
 				}
 			}
 		}
@@ -173,7 +174,7 @@ func (c *serializationChecker) checkCall(call *ast.CallExpr) {
 			instance := c.pass.TypesInfo.Instances[identifier]
 			for _, index := range boundary.TypeParameters {
 				if index < instance.TypeArgs.Len() {
-					c.checkType(newEncodingOperand(call, boundary.Codec, "type-argument"), instance.TypeArgs.At(index))
+					c.checkType(newEncodingOperand(call, boundary, "type-argument"), instance.TypeArgs.At(index))
 				}
 			}
 		}
@@ -218,15 +219,16 @@ func (c *serializationChecker) arguments(call *ast.CallExpr, function *types.Fun
 	return call.Args[argument : argument+1]
 }
 
-func (c *serializationChecker) checkExpression(expression ast.Expr, codec, operation string) {
+func (c *serializationChecker) checkExpression(expression ast.Expr, operand encodingOperand) {
 	// Explicit boxing preserves the concrete type at this source boundary.
 	if call, ok := ast.Unparen(expression).(*ast.CallExpr); ok && c.pass.TypesInfo.Types[call.Fun].IsType() && len(call.Args) == 1 {
 		if _, boxed := c.pass.TypesInfo.TypeOf(call).Underlying().(*types.Interface); boxed {
-			c.checkExpression(call.Args[0], codec, operation)
+			operand.node = call.Args[0]
+			c.checkExpression(call.Args[0], operand)
 			return
 		}
 	}
-	c.checkType(newEncodingOperand(expression, codec, operation), c.pass.TypesInfo.TypeOf(expression))
+	c.checkType(operand, c.pass.TypesInfo.TypeOf(expression))
 }
 
 func (c *serializationChecker) checkType(operand encodingOperand, t types.Type) {
@@ -242,6 +244,12 @@ func (c *serializationChecker) checkType(operand encodingOperand, t types.Type) 
 		if problem.reason == "json-string-map-key" {
 			c.report(operand.node, "unsupported-codec", operand.operation, problem.reason,
 				fmt.Sprintf("%s%s needs a plain string map key for a checked JSON round trip", path, typeName(problem.typ)),
+				problem.typ, problem.path)
+			return
+		}
+		if problem.reason == "json-byte-slice" {
+			c.report(operand.node, "unsupported-codec", operand.operation, problem.reason,
+				fmt.Sprintf("%sdefault JSON decoding can bypass %s validation for base64 slice values; use a checked slice decoder", path, typeName(problem.typ)),
 				problem.typ, problem.path)
 			return
 		}
@@ -274,6 +282,11 @@ func (c *serializationChecker) encodingProblem(t types.Type, operand encodingOpe
 	case *types.Pointer:
 		return c.encodingProblem(shape.Elem(), operand, seen)
 	case *types.Slice:
+		if operand.defaultJSONDecode && c.policies.lookup(shape.Elem()) != nil {
+			if basic, ok := shape.Elem().Underlying().(*types.Basic); ok && basic.Kind() == types.Uint8 && !hasJSONSliceDecoder(t) {
+				return &serializationProblem{typ: shape.Elem(), codec: codec, reason: "json-byte-slice"}
+			}
+		}
 		return c.encodingProblem(shape.Elem(), operand, seen)
 	case *types.Array:
 		return c.encodingProblem(shape.Elem(), operand, seen)
@@ -312,6 +325,17 @@ func (c *serializationChecker) encodingProblem(t types.Type, operand encodingOpe
 		}
 	}
 	return nil
+}
+
+func hasJSONSliceDecoder(t types.Type) bool {
+	// A slice hook intercepts quoted strings before the default base64 path,
+	// which writes uint8 elements directly without calling element decoders.
+	for _, name := range []string{"UnmarshalJSON", "UnmarshalText"} {
+		if method := codecMethod(t, name, true); method != nil && validDecoderSignature(method.Type().(*types.Signature), "json") {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *serializationChecker) promotedCodecProblem(shape *types.Struct, selected structField, codec string) *serializationProblem {

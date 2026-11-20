@@ -180,9 +180,9 @@ func DecodeAfterReplacedSlot(data []byte, a, b encodingvalues.ID) (encodingvalue
 	return a, nil // want "return may produce an empty encodingvalues.ID"
 }
 
-func DecodeAfterDisjointSlotWrite(data []byte, a, b encodingvalues.ID) (encodingvalues.ID, error) {
+func DecodeAfterDisjointSlotWrite(data []byte, a, b, c encodingvalues.ID) (encodingvalues.ID, error) {
 	slots := [2]*encodingvalues.ID{&a, &b}
-	replaceSlot(slots[1:], &b)
+	replaceSlot(slots[1:], &c)
 	a = ""
 	if err := json.Unmarshal(data, slots[0]); err != nil {
 		return "", err
@@ -215,15 +215,42 @@ func DecodeAfterMergedSlotWrite(data []byte, otherSlot bool) (encodingvalues.ID,
 }
 
 func DecodeAfterDisjointMergedSlotWrite(data []byte, otherSlot bool) (encodingvalues.ID, error) {
-	var a, b encodingvalues.ID
+	var a, b, c encodingvalues.ID
 	slots := []*encodingvalues.ID{&a, &b, &b}
 	slot := &slots[1]
 	if otherSlot {
 		slot = &slots[2]
 	}
-	*slot = &b
+	*slot = &c
 	if err := json.Unmarshal(data, slots[0]); err != nil {
 		return "", err
 	}
 	return a, nil
+}
+
+func DecodeThroughBoxedPointer(valid encodingvalues.ID) []encodingvalues.ID {
+	values := []encodingvalues.ID{valid}
+	var out any = (*string)(&values[0])
+	if err := json.Unmarshal([]byte(`""`), &out); err != nil {
+		return nil
+	}
+	return values // want "return may contain an empty encodingvalues.ID"
+}
+
+func DecodeReplacesBoxedValue(valid encodingvalues.ID) []encodingvalues.ID {
+	values := []encodingvalues.ID{valid}
+	var out any = string(values[0])
+	if err := json.Unmarshal([]byte(`""`), &out); err != nil {
+		return nil
+	}
+	return values
+}
+
+func DecodeMayReplaceBoxedPointer() (encodingvalues.ID, error) {
+	var value encodingvalues.ID
+	var out any = &value
+	if err := json.Unmarshal([]byte(`null`), &out); err != nil {
+		return "", err
+	}
+	return value, nil // want "return .*empty encodingvalues.ID"
 }

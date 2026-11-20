@@ -4,6 +4,75 @@ import "errors"
 
 type projectedRow struct{ ID ID }
 
+func FillLoopThenClearPointee(valid ID) []*ID {
+	pointer := new(ID)
+	*pointer = valid
+	values := make([]*ID, 1)
+	for index := range values {
+		values[index] = pointer
+	}
+	*pointer = ""
+	return values // want "return may contain an empty zeroflow.ID"
+}
+
+func FillLoopWithValidPointee(valid ID) []*ID {
+	pointer := new(ID)
+	*pointer = valid
+	values := make([]*ID, 1)
+	for index := range values {
+		values[index] = pointer
+	}
+	return values
+}
+
+func FillLoopKeepsCopiedValue(valid ID) []ID {
+	pointer := new(ID)
+	*pointer = valid
+	values := make([]ID, 1)
+	for index := range values {
+		values[index] = *pointer
+	}
+	*pointer = ""
+	return values
+}
+
+func EmptyIndexedString() ID {
+	values := []string{""}
+	return ID(values[0]) // want "return produces an empty zeroflow.ID"
+}
+
+func NonemptyIndexedString() ID {
+	values := []string{"valid"}
+	return ID(values[0])
+}
+
+type pointerRow struct{ Pointer *ID }
+
+func CopyIntoZeroPointerField(id ID) *ID {
+	source := []pointerRow{{Pointer: &id}}
+	destination := make([]pointerRow, 1)
+	copy(destination, source)
+	id = ""
+	return destination[0].Pointer // want "return produces an empty zeroflow.ID"
+}
+
+func CopyIntoPopulatedPointerField(id ID) *ID {
+	other := id
+	source := []pointerRow{{Pointer: &id}}
+	destination := []pointerRow{{Pointer: &other}}
+	copy(destination, source)
+	id = ""
+	return destination[0].Pointer // want "return produces an empty zeroflow.ID"
+}
+
+func CopyRetainsOriginalPointer(id ID) *ID {
+	source := []pointerRow{{Pointer: &id}}
+	destination := make([]pointerRow, 1)
+	copy(destination, source)
+	source[0].Pointer = new(ID)
+	return destination[0].Pointer
+}
+
 func SliceArrayPointer(valid ID) *[1]ID {
 	values := []ID{valid, ""}
 	return (*[1]ID)(values[1:]) // want "return .*empty zeroflow.ID"

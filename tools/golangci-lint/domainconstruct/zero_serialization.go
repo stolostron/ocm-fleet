@@ -100,7 +100,7 @@ func (c *zeroChecker) decoderInitializes(instruction ssa.CallInstruction, locati
 		initialized, conflicting := false, false
 		for _, index := range boundary.Decode {
 			argument := contractArgument(call, index)
-			for _, destination := range c.decodeDestinations(argument, before, make(map[ssa.Value]bool)) {
+			for _, destination := range c.decodeDestinations(argument, before, boundary.DefaultJSONDecode, make(map[ssa.Value]bool)) {
 				target, known := c.collectionAddress(destination.value)
 				if !known {
 					conflicting = true
@@ -180,7 +180,7 @@ func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, stora
 				}
 				continue
 			}
-			for _, destination := range c.decodeDestinations(value, before, make(map[ssa.Value]bool)) {
+			for _, destination := range c.decodeDestinations(value, before, boundary.DefaultJSONDecode, make(map[ssa.Value]bool)) {
 				target, known := c.collectionAddress(destination.value)
 				if !known || target.root != storage.root || !storage.overlaps(target) || slices.Contains(target.path, -1) {
 					continue
@@ -211,7 +211,7 @@ func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, stora
 
 // Recover decode slots from local boxing and variadic storage. An unknown or
 // conditional output can conflict with a definite write but cannot prove one.
-func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen map[ssa.Value]bool) []decodeDestination {
+func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, defaultJSON bool, seen map[ssa.Value]bool) []decodeDestination {
 	if value == nil || seen[value] || !c.work.take() {
 		return []decodeDestination{{}}
 	}
@@ -223,14 +223,14 @@ func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen 
 			return nil
 		}
 	case *ssa.MakeInterface:
-		return c.decodeDestinations(value.X, point, seen)
+		return c.decodeDestinations(value.X, point, defaultJSON, seen)
 	case *ssa.ChangeInterface:
-		return c.decodeDestinations(value.X, point, seen)
+		return c.decodeDestinations(value.X, point, defaultJSON, seen)
 	case *ssa.Phi:
 		var destinations []decodeDestination
 		agree := true
 		for _, edge := range value.Edges {
-			incoming := c.decodeDestinations(edge, point, seen)
+			incoming := c.decodeDestinations(edge, point, defaultJSON, seen)
 			if len(incoming) != 1 || incoming[0].conditional || incoming[0].value == nil {
 				agree = false
 			} else if agree && len(destinations) != 0 {
@@ -252,13 +252,28 @@ func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen 
 		if value.Op == token.MUL {
 			if location, known := c.collectionAddress(value.X); known {
 				if origin := c.storedReference(location, instructionPoint(value)); origin != nil {
-					return c.decodeDestinations(origin, point, seen)
+					return c.decodeDestinations(origin, point, defaultJSON, seen)
 				}
 			}
 		}
 	}
-	if _, pointer := value.Type().Underlying().(*types.Pointer); pointer {
-		return []decodeDestination{{value: value}}
+	if pointer, ok := value.Type().Underlying().(*types.Pointer); ok {
+		destinations := []decodeDestination{{value: value}}
+		if _, boxed := pointer.Elem().Underlying().(*types.Interface); defaultJSON && boxed {
+			if location, known := c.collectionAddress(value); known {
+				origin, _ := c.referenceAt(location, point)
+				for _, nested := range c.decodeDestinations(origin, point, defaultJSON, seen) {
+					// JSON can follow the stored pointer, or replace the interface
+					// itself, for example when the input is null.
+					nested.conditional = true
+					destinations = append(destinations, nested)
+				}
+			}
+		}
+		return destinations
+	}
+	if defaultJSON {
+		return nil // An interface payload that is not a pointer is replaced.
 	}
 	view, ok := c.collectionOf(value)
 	if !ok || view.end < 0 || view.dynamicStart {
@@ -282,7 +297,7 @@ func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen 
 		}
 		visited[index] = true
 		location := address{root: view.storage.root, path: slices.Clone(store.target.path)}
-		destinations = append(destinations, c.decodeDestinations(c.storedReference(location, point), point, seen)...)
+		destinations = append(destinations, c.decodeDestinations(c.storedReference(location, point), point, defaultJSON, seen)...)
 	}
 	if int64(len(visited)) != view.size() {
 		destinations = append(destinations, decodeDestination{})

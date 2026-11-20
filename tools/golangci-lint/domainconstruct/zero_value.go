@@ -73,6 +73,9 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 
 	switch value := value.(type) {
 	case *ssa.MakeInterface:
+		if context.use == jsonAddressableFields {
+			context.use = jsonFields // The concrete value held by an interface is unaddressable.
+		}
 		return c.problem(value.X, path, value.X.Type(), point, context, seen)
 	case *ssa.MakeClosure:
 		if function, ok := value.Fn.(*ssa.Function); ok && strings.HasPrefix(function.Synthetic, "bound method wrapper") {
@@ -295,6 +298,11 @@ func projectedType(source types.Type, path []int) types.Type {
 
 func stringSliceLength(value *ssa.Slice) (int64, bool) {
 	if value.High == nil {
+		if low, ok := value.Low.(*ssa.Call); ok {
+			if builtin, ok := low.Call.Value.(*ssa.Builtin); ok && builtin.Name() == "len" && low.Call.Args[0] == value.X {
+				return 0, true
+			}
+		}
 		return 0, false
 	}
 	if value.High == value.Low {
@@ -631,7 +639,7 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 				return problem.withValue(c.valueName(location.root, location.path)).
 					step("mutation", pos, c.callName(call.Common())+detail)
 			}
-			if problem, definite, overlaps := c.collectionWriteProblem(execution, location, t, values, seen); overlaps {
+			if problem, definite, overlaps := c.collectionWriteProblem(execution, location, t, use, values, seen); overlaps {
 				if definite {
 					return problem
 				}

@@ -66,6 +66,32 @@ func UseFailureAfterBoxing(value ID, use func(any)) {
 	use(forwarded)
 }
 
+func replacedLoopBoxStatus(value ID) (any, error) {
+	payload, err := successfulBox(value)
+	for iteration := 0; ; iteration++ {
+		if iteration > 0 {
+			return payload, err
+		}
+		err = errors.New("failure")
+	}
+}
+
+func unchangedLoopBoxStatus(value ID) (any, error) {
+	payload, err := successfulBox(value)
+	for iteration := 0; ; iteration++ {
+		if iteration > 0 {
+			return payload, err
+		}
+	}
+}
+
+func UseLoopBoxStatus(value ID, use func(any)) {
+	payload, _ := replacedLoopBoxStatus(value)
+	use(payload) // want "argument may be an empty zeroflow.ID"
+	payload, _ = unchangedLoopBoxStatus(value)
+	use(payload)
+}
+
 type boxedIDs []ID
 
 func invalidBoxedIDs() (any, error) { return boxedIDs{""}, errors.New("failure") }
@@ -81,4 +107,37 @@ func EncodeBoxedNamedSlices() {
 	json.Marshal(payload) // want "argument may be an empty zeroflow.ID"
 	opaque, _ := invalidOpaqueBoxedIDs()
 	json.Marshal(opaque)
+}
+
+type boxedIDArray [1]ID
+
+func invalidBoxedIDArray() (any, error) { return boxedIDArray{""}, errors.New("failure") }
+
+type opaqueBoxedIDArray [1]ID
+
+func (opaqueBoxedIDArray) MarshalJSON() ([]byte, error) { return []byte("null"), nil }
+
+func invalidOpaqueBoxedIDArray() (any, error) { return opaqueBoxedIDArray{""}, errors.New("failure") }
+
+type pointerHookBoxedIDArray [1]ID
+
+func (*pointerHookBoxedIDArray) MarshalJSON() ([]byte, error) { return []byte("null"), nil }
+
+func invalidBoxedIDArrayWithPointerHook() (any, error) {
+	return pointerHookBoxedIDArray{""}, errors.New("failure")
+}
+
+func opaqueBoxedIDArrayPointer() (any, error) {
+	return &pointerHookBoxedIDArray{""}, errors.New("failure")
+}
+
+func EncodeBoxedNamedArrays() {
+	payload, _ := invalidBoxedIDArray()
+	json.Marshal(payload) // want "argument may be an empty zeroflow.ID"
+	opaque, _ := invalidOpaqueBoxedIDArray()
+	json.Marshal(opaque)
+	value, _ := invalidBoxedIDArrayWithPointerHook()
+	json.Marshal(value) // want "argument may be an empty zeroflow.ID"
+	pointer, _ := opaqueBoxedIDArrayPointer()
+	json.Marshal(pointer)
 }

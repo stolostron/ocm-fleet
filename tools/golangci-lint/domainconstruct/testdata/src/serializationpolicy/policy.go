@@ -17,6 +17,12 @@ func NewTextOnly(raw string) TextOnly { return TextOnly(raw) }
 //domain:boundary json encode=missing
 func WrongParameter(value any) error { return nil } // want "unknown boundary parameter missing"
 
+//domain:boundary json encode=_
+func BlankEncodeParameter(_ any, _ any) error { return nil } // want "unknown boundary parameter _"
+
+//domain:boundary json decode=_
+func BlankDecodeParameter(_ any, _ any) error { return nil } // want "unknown boundary parameter _"
+
 //domain:boundary json decode=value
 func NoCheckedSuccess(value any) {} // want "decode boundary requires exactly one error result"
 

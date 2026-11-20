@@ -2,6 +2,39 @@ package zeroflow
 
 import "errors"
 
+func clearNestedPointer(values [][]*string) {
+	if pointer := values[0][0]; pointer != nil {
+		*pointer = ""
+	}
+}
+
+func MutateLaterNestedSlot(raw string, enabled bool) (ID, error) {
+	inner := make([]*string, 1)
+	outer := [][]*string{inner}
+	if enabled {
+		inner[0] = &raw
+	}
+	if raw == "" {
+		return "", errors.New("empty")
+	}
+	clearNestedPointer(outer)
+	return ID(raw), nil // want "return may produce an empty zeroflow.ID"
+}
+
+func MutateDisjointNestedSlot(raw string, enabled bool) (ID, error) {
+	inner := make([]*string, 1)
+	outer := [][]*string{inner}
+	other := raw
+	if enabled {
+		inner[0] = &other
+	}
+	if raw == "" {
+		return "", errors.New("empty")
+	}
+	clearNestedPointer(outer)
+	return ID(raw), nil
+}
+
 type resettable string
 
 func (value *resettable) Reset() { *value = "" }
