@@ -17,6 +17,46 @@ func failAfterBoxing(value ID) (any, error) {
 	return payload, errors.New("failure")
 }
 
+func independentBoxStatus(value ID, err error) (any, error) {
+	payload, _ := successfulBox(value)
+	return payload, err
+}
+
+func mixedBox(value ID, fail bool) (any, error) {
+	if fail {
+		return "no ID", errors.New("failure")
+	}
+	return value, nil
+}
+
+func directBoxForward(value ID, fail bool) (any, error) {
+	return mixedBox(value, fail)
+}
+
+func boundBoxForward(value ID, fail bool) (any, error) {
+	payload, err := mixedBox(value, fail)
+	return payload, err
+}
+
+func replacedBoxStatus(value ID, fail bool, replacement error) (any, error) {
+	payload, err := mixedBox(value, fail)
+	if replacement != nil {
+		err = replacement
+	}
+	return payload, err
+}
+
+func UseIndependentBoxStatus(value ID, fail bool, err error, use func(any)) {
+	payload, _ := independentBoxStatus(value, err)
+	use(payload) // want "argument may be an empty zeroflow.ID"
+	payload, _ = directBoxForward(value, fail)
+	use(payload)
+	payload, _ = boundBoxForward(value, fail)
+	use(payload)
+	payload, _ = replacedBoxStatus(value, fail, err)
+	use(payload) // want "argument may be an empty zeroflow.ID"
+}
+
 func UseFailureAfterBoxing(value ID, use func(any)) {
 	payload, _ := failAfterBoxing(value)
 	use(payload) // want "argument may be an empty zeroflow.ID"

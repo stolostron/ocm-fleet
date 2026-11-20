@@ -128,6 +128,12 @@ func (c *zeroChecker) storageSharedBefore(storage mutationTarget, point flowPoin
 				}
 			case *ssa.Call:
 				common := instruction.Common()
+				if receiver, method := synchronizationMethod(common); receiver == "WaitGroup" && method == "Go" {
+					if callback := contractArgument(common, 0); callback != nil &&
+						c.mayReferenceStorage(callback, storage, before, make(map[ssa.Value]bool)) {
+						return true
+					}
+				}
 				if fact := c.callContract(common); fact != nil {
 					for _, effect := range fact.Effects {
 						if effect.Publishes {

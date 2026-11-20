@@ -25,6 +25,35 @@ func ExactResetWritesZero(valid resettable) ID {
 	return ID(valid) // want "return produces an empty zeroflow.ID"
 }
 
+func OverwrittenField() Ref {
+	var ref Ref
+	ref.key = "initialized"
+	ref.key = ""
+	return ref // want "return .*zero zeroflow.Ref"
+}
+
+func OverwriteAfterWholeStore(valid Ref) Ref {
+	var ref Ref
+	ref = valid
+	ref.key = ""
+	return ref // want "return .*zero zeroflow.Ref"
+}
+
+func FieldReinitialized() Ref {
+	var ref Ref
+	ref.key = ""
+	ref.key = "initialized"
+	return ref
+}
+
+func SiblingFieldKeepsNonzero() Marked {
+	var value Marked
+	value.mark = 1
+	value.resettable = "initialized"
+	value.resettable = ""
+	return value
+}
+
 func PreviousIterationError(read func() error, stop func() bool) (ID, error) {
 	previous := errors.New("initial")
 	for {

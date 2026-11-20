@@ -28,6 +28,12 @@ type memoryVisit struct {
 	cleanup int
 }
 
+type fieldWrites struct {
+	paths           [][]int
+	possiblyNonzero bool
+	latest          token.Pos
+}
+
 func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point flowPoint, context flowContext, seen map[valueVisit]bool) (result *zeroProblem) {
 	if !context.possible || !c.interestingType(t) || !c.work.take() {
 		return nil
@@ -90,6 +96,8 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 		return c.collectionProblem(value, point, context, seen)
 	case *ssa.MakeSlice:
 		return c.collectionProblem(value, point, context, seen)
+	case *ssa.SliceToArrayPointer:
+		return c.collectionProblem(value, point, context, seen)
 	case *ssa.Call:
 		if problem := c.callResultProblem(value, 0, path, t, point, context, seen); problem != nil {
 			return problem
@@ -141,6 +149,12 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 			if location, ok := c.collectionAddress(value.X); ok {
 				location.path = append(location.path, path...)
 				return c.memoryAtProblem(location, t, instructionPoint(value), point, context, seen, make(map[memoryVisit]bool))
+			}
+			if _, array := value.Type().Underlying().(*types.Array); array {
+				if view, ok := c.collectionOf(value); ok {
+					// The array load copies the elements at this instruction.
+					return c.collectionAtProblem(view, instructionPoint(value), point, context, seen, nil, make(map[collectionVisit]bool))
+				}
 			}
 		}
 		if value.Op == token.ARROW {
@@ -447,7 +461,7 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 	if optionalPayload(t) != nil {
 		// Follow whole-value writes and generic factories, without inspecting
 		// the inactive private payload as an independently required field.
-		return c.memoryHistoryProblem(location, t, point, use, context, values, seen)
+		return c.memoryHistoryProblem(location, t, point, use, context, values, seen, fieldWrites{})
 	}
 	if array, ok := t.Underlying().(*types.Array); ok && c.policies.lookup(t) == nil {
 		view := collectionView{storage: location, element: array.Elem(), end: array.Len()}
@@ -458,9 +472,7 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 			for selected := range c.jsonShape.fields(t, context.use.json()) {
 				if child, read, known := c.fieldStorage(location, structure, selected, point, use); known {
 					childContext := context
-					if context.use.json() && selected.indirect {
-						childContext.use = jsonAddressableFields
-					}
+					childContext.use = context.use.forField(selected)
 					if problem := c.memoryAtProblem(child, selected.field.Type(), read, use, childContext, values, seen); problem != nil {
 						problem.path = fieldPath(selected.path, problem.path)
 						return problem
@@ -470,7 +482,7 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 			return nil
 		}
 	}
-	return c.memoryHistoryProblem(location, t, point, use, context, values, seen)
+	return c.memoryHistoryProblem(location, t, point, use, context, values, seen, fieldWrites{})
 }
 
 func (c *zeroChecker) fieldStorage(location address, shape *types.Struct, field structField, point, use flowPoint) (address, flowPoint, bool) {
@@ -498,7 +510,7 @@ func (c *zeroChecker) fieldStorage(location address, shape *types.Struct, field 
 
 // Guard facts describe the observation above. Once an intervening effect rules
 // out that proof, tracing earlier storage must not reapply it before the effect.
-func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point, use flowPoint, context flowContext, values map[valueVisit]bool, seen map[memoryVisit]bool) *zeroProblem {
+func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point, use flowPoint, context flowContext, values map[valueVisit]bool, seen map[memoryVisit]bool, fields fieldWrites) *zeroProblem {
 	visit := memoryVisit{point, location.root, pathKey(location.path), context.cleanup.first}
 	if seen[visit] || !c.work.take() {
 		return nil
@@ -523,6 +535,9 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 				return nil
 			}
 			problem.reason = reasonZeroStorage
+			if fields.possiblyNonzero {
+				problem = problem.uncertain()
+			}
 			reference := c.valueReference(location.root, location.path)
 			return problem.withValue(reference.expression).
 				step("source", allocation.Pos(), "storage "+reference.describe("unnamed storage")+" starts at zero")
@@ -534,6 +549,16 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 				if pathPrefix(location.path, destination.path) {
 					remaining := location.path[len(destination.path):]
 					problem := c.problem(store.Val, remaining, t, use, context, values)
+					if len(fields.paths) != 0 {
+						if problem == nil {
+							// The whole value's contract does not identify which fields
+							// were nonzero before the intervening field writes.
+							problem = c.conditionalProblem(t, reasonInputMayBeZero, context.use).
+								step("mutation", fields.latest, "a later field write can overwrite the nonzero contents")
+						} else if fields.possiblyNonzero {
+							problem = problem.uncertain()
+						}
+					}
 					if problem == nil {
 						return nil
 					}
@@ -542,8 +567,27 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 				// A populated field makes the containing protected value nonzero.
 				// Its constructor remains responsible for all other invariants.
 				if pathPrefix(destination.path, location.path) {
-					if literal, constant := store.Val.(*ssa.Const); !constant || !zeroConstant(literal) {
-						return nil
+					overlaps, replaced := false, false
+					for _, path := range fields.paths {
+						if !c.work.take() {
+							return c.conditionalProblem(t, reasonInputMayBeZero, context.use)
+						}
+						if pathPrefix(destination.path, path) && !slices.Contains(path, -1) {
+							replaced = true
+							break
+						}
+						overlaps = overlaps || storagePathsOverlap(destination.path, path)
+					}
+					if !replaced {
+						state := c.valueTruth(store.Val, context, make(map[ssa.Value]bool))
+						if state == notZero && !overlaps {
+							return nil
+						}
+						fields.possiblyNonzero = fields.possiblyNonzero || state != isZero
+						fields.paths = append(fields.paths, destination.path)
+						if !fields.latest.IsValid() {
+							fields.latest = store.Pos()
+						}
 					}
 				}
 			}
@@ -552,9 +596,15 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 				if problem := c.problem(store.Val, nil, t, before, context, values); problem != nil {
 					return problem.uncertain().step("mutation", store.Pos(), detail)
 				}
-				return c.memoryHistoryProblem(location, t, before, use, context, values, seen).uncertain().
+				return c.memoryHistoryProblem(location, t, before, use, context, values, seen, fields).uncertain().
 					step("mutation", store.Pos(), detail)
 			}
+		}
+		if sharedStorage(location.root) && storageHandoff(instruction) &&
+			c.storageSharedBefore(mutationTarget{address: location}, flowPoint{point.block, index + 1}) {
+			return c.failedResultProblem(t, reasonInputMayBeZero, context.use, make(map[types.Type]valueUse)).
+				withValue(c.valueName(location.root, location.path)).
+				step("mutation", instructionPosition(instruction, before), "shared storage may change during synchronization")
 		}
 		switch instruction.(type) {
 		case ssa.CallInstruction, *ssa.RunDefers:
@@ -566,17 +616,17 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 			_, asynchronous := call.(*ssa.Go)
 			conditional := execution.conditional || asynchronous
 			pos := mutationPosition(call, before)
-			if !conditional && c.decoderInitializes(call, location, before, context) {
+			if !conditional && c.decoderInitializes(call, location, t, before, context) {
 				return nil
 			}
-			if reason := c.decoderInvalidation(call, mutationTarget{address: location}, before, context); reason != "" {
+			if reason := c.decoderInvalidation(call, mutationTarget{address: location}, t, before, context); reason != "" {
 				problem := c.failedResultProblem(t, reason, context.use, make(map[types.Type]valueUse))
 				if problem == nil {
-					problem = c.memoryHistoryProblem(location, t, before, use, context, values, seen).uncertain()
+					problem = c.memoryHistoryProblem(location, t, before, use, context, values, seen, fields).uncertain()
 				}
 				detail := " may leave partially decoded state without checked success"
 				if reason == reasonInputMayBeZero {
-					detail = " decodes into raw storage without establishing domain validity"
+					detail = " decodes into storage without establishing its domain contract"
 				}
 				return problem.withValue(c.valueName(location.root, location.path)).
 					step("mutation", pos, c.callName(call.Common())+detail)
@@ -588,7 +638,7 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 				if problem != nil {
 					return problem.uncertain()
 				}
-				return c.memoryHistoryProblem(location, t, before, use, context, values, seen).uncertain()
+				return c.memoryHistoryProblem(location, t, before, use, context, values, seen, fields).uncertain()
 			}
 			effect := c.callMutation(call.Common(), location, before)
 			if conditional && effect != mutationReadOnly {
@@ -614,7 +664,7 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 				if _, synchronous := call.(*ssa.Call); synchronous && c.iteratorInitializes(call.Common(), location, t, before, context) {
 					return nil
 				}
-				prior := c.memoryHistoryProblem(location, t, before, use, context, values, seen)
+				prior := c.memoryHistoryProblem(location, t, before, use, context, values, seen, fields)
 				if prior == nil && !storageHasDomainContract(location, t) {
 					prior = c.conditionalProblem(t, reasonInputMayBeZero, context.use).step("source", location.root.Pos(), "raw storage "+c.storageName(location.root, location.path)+" has no domain construction contract")
 				}
@@ -635,7 +685,7 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 			continue
 		}
 		end := flowPoint{predecessor, len(predecessor.Instrs)}
-		if alternatives.add(c.memoryHistoryProblem(location, t, end, use, edge, values, seen)) {
+		if alternatives.add(c.memoryHistoryProblem(location, t, end, use, edge, values, seen, fields)) {
 			break
 		}
 	}
@@ -657,25 +707,31 @@ func mutationPosition(call ssa.CallInstruction, point flowPoint) token.Pos {
 }
 
 func storageHasDomainContract(location address, target types.Type) bool {
-	pointer, ok := location.root.Type().Underlying().(*types.Pointer)
-	if !ok {
-		return false
+	_, pointer := location.root.Type().Underlying().(*types.Pointer)
+	return pointer && types.Identical(storageType(location), target)
+}
+
+func storageType(location address) types.Type {
+	t := location.root.Type()
+	if pointer, ok := t.Underlying().(*types.Pointer); ok {
+		t = pointer.Elem()
 	}
-	t := pointer.Elem()
 	for _, index := range location.path {
 		switch parent := t.Underlying().(type) {
 		case *types.Struct:
 			if index < 0 || index >= parent.NumFields() {
-				return false
+				return nil
 			}
 			t = parent.Field(index).Type()
 		case *types.Array:
 			t = parent.Elem()
+		case *types.Slice:
+			t = parent.Elem()
 		default:
-			return false
+			return nil
 		}
 	}
-	return types.Identical(t, target)
+	return t
 }
 
 func (c *zeroChecker) interestingType(t types.Type) bool {

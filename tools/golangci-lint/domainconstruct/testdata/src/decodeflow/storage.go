@@ -41,6 +41,41 @@ func SuccessfulNativeDecodeRestoresElement(data []byte, valid encodingvalues.ID)
 	return values
 }
 
+//domain:constructors newWireID
+//domain:zero-valid
+//domain:serialization json
+type wireID string
+
+func newWireID(value string) wireID { return wireID(value) }
+
+func (value *wireID) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, (*string)(value))
+}
+
+func DecodeThroughOtherPolicy() (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	if err := json.Unmarshal([]byte(`""`), (*wireID)(&id)); err != nil { // want "conversion uses an empty encodingvalues.ID"
+		return "", err
+	}
+	return id, nil // want "return may produce an empty encodingvalues.ID"
+}
+
+func DecodeThroughOtherPolicyOverwritesValidElement(valid encodingvalues.ID) []encodingvalues.ID {
+	values := []encodingvalues.ID{valid, valid}
+	if err := json.Unmarshal([]byte(`""`), (*wireID)(&values[0])); err != nil {
+		return nil
+	}
+	return values // want "return may contain an empty encodingvalues.ID"
+}
+
+func DecodeThroughOtherPolicyKeepsDisjointElement(valid encodingvalues.ID) []encodingvalues.ID {
+	values := []encodingvalues.ID{valid, valid}
+	if err := json.Unmarshal([]byte(`""`), (*wireID)(&values[0])); err != nil {
+		return nil
+	}
+	return values[1:]
+}
+
 func DecodeSameBoxedDestination(data []byte, choose bool) (encodingvalues.ID, error) {
 	var id encodingvalues.ID
 	var destination any
@@ -159,6 +194,34 @@ func DecodeAfterReadOnlySlotUse(data []byte, a encodingvalues.ID) (encodingvalue
 	slots := [1]*encodingvalues.ID{&a}
 	_ = slotCount(slots[:])
 	a = ""
+	if err := json.Unmarshal(data, slots[0]); err != nil {
+		return "", err
+	}
+	return a, nil
+}
+
+func DecodeAfterMergedSlotWrite(data []byte, otherSlot bool) (encodingvalues.ID, error) {
+	var a, b encodingvalues.ID
+	slots := []*encodingvalues.ID{&a, &b}
+	slot := &slots[0]
+	if otherSlot {
+		slot = &slots[1]
+	}
+	*slot = &b
+	if err := json.Unmarshal(data, slots[0]); err != nil {
+		return "", err
+	}
+	return a, nil // want "return .*empty encodingvalues.ID"
+}
+
+func DecodeAfterDisjointMergedSlotWrite(data []byte, otherSlot bool) (encodingvalues.ID, error) {
+	var a, b encodingvalues.ID
+	slots := []*encodingvalues.ID{&a, &b, &b}
+	slot := &slots[1]
+	if otherSlot {
+		slot = &slots[2]
+	}
+	*slot = &b
 	if err := json.Unmarshal(data, slots[0]); err != nil {
 		return "", err
 	}

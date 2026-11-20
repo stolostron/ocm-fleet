@@ -42,11 +42,15 @@ func (c *zeroChecker) argumentUse(call *ssa.CallCommon, index int) valueUse {
 }
 
 func (c *zeroChecker) useForType(t types.Type, use valueUse) valueUse {
+	if use.json() && c.policies.lookup(t) != nil {
+		return wholeValue
+	}
+	return jsonUseForType(t, use)
+}
+
+func jsonUseForType(t types.Type, use valueUse) valueUse {
 	if !use.json() {
 		return use
-	}
-	if c.policies.lookup(t) != nil {
-		return wholeValue
 	}
 	// A custom hook may inspect ignored fields. Pointer hooks matter when
 	// the encoder can address the value.
@@ -72,6 +76,13 @@ func (use valueUse) json() bool {
 	return use == jsonFields || use == jsonAddressableFields
 }
 
+func (use valueUse) forField(field structField) valueUse {
+	if use.json() && field.indirect {
+		return jsonAddressableFields
+	}
+	return use
+}
+
 type decodeDestination struct {
 	value       ssa.Value // nil when a slot could not be recovered.
 	conditional bool
@@ -80,7 +91,7 @@ type decodeDestination struct {
 // Only a declared root decoder establishes valid domain state on nil error.
 // A plain envelope's nested hooks can be skipped for missing fields, so the
 // envelope cannot provide the same guarantee. Failure can leave partial writes.
-func (c *zeroChecker) decoderInitializes(instruction ssa.CallInstruction, location address, before flowPoint, context flowContext) bool {
+func (c *zeroChecker) decoderInitializes(instruction ssa.CallInstruction, location address, t types.Type, before flowPoint, context flowContext) bool {
 	call := instruction.Common()
 	for _, boundary := range c.contracts.boundariesFor(callObject(call), c.policies) {
 		if len(boundary.Decode) == 0 || !c.decodingSucceeded(instruction, boundary.ErrorResult, context) {
@@ -100,9 +111,21 @@ func (c *zeroChecker) decoderInitializes(instruction ssa.CallInstruction, locati
 				}
 				pointer, ok := destination.value.Type().Underlying().(*types.Pointer)
 				if !ok || target.root != location.root || !pathPrefix(location.path, target.path) ||
-					slices.Contains(target.path, -1) ||
-					!c.policies.lookup(pointer.Elem()).supports(boundary.Codec) ||
-					!supportsNativeDecode(pointer.Elem(), boundary.Codec) {
+					slices.Contains(target.path, -1) {
+					conflicting = true
+					continue
+				}
+				expected := t
+				if len(target.path) < len(location.path) {
+					// A native parent decoder can establish the declared policy
+					// of its required fields.
+					if !types.Identical(storageType(location), t) {
+						conflicting = true
+						continue
+					}
+					expected = storageType(target)
+				}
+				if !c.decoderEstablishes(pointer.Elem(), expected, boundary.Codec) {
 					conflicting = true
 				} else if !destination.conditional {
 					initialized = true
@@ -114,6 +137,11 @@ func (c *zeroChecker) decoderInitializes(instruction ssa.CallInstruction, locati
 		}
 	}
 	return false
+}
+
+func (c *zeroChecker) decoderEstablishes(decoded, expected types.Type, codec string) bool {
+	return types.Identical(decoded, expected) &&
+		c.policies.lookup(decoded).supports(codec) && supportsNativeDecode(decoded, codec)
 }
 
 func (c *zeroChecker) decodingSucceeded(instruction ssa.CallInstruction, errorIndex int, context flowContext) bool {
@@ -134,7 +162,7 @@ func (c *zeroChecker) decodingSucceeded(instruction ssa.CallInstruction, errorIn
 	return false
 }
 
-func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, storage mutationTarget, before flowPoint, context flowContext) zeroReason {
+func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, storage mutationTarget, t types.Type, before flowPoint, context flowContext) zeroReason {
 	call := instruction.Common()
 	for _, boundary := range c.contracts.boundariesFor(callObject(call), c.policies) {
 		if len(boundary.Decode) == 0 {
@@ -157,14 +185,21 @@ func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, stora
 				if !known || target.root != storage.root || !storage.overlaps(target) || slices.Contains(target.path, -1) {
 					continue
 				}
-				// A raw sibling field of a collection element cannot invalidate
-				// another field's domain contract.
-				if storage.elements == nil && !sameStorage(target, storage.address) ||
-					storage.elements != nil && len(target.path) != len(storage.path)+1 {
-					continue
-				}
 				if pointer, ok := destination.value.Type().Underlying().(*types.Pointer); ok {
-					if _, scalar := pointer.Elem().Underlying().(*types.Basic); scalar && c.policies.lookup(pointer.Elem()) == nil {
+					decoded := pointer.Elem()
+					if storage.elements == nil && !sameStorage(target, storage.address) {
+						if pathPrefix(storage.path, target.path) && !types.Identical(decoded, storageType(target)) {
+							return reasonInputMayBeZero
+						}
+						continue
+					}
+					// A sibling field of a collection element cannot invalidate
+					// another field's domain contract.
+					if storage.elements != nil && len(target.path) != len(storage.path)+1 {
+						continue
+					}
+					if _, scalar := decoded.Underlying().(*types.Basic); (scalar || !types.Identical(decoded, t)) &&
+						!c.decoderEstablishes(decoded, t, boundary.Codec) {
 						return reasonInputMayBeZero
 					}
 				}

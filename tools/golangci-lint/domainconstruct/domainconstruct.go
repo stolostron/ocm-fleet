@@ -117,9 +117,7 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 			return false
 		}
 	case *ast.RangeStmt:
-		if node.Tok == token.ASSIGN {
-			c.checkRangeTransfers(node, ancestors)
-		}
+		c.checkRangeTransfers(node, ancestors)
 	case *ast.SendStmt:
 		c.checkSend(node, ancestors)
 	case *ast.UnaryExpr:
@@ -222,6 +220,12 @@ func (c *checker) checkWrite(target ast.Expr, ancestors []ast.Node) bool {
 		c.reportProtected(target, p, "domainconstruct.field-write", "assignment", "protected-field",
 			fmt.Sprintf("modify %s through %s", p.name, strings.Join(p.fact.Constructors, " or ")))
 		return false
+	}
+	if index, ok := ast.Unparen(target).(*ast.IndexExpr); ok {
+		info := c.pass.TypesInfo
+		if mapping, ok := operandUnderlying(info.TypeOf(index.X)).(*types.Map); ok {
+			c.checkTransfer(index.Index, info.TypeOf(index.Index), mapping.Key(), ancestors)
+		}
 	}
 	return true
 }

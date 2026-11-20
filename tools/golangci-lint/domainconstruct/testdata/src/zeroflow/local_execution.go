@@ -197,12 +197,69 @@ func DeferredUseBeforeRepair(use func(*ID)) {
 	defer use((*ID)(&raw)) // want "argument is an empty zeroflow.ID"
 }
 
+func ConditionalDeferredReference(enabled bool, use func(*ID)) {
+	var id ID
+	if enabled {
+		defer use(&id) // want "argument .*empty zeroflow.ID"
+	}
+}
+
+func RepairBeforeConditionalCleanup(enabled bool, valid ID, use func(*ID)) {
+	var id ID
+	if enabled {
+		defer use(&id)
+	}
+	id = valid
+}
+
+func InitializeOnRegistrationPath(enabled bool, valid ID, use func(*ID)) {
+	var id ID
+	if enabled {
+		defer use(&id)
+	}
+	if enabled {
+		id = valid
+	}
+}
+
 func IteratorFailureClearedAtExit(values iter.Seq[bool], valid ID) (id ID, err error) {
 	defer func() { err = nil }()
 	for range values {
 		return "", errors.New("failure") // want "return may produce an empty zeroflow.ID"
 	}
 	return valid, nil
+}
+
+func setIteratorFlag(flag *bool) { *flag = true }
+
+func IteratorFlagWrittenIndirectly(values iter.Seq[ID], skip bool, use func(ID)) {
+	var id ID
+	found := false
+	for value := range values {
+		if skip {
+			setIteratorFlag(&found)
+			continue
+		}
+		id, found = value, true
+	}
+	if found {
+		use(id) // want "argument may be an empty zeroflow.ID"
+	}
+}
+
+func IteratorOverwritesYieldResult(valid ID, use func(ID)) {
+	var id ID
+	found := false
+	values := func(yield func(ID) bool) {
+		yield(valid)
+		id = "" // want "assignment stores an empty zeroflow.ID"
+	}
+	for value := range values {
+		id, found = value, true
+	}
+	if found {
+		use(id) // want "argument may be an empty zeroflow.ID"
+	}
 }
 
 func IteratorFailureWithUnrelatedDefer(values iter.Seq[bool], valid ID) (ID, error) {

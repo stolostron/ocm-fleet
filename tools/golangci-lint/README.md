@@ -139,9 +139,11 @@ Reading an existing typed constant, local or imported, is a copy. Deriving a new
 typed constant with an operator is construction. An untyped constant passed as a
 domain value still needs construction.
 Explicit range assignments are checked against the yielded types, including in
-generic code when the constraint fixes those types. Channel sends and appended
-values follow ordinary transfer checks, including multiple results passed to
-`append`.
+generic code when the constraint fixes those types. Integer ranges synthesize
+new values and require construction permission when the iteration variable
+has a protected type. Map writes check implicit construction of the key.
+Channel sends and appended values follow ordinary transfer checks, including
+multiple results passed to `append`.
 Writing through an embedded field or exposing a pointer to it requires
 permission from its protected owners. Replacing an existing nested value
 requires permission from its enclosing owners. Directly returning a protected
@@ -153,8 +155,9 @@ an append with elements to allocate. Read-only slice views are allowed as
 inputs to `len` and as sources of `copy`.
 Simple generic helpers that convert a raw argument into a protected
 type are checked at their instantiated calls, including imported helpers.
-This includes conversions boxed into an interface or returned on a known
-failure or absence path.
+Retained conversions use their instantiated targets even when the final result
+has another type or is boxed into an interface. The checks include conversions
+returned on a known failure or absence path.
 Calls to approved constructors remain ordinary Go calls; the checker does not
 prove their validation logic correct.
 
@@ -257,15 +260,16 @@ and tag rules when the traversal completes within its budget.
 Decoder destinations accept zero output storage. A parameter selected for both
 encoding and decoding must already be valid. After the error is checked,
 the analyzer trusts a successfully decoded native root and its required
-members when it can establish the destination and distinguish it from other
-outputs. Merged destinations can establish that proof when they agree on the
-storage and runtime pointer type. A helper that may overwrite the supplying
-pointer slot invalidates an earlier exact origin. The checker keeps tracking
-required fields in an ordinary envelope. Default JSON decoding replaces a
-non-pointer interface payload and can follow a pointer stored in that slot.
-Decoding into a raw representation can invalidate an earlier domain value even
-after the error check. Scanning a primitive and converting it to a domain value
-still requires a constructor.
+members when the runtime destination establishes the tracked type's policy and
+other destinations cannot overwrite it. Merged destinations can establish that
+proof when they agree on the storage and runtime pointer type. An overlapping
+write through a merged pointer or a helper can invalidate the supplying slot's
+earlier origin. The checker keeps tracking required fields in an ordinary
+envelope. Default JSON decoding replaces a non-pointer interface payload and
+can follow a pointer stored in that slot.
+Decoding through a raw representation or a different domain type's codec can
+invalidate an earlier domain value even after the error check. Scanning a
+primitive and converting it to a domain value still requires a constructor.
 
 This is bounded static checking, not whole-program reflection or byte-buffer
 provenance analysis. Opaque interface payloads, indirect function dispatch, and
@@ -543,7 +547,8 @@ non-nil error, while the zero of an interface type stays nil. Names such as
 checker follows small, statically ordered sequences of defers in reverse
 registration order. Across blocks it can follow a single nonrepeating
 registration or a definite registration followed by one provably later
-registration. Values, including keys passed to deferred `delete`, are
+registration. A single conditional defer is checked on paths where the
+registration executes. Values, including keys passed to deferred `delete`, are
 captured at registration. Referenced storage is observed during cleanup after
 earlier cleanup effects. A reachable conditional write of a known zero can
 make a value possibly zero. Map lookups, channel receives, and comma-ok type
@@ -558,6 +563,9 @@ was nil. The checker examines feasible incoming paths using existing non-nil
 error contracts; it does not require an early return or a particular wrapper
 name. Clearing an error, replacing it with an unrelated possibly-nil error, or
 calling a wrapper that might swallow it establishes no such implication.
+An independent error can make a boxed payload subject to the wrapper's
+failure contract. Direct tuple forwarding and unchanged bindings from the
+same call preserve the producer's payload and status relationship.
 Presence checks remain independent. This proof has a bounded path budget and
 does not infer relationships through loop-carried errors or mutable fields;
 an incomplete proof retains the warning.
@@ -572,12 +580,14 @@ edge; a `continue` that skips an assignment or a `break` does not establish that
 contract. A complete fill also requires stable backing storage. Channel and
 recognized synchronization operations can hand control to another owner after
 a view has been published, including through a helper that stores it in a
-global. The same sharing evidence can invalidate pre-handoff `errors.Join`
-contents and an iterator flag's earlier initialization. Guarded lengths and
-exact offsets narrow the backing range affected by a copy or clear. A copied
-field is traced to its source at the copy. Parsing each element and checking
-its error before continuing is supported, including assigning the result to
-its slot before checking the error.
+global. The same sharing evidence can invalidate a guarded read, pre-handoff
+`errors.Join` contents, and an iterator flag's earlier initialization. Guarded
+lengths and exact offsets narrow the backing range affected by a copy or clear.
+A slice-to-array pointer exposes the converted prefix. An array value records
+the elements at the copy, including when a later write changes the original
+slice. A copied field is traced to its source at the copy. Parsing each element
+and checking its error before continuing is supported, including assigning the
+result to its slot before checking the error.
 Map writes check both keys and values; missing reads still need `ok` when zero
 is invalid. Element tracking uses ranges rather than expanding large arrays.
 Local and imported helper contracts preserve a returned slice's length when
@@ -620,9 +630,13 @@ possible mutations; the checker does not recursively analyze a whole call graph.
 When two summarized writes reach the same scalar slot, the last write supplies
 the state. A zero written through another direct scalar pointer parameter can
 invalidate the earlier value when the two parameters may alias.
+A protected struct's nonzero proof accounts for intervening field writes.
+An overwrite can invalidate an earlier field or whole-value proof.
 Compiler-generated iterator yields have a bounded local summary for paired
 returns and initialization proved by a checked flag. The flag must describe the
-current invocation when the iterator runs in a loop. Ordinary callbacks use
+current invocation when the iterator runs in a loop. The proof requires the
+yield to control the flag and the iterator to have no independent path to the
+target storage. Ordinary callbacks use
 the general mutation rules. Copies made before mutation retain their state, and
 a later explicit zero assignment remains invalid. Length relationships beyond the
 simple helper contracts above are not inferred. Error factories whose non-nil

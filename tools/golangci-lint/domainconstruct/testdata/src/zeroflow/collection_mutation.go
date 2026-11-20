@@ -1,6 +1,60 @@
 package zeroflow
 
+import "errors"
+
 type projectedRow struct{ ID ID }
+
+func SliceArrayPointer(valid ID) *[1]ID {
+	values := []ID{valid, ""}
+	return (*[1]ID)(values[1:]) // want "return .*empty zeroflow.ID"
+}
+
+func SliceArrayCopyBeforeRepair(valid ID) [1]ID {
+	values := []ID{valid, ""}
+	snapshot := [1]ID(values[1:])
+	values[1] = valid
+	return snapshot // want "return .*empty zeroflow.ID"
+}
+
+func SliceArrayCopyBeforeOverwrite(valid ID) [1]ID {
+	values := []ID{"", valid}
+	snapshot := [1]ID(values[1:])
+	values[1] = ""
+	return snapshot
+}
+
+func WriteThroughSliceArrayPointer(valid ID) []ID {
+	values := []ID{valid, valid}
+	view := (*[1]ID)(values[1:])
+	view[0] = ""
+	return values // want "return .*empty zeroflow.ID"
+}
+
+func ReplaceSliceArrayRegion(valid ID) []ID {
+	values := []ID{valid, valid}
+	*(*[1]ID)(values[1:]) = [1]ID{}
+	return values // want "return .*empty zeroflow.ID"
+}
+
+func ReplaceDisjointSliceArrayRegion(valid ID) []ID {
+	values := []ID{valid, valid}
+	*(*[1]ID)(values[1:]) = [1]ID{}
+	return values[:1]
+}
+
+func clearArrayError(statuses *[1]error) { statuses[0] = nil }
+
+func JoinAfterSliceArrayMutation() (ID, error) {
+	statuses := []error{nil, errors.New("failure")}
+	clearArrayError((*[1]error)(statuses[1:]))
+	return "", errors.Join(statuses...) // want "return produces an empty zeroflow.ID"
+}
+
+func JoinAfterDisjointSliceArrayMutation() (ID, error) {
+	statuses := []error{nil, errors.New("failure")}
+	clearArrayError((*[1]error)(statuses[:1]))
+	return "", errors.Join(statuses[1:]...)
+}
 
 func PossibleClearField(n int, valid ID, use func(ID)) {
 	rows := []projectedRow{{valid}}

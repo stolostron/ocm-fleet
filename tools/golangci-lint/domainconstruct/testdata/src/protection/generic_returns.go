@@ -46,3 +46,23 @@ func BoxedConstruction(raw int, value Count, input *struct{ Inner *struct{ Value
 	_ = recastField[Count](input) // want "construct protection.Count through NewCount"
 	_ = recastField[Count](typed)
 }
+
+func eraseConvertedType[T ~int](raw int) int { return int(T(raw)) }
+
+func chooseField[T ~int](raw int, fromRaw bool) struct{ Field T } {
+	if fromRaw {
+		return struct{ Field T }{Field: T(raw)}
+	}
+	return struct{ Field T }{}
+}
+
+func projectChosenField[T ~int](raw int, fromRaw bool) T {
+	return chooseField[T](raw, fromRaw).Field
+}
+
+func NestedConversions(raw int, fromRaw bool) {
+	_ = eraseConvertedType[Count](raw) // want "construct protection.Count through NewCount"
+	_ = eraseConvertedType[int](raw)
+	_ = projectChosenField[Count](raw, fromRaw) // want "construct protection.Count through NewCount"
+	_ = projectChosenField[int](raw, fromRaw)
+}

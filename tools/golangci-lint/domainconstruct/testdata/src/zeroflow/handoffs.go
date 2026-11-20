@@ -43,6 +43,54 @@ func WaitWithoutSharedErrors(worker *sync.WaitGroup) (ID, error) {
 	return "", errors.Join(statuses...)
 }
 
+func ReadAfterWorkerClearsValue(use func(ID)) {
+	var lock sync.Mutex
+	var worker sync.WaitGroup
+	raw := "ready"
+	lock.Lock()
+	worker.Add(1)
+	go func() {
+		lock.Lock()
+		raw = ""
+		lock.Unlock()
+		worker.Done()
+	}()
+	ready := raw != ""
+	lock.Unlock()
+	worker.Wait()
+	if ready {
+		use(ID(raw)) // want "argument may be an empty zeroflow.ID"
+		raw = "repaired"
+		use(ID(raw))
+	}
+}
+
+func ReadPrivateFieldAfterWait(raw string, worker *sync.WaitGroup, use func(ID)) {
+	value := struct{ raw string }{raw: raw}
+	if value.raw != "" {
+		worker.Wait()
+		use(ID(value.raw))
+	}
+}
+
+func ReadAfterWaitGroupGoClearsValue(use func(ID)) {
+	var lock sync.Mutex
+	var worker sync.WaitGroup
+	raw := "ready"
+	lock.Lock()
+	worker.Go(func() {
+		lock.Lock()
+		raw = ""
+		lock.Unlock()
+	})
+	ready := raw != ""
+	lock.Unlock()
+	worker.Wait()
+	if ready {
+		use(ID(raw)) // want "argument may be an empty zeroflow.ID"
+	}
+}
+
 func IteratorAfterFlagHandoff(values iter.Seq[ID], work chan<- *bool, ack <-chan struct{}, use func(ID)) {
 	var id ID
 	found := false

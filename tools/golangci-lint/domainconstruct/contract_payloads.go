@@ -47,6 +47,11 @@ type payloadField struct {
 	Type payloadType
 }
 
+type payloadBinding struct {
+	call   *ast.CallExpr
+	result int
+}
+
 func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.FuncDecl) []payloadRule {
 	signature := object.Type().(*types.Signature)
 	presence := b.set.hasPresence(object)
@@ -67,26 +72,64 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 		return nil
 	}
 	environment := make(map[*types.Var][]payloadType)
-	directAssignments := make(map[*ast.AssignStmt]bool)
+	direct := make(map[ast.Node]bool)
 	for _, statement := range declaration.Body.List {
-		if assignment, ok := statement.(*ast.AssignStmt); ok {
-			directAssignments[assignment] = true
+		switch statement := statement.(type) {
+		case *ast.AssignStmt:
+			direct[statement] = true
+		case *ast.DeclStmt:
+			if group, ok := statement.Decl.(*ast.GenDecl); ok && group.Tok == token.VAR {
+				for _, spec := range group.Specs {
+					direct[spec] = true
+				}
+			}
 		}
 	}
 	// A jump can bypass a replacement. A defer can change a named status
 	// after evaluating the expressions in a return statement.
-	var maySkipAssignment, mayChangeStatus bool
+	var maySkipAssignment, mayChangeStatus, hasClosure bool
+	escaped := make(map[*types.Var]bool)
 	ast.Inspect(declaration.Body, func(node ast.Node) bool {
 		switch node := node.(type) {
 		case *ast.FuncLit:
+			hasClosure = true
 			return false
 		case *ast.BranchStmt:
 			maySkipAssignment = maySkipAssignment || node.Tok == token.GOTO
 		case *ast.DeferStmt:
 			mayChangeStatus = namedStatus
+		case *ast.UnaryExpr:
+			if node.Op == token.AND {
+				if variable, ok := expressionObject(b.pass.TypesInfo, node.X).(*types.Var); ok {
+					escaped[variable] = true
+				}
+			}
+		case *ast.SelectorExpr:
+			if variable := implicitlyAddressedVariable(b.pass.TypesInfo, node); variable != nil {
+				escaped[variable] = true
+			}
+		case *ast.RangeStmt:
+			if node.Tok == token.ASSIGN {
+				for _, binding := range []ast.Expr{node.Key, node.Value} {
+					if variable, ok := expressionObject(b.pass.TypesInfo, binding).(*types.Var); ok {
+						escaped[variable] = true
+					}
+				}
+			}
 		}
 		return true
 	})
+	bindings := make(map[*types.Var]payloadBinding)
+	bindTuple := func(variable *types.Var, statement ast.Node, values []ast.Expr, result, count int) {
+		delete(bindings, variable)
+		if variable == nil || escaped[variable] || maySkipAssignment || hasClosure || !direct[statement] ||
+			variable.Parent() == b.pass.Pkg.Scope() || len(values) != 1 || count < 2 {
+			return
+		}
+		if call, ok := ast.Unparen(values[0]).(*ast.CallExpr); ok {
+			bindings[variable] = payloadBinding{call, result}
+		}
+	}
 	ast.Inspect(declaration.Body, func(node ast.Node) bool {
 		switch node := node.(type) {
 		case *ast.FuncLit:
@@ -94,6 +137,7 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 		case *ast.ValueSpec:
 			for index, name := range node.Names {
 				variable, _ := b.pass.TypesInfo.Defs[name].(*types.Var)
+				bindTuple(variable, node, node.Values, index, len(node.Names))
 				if len(node.Values) == len(node.Names) {
 					environment[variable] = b.payloadExpression(node.Values[index], 0, environment)
 				} else if len(node.Values) == 1 {
@@ -109,6 +153,7 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 			for index, target := range node.Lhs {
 				if identifier, direct := ast.Unparen(target).(*ast.Ident); direct && (node.Tok == token.ASSIGN || node.Tok == token.DEFINE) {
 					variable, _ := b.pass.TypesInfo.ObjectOf(identifier).(*types.Var)
+					bindTuple(variable, node, node.Rhs, index, len(node.Lhs))
 					var values []payloadType
 					if len(node.Rhs) == len(node.Lhs) {
 						values = b.payloadExpression(node.Rhs[index], 0, environment)
@@ -119,7 +164,7 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 				}
 			}
 			for _, update := range updates {
-				if directAssignments[node] && !maySkipAssignment {
+				if direct[node] && !maySkipAssignment {
 					environment[update.variable] = update.values
 				} else {
 					environment[update.variable] = mergePayloads(slices.Clone(environment[update.variable]), update.values)
@@ -139,8 +184,10 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 				} else if len(node.Results) == 0 {
 					values = environment[signature.Results().At(rule.Result)]
 				}
+				forwarded := status == unknown && !mayChangeStatus &&
+					b.payloadStatusForwarded(signature, presence, node, rule.Result, bindings)
 				for _, value := range values {
-					if status != unknown {
+					if !forwarded {
 						value.SuccessOnly = status == isZero
 					}
 					rule.Types = mergePayloads(rule.Types, []payloadType{value})
@@ -158,6 +205,48 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 		}
 	}
 	return result
+}
+
+// A success-only payload keeps that qualification only while the wrapper
+// returns its original status. The local form requires matching bindings
+// from a single call whose results have not been reassigned or exposed.
+func (b *contractBuilder) payloadStatusForwarded(signature *types.Signature, presence bool, statement *ast.ReturnStmt, result int, bindings map[*types.Var]payloadBinding) bool {
+	if len(statement.Results) == 0 {
+		return false
+	}
+	bindingAt := func(index int) payloadBinding {
+		if len(statement.Results) == 1 {
+			call, _ := ast.Unparen(statement.Results[0]).(*ast.CallExpr)
+			return payloadBinding{call, index}
+		}
+		variable, _ := expressionObject(b.pass.TypesInfo, statement.Results[index]).(*types.Var)
+		return bindings[variable]
+	}
+	payload := bindingAt(result)
+	if payload.call == nil {
+		return false
+	}
+	tuple, ok := b.pass.TypesInfo.TypeOf(payload.call).(*types.Tuple)
+	if !ok {
+		return false
+	}
+	source, _ := expressionObject(b.pass.TypesInfo, payload.call.Fun).(*types.Func)
+	results := signature.Results()
+	for index := range results.Len() {
+		target := results.At(index)
+		presenceStatus := presence && index == 1
+		if !presenceStatus && !isErrorType(target.Type()) {
+			continue
+		}
+		status := bindingAt(index)
+		if status.call != payload.call || !types.Identical(tuple.At(status.result).Type(), target.Type()) {
+			return false
+		}
+		if presenceStatus && (status.result != 1 || !b.set.hasPresence(source)) {
+			return false
+		}
+	}
+	return true
 }
 
 // An explicit failure can make a previously successful boxed result inert.

@@ -106,7 +106,13 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 			return value, value != nil && !possiblyChanged
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
-			if target, known := c.collectionAddress(store.Addr); known && (mutationTarget{address: location}).overlaps(target) {
+			target, known := c.collectionAddress(store.Addr)
+			tracked := mutationTarget{address: location}
+			if !known && storeTypeMayOverwrite(store.Val.Type(), storageType(location)) &&
+				c.storeMayOverlap(store.Addr, tracked, make(map[ssa.Value]bool)) {
+				return nil, false
+			}
+			if known && tracked.overlaps(target) {
 				if target.root != location.root {
 					return nil, false
 				}
@@ -183,6 +189,43 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 		result = incoming
 	}
 	return result, len(point.block.Preds) != 0 && !possiblyChanged
+}
+
+func storeTypeMayOverwrite(stored, tracked types.Type) bool {
+	switch stored.Underlying().(type) {
+	case *types.Struct, *types.Array:
+		return true // A whole-value store may overwrite one of its slots.
+	}
+	return tracked == nil || types.IdenticalIgnoreTags(stored.Underlying(), tracked.Underlying())
+}
+
+// An unresolved store may overwrite a reference slot. Only reuse its earlier
+// origin when every candidate address is known to be disjoint.
+func (c *zeroChecker) storeMayOverlap(value ssa.Value, tracked mutationTarget, active map[ssa.Value]bool) bool {
+	if !c.work.take() || active[value] {
+		return true
+	}
+	if target, known := c.collectionAddress(value); known {
+		return tracked.overlaps(target)
+	}
+	active[value] = true
+	defer delete(active, value)
+	switch value := value.(type) {
+	case *ssa.Phi:
+		for _, edge := range value.Edges {
+			if c.storeMayOverlap(edge, tracked, active) {
+				return true
+			}
+		}
+		return false
+	case *ssa.FieldAddr:
+		return c.storeMayOverlap(value.X, tracked, active)
+	case *ssa.IndexAddr:
+		return c.storeMayOverlap(value.X, tracked, active)
+	case *ssa.ChangeType:
+		return c.storeMayOverlap(value.X, tracked, active)
+	}
+	return true
 }
 
 func (c *zeroChecker) sliceArgumentMayWriteSlot(call *ssa.CallCommon, location address) bool {

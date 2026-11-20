@@ -13,7 +13,7 @@ import (
 // valid and the flag cannot become true without one. This is a bounded summary
 // of the local loop body, not a contract for arbitrary callbacks or iterators.
 func (c *zeroChecker) iteratorInitializes(call *ssa.CallCommon, location address, t types.Type, before flowPoint, context flowContext) bool {
-	for _, argument := range call.Args {
+	for yieldIndex, argument := range call.Args {
 		closure, ok := argument.(*ssa.MakeClosure)
 		if !ok {
 			continue
@@ -28,7 +28,7 @@ func (c *zeroChecker) iteratorInitializes(call *ssa.CallCommon, location address
 				targetIndex = index
 			}
 		}
-		if targetIndex < 0 {
+		if targetIndex < 0 || c.iteratorReachesStorage(call, yieldIndex, location, before) {
 			continue
 		}
 		target := function.FreeVars[targetIndex]
@@ -56,7 +56,7 @@ func (c *zeroChecker) iteratorInitializes(call *ssa.CallCommon, location address
 		}
 		for index, binding := range closure.Bindings {
 			flag, ok := binding.(*ssa.Alloc)
-			if !ok {
+			if !ok || c.iteratorReachesStorage(call, yieldIndex, address{root: flag}, before) {
 				continue
 			}
 			for value, state := range context.facts {
@@ -67,10 +67,20 @@ func (c *zeroChecker) iteratorInitializes(call *ssa.CallCommon, location address
 					continue
 				}
 				matched, paired := false, true
-				for _, reference := range *function.FreeVars[index].Referrers() {
-					store, ok := reference.(*ssa.Store)
-					if !ok || store.Addr != function.FreeVars[index] {
+				capture := function.FreeVars[index]
+				for _, reference := range *capture.Referrers() {
+					switch reference := reference.(type) {
+					case *ssa.DebugRef:
 						continue
+					case *ssa.UnOp:
+						if reference.Op == token.MUL && reference.X == capture {
+							continue
+						}
+					}
+					store, ok := reference.(*ssa.Store)
+					if !ok || store.Addr != capture {
+						paired = false
+						break
 					}
 					constant, ok := store.Val.(*ssa.Const)
 					if !ok {
@@ -93,6 +103,22 @@ func (c *zeroChecker) iteratorInitializes(call *ssa.CallCommon, location address
 					return true
 				}
 			}
+		}
+	}
+	return false
+}
+
+// Reachability through the iterator itself is independent of what its yield
+// writes. A reachable capture or other argument can invalidate the pairing.
+func (c *zeroChecker) iteratorReachesStorage(call *ssa.CallCommon, yieldIndex int, location address, before flowPoint) bool {
+	target := mutationTarget{address: location}
+	active := make(map[ssa.Value]bool)
+	if c.mayReferenceStorage(call.Value, target, before, active) {
+		return true
+	}
+	for index, argument := range call.Args {
+		if index != yieldIndex && c.mayReferenceStorage(argument, target, before, active) {
+			return true
 		}
 	}
 	return false

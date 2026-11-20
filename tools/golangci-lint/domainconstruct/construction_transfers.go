@@ -124,13 +124,28 @@ func (c *checker) checkReturnedSlice(value ast.Expr, ancestors []ast.Node) {
 }
 
 func (c *checker) checkRangeTransfers(statement *ast.RangeStmt, ancestors []ast.Node) {
-	key, value := rangeTypes(c.pass.TypesInfo.TypeOf(statement.X))
+	info := c.pass.TypesInfo
+	iterated := info.TypeOf(statement.X)
+	if basic, integer := operandUnderlying(iterated).(*types.Basic); integer && basic.Info()&types.IsInteger != 0 {
+		if key := statement.Key; key != nil && (statement.Tok != token.ASSIGN || c.checkWrite(key, ancestors)) {
+			// Integer ranges synthesize values even when Go gives the binding
+			// the same type as the bound. Other ranges transfer existing values.
+			if p := c.policy(info.TypeOf(key)); p != nil && !c.approved(p, ancestors) {
+				c.reportConstruction(key, p)
+			}
+		}
+		return
+	}
+	if statement.Tok != token.ASSIGN {
+		return
+	}
+	key, value := rangeTypes(iterated)
 	for _, binding := range []struct {
 		target ast.Expr
 		source types.Type
 	}{{statement.Key, key}, {statement.Value, value}} {
 		if binding.target != nil && c.checkWrite(binding.target, ancestors) {
-			c.checkTransfer(binding.target, binding.source, c.pass.TypesInfo.TypeOf(binding.target), ancestors)
+			c.checkTransfer(binding.target, binding.source, info.TypeOf(binding.target), ancestors)
 		}
 	}
 }

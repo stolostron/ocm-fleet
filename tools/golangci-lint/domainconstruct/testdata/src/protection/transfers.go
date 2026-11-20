@@ -10,6 +10,30 @@ func SendProtected(out chan<- Record, raw struct {
 	out <- value
 }
 
+func StoreProtectedMapKey(values map[ID]int, raw [2]byte, valid ID) {
+	values[raw] = 1 // want "construct protection.ID through NewID"
+	values[raw]++   // want "construct protection.ID through NewID"
+	values[valid] = 1
+}
+
+func IntegerRangeConstruction(limit Count, plain int, values []Count) {
+	for item := range limit { // want "construct protection.Count through NewCount"
+		_ = item
+	}
+	var item Count
+	for item = range limit { // want "construct protection.Count through NewCount"
+		_ = item
+	}
+	for index := range plain {
+		_ = index
+	}
+	for _, item = range values {
+		_ = item
+	}
+	for range limit {
+	}
+}
+
 func AppendIntoOwnedSlice(record Record, rest []int) {
 	_ = append(record.items[:0], 1)       // want "modify protection.Record through NewRecord"
 	_ = append(record.items[:0], rest...) // want "modify protection.Record through NewRecord"

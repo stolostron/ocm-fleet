@@ -498,7 +498,7 @@ func (e *sourceEvaluator) inferredSource(call *ast.CallExpr, result int, state s
 
 func projectSource(source valueSource, path []int) valueSource {
 	const maxSourcePath = 8
-	for _, field := range path {
+	for index, field := range path {
 		switch source.Kind {
 		case sourceZero:
 			return source
@@ -512,6 +512,12 @@ func projectSource(source valueSource, path []int) valueSource {
 				return valueSource{}
 			}
 			source = source.Values[field]
+		case sourceChoice:
+			projected := make([]valueSource, len(source.Values))
+			for alternative, child := range source.Values {
+				projected[alternative] = projectSource(child, path[index:])
+			}
+			return combineSources(projected)
 		default:
 			return valueSource{}
 		}

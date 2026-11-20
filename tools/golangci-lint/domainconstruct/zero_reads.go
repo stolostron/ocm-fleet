@@ -141,8 +141,11 @@ func (c *zeroChecker) storageUnchanged(storage address, start, end flowPoint, se
 		if _, scheduled := instruction.(*ssa.Defer); scheduled {
 			continue
 		}
-		if sharedStorage(storage.root) && channelHandoff(instruction) {
-			return false
+		if sharedStorage(storage.root) {
+			if channelHandoff(instruction) || storageHandoff(instruction) &&
+				c.storageSharedBefore(mutationTarget{address: storage}, flowPoint{end.block, index + 1}) {
+				return false
+			}
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
 			target, known := c.collectionAddress(store.Addr)
@@ -220,25 +223,30 @@ func storageHandoff(instruction ssa.Instruction) bool {
 	if !ok {
 		return false
 	}
-	method := callObject(call.Common())
+	receiver, name := synchronizationMethod(call.Common())
+	switch receiver {
+	case "WaitGroup", "Cond":
+		return name == "Wait"
+	case "Mutex":
+		return name == "Lock"
+	case "RWMutex":
+		return name == "Lock" || name == "RLock"
+	}
+	return false
+}
+
+func synchronizationMethod(call *ssa.CallCommon) (receiverName, methodName string) {
+	method := callObject(call)
 	if method == nil || method.Pkg() == nil || method.Pkg().Path() != "sync" {
-		return false
+		return "", ""
 	}
 	receiver := method.Type().(*types.Signature).Recv()
 	if receiver == nil {
-		return false
+		return "", ""
 	}
 	named := domainType(receiver.Type())
 	if named == nil {
-		return false
+		return "", ""
 	}
-	switch named.Obj().Name() {
-	case "WaitGroup", "Cond":
-		return method.Name() == "Wait"
-	case "Mutex":
-		return method.Name() == "Lock"
-	case "RWMutex":
-		return method.Name() == "Lock" || method.Name() == "RLock"
-	}
-	return false
+	return named.Obj().Name(), method.Name()
 }

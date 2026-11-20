@@ -265,6 +265,18 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 				return collectionView{storage: address{root: value}, element: array.Elem(), end: array.Len(), capEnd: array.Len(), value: value}, true
 			}
 		}
+	case *ssa.SliceToArrayPointer:
+		if view, ok := c.collectionOf(value.X); ok {
+			array := value.Type().Underlying().(*types.Pointer).Elem().Underlying().(*types.Array)
+			// The conversion exposes exactly the prefix that fits in the array.
+			// The slice's remaining capacity is inaccessible through the pointer.
+			view.end = view.start + array.Len()
+			if !view.dynamicStart {
+				view.capEnd = view.end
+			}
+			view.length, view.value = nil, value
+			return view, true
+		}
 	case *ssa.Slice:
 		if view, ok := c.collectionOf(value.X); ok {
 			low := int64(0)
@@ -317,6 +329,10 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 			if array, ok := value.Type().Underlying().(*types.Array); ok {
 				if storage, ok := addressOf(value.X); ok {
 					return collectionView{storage: storage, element: array.Elem(), end: array.Len(), capEnd: array.Len(), value: value}, true
+				}
+				if view, ok := c.collectionOf(value.X); ok {
+					view.value = value
+					return view, true
 				}
 			}
 			if origin := localLoadOrigin(value); origin != nil {
@@ -387,7 +403,8 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 			return problem.step("source", allocation.Pos(), "collection contains zero-initialized elements")
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
-			if destination, ok := c.collectionAddress(store.Addr); ok && destination.root == view.storage.root {
+			destination, exact := c.collectionAddress(store.Addr)
+			if exact && destination.root == view.storage.root {
 				if pathPrefix(view.storage.path, destination.path) {
 					if sameStorage(view.storage, destination) {
 						if source, known := c.collectionOf(store.Val); known {
@@ -431,6 +448,39 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 							afterUnknownMutation(store.Pos(), "indexed write", "collection elements")
 					}
 					covered = coverRange(covered, offset, offset+1)
+				}
+			} else if _, array := store.Val.Type().Underlying().(*types.Array); !exact && array {
+				// A whole array store through a converted slice pointer
+				// replaces a range, even when it has no single storage path.
+				if target, ok := c.collectionOf(store.Addr); ok && sameStorage(target.storage, view.storage) {
+					target = boundedView(target, context)
+					written := intersectView(view, target.start, target.possibleEnd())
+					if !rangeCovered(covered, written.start, written.end) {
+						var problem *zeroProblem
+						switch source := store.Val.(type) {
+						case *ssa.Const:
+							if zeroConstant(source) {
+								problem = c.unfilledCollection(written, covered, reasonZeroValue, context.use)
+							}
+						case *ssa.UnOp:
+							if contents, known := c.collectionOf(source); known && !target.dynamicStart {
+								problem = c.copiedCollectionProblem(contents, written, target.start, instructionPoint(source), use, context, values, covered, seen)
+							} else {
+								problem = c.problem(source, nil, source.Type(), use, context, values)
+							}
+						default:
+							problem = c.problem(source, nil, source.Type(), use, context, values)
+						}
+						if problem != nil {
+							if target.dynamicStart {
+								problem = problem.uncertain()
+							}
+							return problem.step("assignment", store.Pos(), "assign through a slice-to-array pointer")
+						}
+						if !target.dynamicStart {
+							covered = coverRange(covered, written.start, written.end)
+						}
+					}
 				}
 			}
 		}
@@ -503,12 +553,12 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 			} else {
 				for _, remaining := range uncoveredViews(view, covered) {
 					storage := mutationTarget{remaining.storage, &elementRange{remaining.start, remaining.end}}
-					if reason := c.decoderInvalidation(call, storage, before, context); reason != "" {
+					if reason := c.decoderInvalidation(call, storage, view.element, before, context); reason != "" {
 						if problem := c.failedResultProblem(view.element, reason, context.use, make(map[types.Type]valueUse)); problem != nil {
 							problem.path = fieldPath(elementLabel(remaining.start), problem.path)
 							detail := " may leave partially decoded collection elements without checked success"
 							if reason == reasonInputMayBeZero {
-								detail = " decodes into a raw collection slot without establishing domain validity"
+								detail = " decodes into a collection slot without establishing its domain contract"
 							}
 							return problem.step("mutation", mutationPosition(call, before), c.callName(common)+detail)
 						}

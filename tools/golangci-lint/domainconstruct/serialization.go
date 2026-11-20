@@ -39,7 +39,23 @@ type serializationReport struct {
 type encodingOperand struct {
 	node                   ast.Node
 	codec, operation, path string
+	use                    valueUse
 	defaultJSONDecode      bool
+}
+
+func newEncodingOperand(node ast.Node, codec, operation string) encodingOperand {
+	operand := encodingOperand{node: node, codec: codec, operation: operation}
+	if codec == "json" {
+		operand.use = jsonFields
+	}
+	return operand
+}
+
+func (operand encodingOperand) forType(t types.Type) encodingOperand {
+	if operand.operation == "encode" {
+		operand.use = jsonUseForType(t, operand.use)
+	}
+	return operand
 }
 
 type serializationProblem struct {
@@ -52,6 +68,7 @@ type serializationProblem struct {
 type encodingVisit struct {
 	typ   types.Type
 	codec string
+	use   valueUse
 }
 
 func runSerialization(pass *analysis.Pass) (any, error) {
@@ -135,7 +152,7 @@ func (c *serializationChecker) checkCall(call *ast.CallExpr) {
 				if index == -1 {
 					receiver := callParameter(c.pass.TypesInfo, call, index)
 					if receiver.expression != nil {
-						c.checkType(encodingOperand{node: receiver.expression, codec: boundary.Codec, operation: selection.operation}, receiver.actual)
+						c.checkType(newEncodingOperand(receiver.expression, boundary.Codec, selection.operation), receiver.actual)
 					}
 					continue
 				}
@@ -148,7 +165,7 @@ func (c *serializationChecker) checkCall(call *ast.CallExpr) {
 		if signature != nil {
 			for _, index := range boundary.Results {
 				if index < signature.Results().Len() {
-					c.checkType(encodingOperand{node: call, codec: boundary.Codec, operation: "result"}, signature.Results().At(index).Type())
+					c.checkType(newEncodingOperand(call, boundary.Codec, "result"), signature.Results().At(index).Type())
 				}
 			}
 		}
@@ -156,7 +173,7 @@ func (c *serializationChecker) checkCall(call *ast.CallExpr) {
 			instance := c.pass.TypesInfo.Instances[identifier]
 			for _, index := range boundary.TypeParameters {
 				if index < instance.TypeArgs.Len() {
-					c.checkType(encodingOperand{node: call, codec: boundary.Codec, operation: "type-argument"}, instance.TypeArgs.At(index))
+					c.checkType(newEncodingOperand(call, boundary.Codec, "type-argument"), instance.TypeArgs.At(index))
 				}
 			}
 		}
@@ -209,14 +226,14 @@ func (c *serializationChecker) checkExpression(expression ast.Expr, codec, opera
 			return
 		}
 	}
-	c.checkType(encodingOperand{node: expression, codec: codec, operation: operation}, c.pass.TypesInfo.TypeOf(expression))
+	c.checkType(newEncodingOperand(expression, codec, operation), c.pass.TypesInfo.TypeOf(expression))
 }
 
 func (c *serializationChecker) checkType(operand encodingOperand, t types.Type) {
 	if t == nil {
 		return
 	}
-	if problem := c.encodingProblem(t, operand.codec, make(map[encodingVisit]bool)); problem != nil {
+	if problem := c.encodingProblem(t, operand, make(map[encodingVisit]bool)); problem != nil {
 		problem.path = fieldPath(operand.path, problem.path)
 		path := ""
 		if problem.path != "" {
@@ -234,8 +251,10 @@ func (c *serializationChecker) checkType(operand encodingOperand, t types.Type) 
 	}
 }
 
-func (c *serializationChecker) encodingProblem(t types.Type, codec string, seen map[encodingVisit]bool) *serializationProblem {
-	visit := encodingVisit{t, codec}
+func (c *serializationChecker) encodingProblem(t types.Type, operand encodingOperand, seen map[encodingVisit]bool) *serializationProblem {
+	operand = operand.forType(t)
+	codec := operand.codec
+	visit := encodingVisit{t, codec, operand.use}
 	if seen[visit] {
 		return nil
 	}
@@ -253,17 +272,17 @@ func (c *serializationChecker) encodingProblem(t types.Type, codec string, seen 
 	}
 	switch shape := t.Underlying().(type) {
 	case *types.Pointer:
-		return c.encodingProblem(shape.Elem(), codec, seen)
+		return c.encodingProblem(shape.Elem(), operand, seen)
 	case *types.Slice:
-		return c.encodingProblem(shape.Elem(), codec, seen)
+		return c.encodingProblem(shape.Elem(), operand, seen)
 	case *types.Array:
-		return c.encodingProblem(shape.Elem(), codec, seen)
+		return c.encodingProblem(shape.Elem(), operand, seen)
 	case *types.Map:
-		keyCodec := codec
+		key := operand
 		if codec == "json" {
-			keyCodec = "text"
+			key.codec, key.use = "text", wholeValue
 		}
-		if problem := c.encodingProblem(shape.Key(), keyCodec, seen); problem != nil {
+		if problem := c.encodingProblem(shape.Key(), key, seen); problem != nil {
 			problem.path = fieldPath("[key]", problem.path)
 			return problem
 		}
@@ -272,19 +291,21 @@ func (c *serializationChecker) encodingProblem(t types.Type, codec string, seen 
 				return &serializationProblem{typ: shape.Key(), path: "[key]", codec: codec, reason: "json-string-map-key"}
 			}
 		}
-		return c.encodingProblem(shape.Elem(), codec, seen)
+		return c.encodingProblem(shape.Elem(), operand, seen)
 	case *types.Struct:
 		if standardPlainType(t) {
 			return nil
 		}
-		for selected := range c.jsonShape.fields(t, codec == "json") {
+		for selected := range c.jsonShape.fields(t, operand.use.json()) {
 			if codec != "json" && !selected.field.Exported() {
 				continue
 			}
 			if problem := c.promotedCodecProblem(shape, selected, codec); problem != nil {
 				return problem
 			}
-			if problem := c.encodingProblem(selected.field.Type(), codec, seen); problem != nil {
+			field := operand
+			field.use = operand.use.forField(selected)
+			if problem := c.encodingProblem(selected.field.Type(), field, seen); problem != nil {
 				problem.path = fieldPath(selected.path, problem.path)
 				return problem
 			}

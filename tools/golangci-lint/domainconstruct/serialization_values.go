@@ -18,6 +18,7 @@ type boxedObservation struct {
 type boxedVisit struct {
 	observation boxedObservation
 	path        string
+	use         valueUse
 }
 
 type boxedWalk struct {
@@ -49,14 +50,14 @@ func (c *serializationChecker) checkBoxedCalls() {
 				for _, boundary := range c.contracts.boundariesFor(object, c.policies) {
 					for _, index := range boundary.Results {
 						if index < call.Common().Signature().Results().Len() {
-							c.checkType(encodingOperand{node: node, codec: boundary.Codec, operation: "result"}, call.Common().Signature().Results().At(index).Type())
+							c.checkType(newEncodingOperand(node, boundary.Codec, "result"), call.Common().Signature().Results().At(index).Type())
 						}
 					}
 					if callee := call.Common().StaticCallee(); callee != nil {
 						arguments := callee.TypeArgs()
 						for _, index := range boundary.TypeParameters {
 							if index < len(arguments) {
-								c.checkType(encodingOperand{node: node, codec: boundary.Codec, operation: "type-argument"}, arguments[index])
+								c.checkType(newEncodingOperand(node, boundary.Codec, "type-argument"), arguments[index])
 							}
 						}
 					}
@@ -70,10 +71,8 @@ func (c *serializationChecker) checkBoxedCalls() {
 							if len(arguments) != 0 {
 								source = arguments[0]
 							}
-							operand := encodingOperand{
-								node: source, codec: boundary.Codec, operation: selection.operation,
-								defaultJSONDecode: boundary.DefaultJSONDecode && selection.operation == "decode",
-							}
+							operand := newEncodingOperand(source, boundary.Codec, selection.operation)
+							operand.defaultJSONDecode = boundary.DefaultJSONDecode && selection.operation == "decode"
 							argument := contractArgument(call.Common(), index)
 							if index == -1 && argument != nil && !call.Common().IsInvoke() && !exactMethodReceiver(call.Common(), argument) {
 								c.checkType(operand, object.Type().(*types.Signature).Recv().Type())
@@ -93,7 +92,7 @@ func (c *serializationChecker) checkBoxedCalls() {
 
 func (c *serializationChecker) checkBoxedValue(value ssa.Value, operand encodingOperand, point flowPoint, walk *boxedWalk) {
 	observation := boxedObservation{value, point}
-	visit := boxedVisit{observation, operand.path}
+	visit := boxedVisit{observation, operand.path, operand.use}
 	storage := walk.storage
 	if value == nil || walk.seen[visit] || walk.active[observation] || !storage.work.take() {
 		return
@@ -103,6 +102,7 @@ func (c *serializationChecker) checkBoxedValue(value ssa.Value, operand encoding
 	walk.seen[visit] = true
 	walk.active[observation] = true
 	defer delete(walk.active, observation)
+	operand = operand.forType(value.Type())
 	c.checkType(operand, value.Type())
 	if c.policies.lookup(value.Type()) != nil {
 		return // The declared root owns its entire encoded representation.
@@ -113,6 +113,9 @@ func (c *serializationChecker) checkBoxedValue(value ssa.Value, operand encoding
 			if _, pointer := value.X.Type().Underlying().(*types.Pointer); !pointer {
 				return // Default decoding replaces a non-pointer interface payload.
 			}
+		}
+		if operand.use.json() {
+			operand.use = jsonFields // The dynamic value inside an interface is unaddressable.
 		}
 		c.checkBoxedValue(value.X, operand, point, walk)
 		return
@@ -168,15 +171,17 @@ func (c *serializationChecker) checkBoxedStorage(location address, t types.Type,
 	if c.policies.lookup(t) != nil || standardPlainType(t) || !storage.work.take() {
 		return
 	}
+	operand = operand.forType(t)
 	switch shape := t.Underlying().(type) {
 	case *types.Struct:
-		for selected := range c.jsonShape.fields(t, operand.codec == "json") {
+		for selected := range c.jsonShape.fields(t, operand.use.json()) {
 			if operand.codec != "json" && !selected.field.Exported() {
 				continue
 			}
 			if child, read, known := storage.fieldStorage(location, shape, selected, point, use); known {
 				field := operand
 				field.path = fieldPath(operand.path, selected.path)
+				field.use = operand.use.forField(selected)
 				c.checkBoxedStorage(child, selected.field.Type(), field, read, use, walk)
 			}
 		}
