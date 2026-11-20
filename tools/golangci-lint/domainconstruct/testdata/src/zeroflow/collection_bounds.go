@@ -2,6 +2,23 @@ package zeroflow
 
 import "errors"
 
+func GuardedCopyLengths(destination []ID, length int) {
+	source := make([]ID, length)
+	if length == 0 {
+		copy(destination[:1], source)
+	}
+	if length == 1 {
+		copy(destination[:1], source) // want "copy source contains an empty zeroflow.ID"
+	}
+	exactSource := make([]ID, 1)
+	if length == 0 {
+		copy(destination[:length], exactSource)
+	}
+	if length == 1 {
+		copy(destination[:length], exactSource) // want "copy source contains an empty zeroflow.ID"
+	}
+}
+
 func WriteAtDynamicOffset(index int, valid ID) []ID {
 	values := make([]ID, 2)
 	if index != 1 {
@@ -14,6 +31,31 @@ func WriteAtDynamicOffset(index int, valid ID) []ID {
 func ReadAtDynamicOffset(index int, valid ID) []ID {
 	values := []ID{valid, valid}
 	return values[index:index][:1]
+}
+
+func CopyAtGuardedOffset(index int, valid ID) []ID {
+	values := []ID{valid, valid}
+	if index != 1 {
+		return values
+	}
+	copy(values[index:index][:1], make([]ID, 1))
+	return values // want "return contains an empty zeroflow.ID at path .1."
+}
+
+func CopyAtDisjointGuardedOffset(index int, valid ID) []ID {
+	values := []ID{valid, valid}
+	if index == 1 {
+		copy(values[index:index][:1], make([]ID, 1))
+	}
+	return values[:1]
+}
+
+func CopyEmptyAtShiftedOffset(index int, valid ID) []ID {
+	values := []ID{valid, valid}
+	if index == 1 {
+		copy(values[index:index][:1], []ID{})
+	}
+	return values
 }
 
 func MakeWithGuardedLength(length int, valid ID) []ID {

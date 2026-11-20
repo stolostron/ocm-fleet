@@ -60,7 +60,7 @@ func (c *zeroChecker) report(use zeroUse, problem *zeroProblem, operation string
 		return
 	}
 	c.reported[key] = true
-	if c.work.exhausted() {
+	if c.work.exhausted() && (problem.reason != reasonZeroValue || !scalarZero(value)) {
 		problem = problem.uncertain()
 	}
 	site := c.useSite(use, operation, problem.path)

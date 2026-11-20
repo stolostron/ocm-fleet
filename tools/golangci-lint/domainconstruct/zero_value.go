@@ -357,23 +357,23 @@ func (c *zeroChecker) failedResultProblem(t types.Type, reason zeroReason, use v
 	if problem := c.conditionalProblem(t, reason, use); problem != nil {
 		return problem
 	}
-	switch t := t.Underlying().(type) {
+	switch shape := t.Underlying().(type) {
 	case *types.Pointer:
-		return c.failedResultProblem(t.Elem(), reason, use, seen)
+		return c.failedResultProblem(shape.Elem(), reason, use, seen)
 	case *types.Slice:
-		return c.failedResultProblem(t.Elem(), reason, use, seen)
+		return c.failedResultProblem(shape.Elem(), reason, use, seen)
 	case *types.Array:
-		if t.Len() != 0 {
-			if problem := c.failedResultProblem(t.Elem(), reason, use, seen); problem != nil {
+		if shape.Len() != 0 {
+			if problem := c.failedResultProblem(shape.Elem(), reason, use, seen); problem != nil {
 				problem.path = fieldPath("[0]", problem.path)
 				return problem
 			}
 		}
 	case *types.Map:
-		if problem := c.failedResultProblem(t.Key(), reason, wholeValue, seen); problem != nil {
+		if problem := c.failedResultProblem(shape.Key(), reason, wholeValue, seen); problem != nil {
 			return problem
 		}
-		return c.failedResultProblem(t.Elem(), reason, use, seen)
+		return c.failedResultProblem(shape.Elem(), reason, use, seen)
 	case *types.Struct:
 		for selected := range c.jsonShape.fields(t, use.json()) {
 			if problem := c.failedResultProblem(selected.field.Type(), reason, use, seen); problem != nil {
@@ -421,9 +421,13 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 	}
 	if p := c.policies.lookup(t); p == nil || p.fact.ZeroValid {
 		if structure, ok := t.Underlying().(*types.Struct); ok {
-			for selected := range c.jsonShape.fields(structure, context.use.json()) {
+			for selected := range c.jsonShape.fields(t, context.use.json()) {
 				if child, read, known := c.fieldStorage(location, structure, selected, point, use); known {
-					if problem := c.memoryAtProblem(child, selected.field.Type(), read, use, context, values, seen); problem != nil {
+					childContext := context
+					if context.use.json() && selected.indirect {
+						childContext.use = jsonAddressableFields
+					}
+					if problem := c.memoryAtProblem(child, selected.field.Type(), read, use, childContext, values, seen); problem != nil {
 						problem.path = fieldPath(selected.path, problem.path)
 						return problem
 					}
@@ -547,12 +551,22 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 			}
 			effect := c.callMutation(call.Common(), location, before)
 			if conditional && effect != mutationReadOnly {
-				effect = mutationUnknown
+				// A reachable single defer has no other cleanup that could repair
+				// its zero write. Keep that write as a possible outcome.
+				if effect != mutationZero || !execution.conditional || len(c.functionDefers(call.Parent())) != 1 {
+					effect = mutationUnknown
+				}
 			}
 			switch effect {
 			case mutationZero:
-				return c.zeroType(t, "", context.use).withValue(c.valueName(location.root, location.path)).step("source", pos, "helper writes zero").
-					step("mutation", pos, "definite zero write by "+c.callName(call.Common()))
+				problem := c.zeroType(t, "", context.use).withValue(c.valueName(location.root, location.path)).step("source", pos, "helper writes zero")
+				if conditional {
+					if problem == nil {
+						continue
+					}
+					return problem.uncertain().step("mutation", pos, "conditional zero write by "+c.callName(call.Common()))
+				}
+				return problem.step("mutation", pos, "definite zero write by "+c.callName(call.Common()))
 			case mutationNonzero:
 				return nil
 			case mutationUnknown:

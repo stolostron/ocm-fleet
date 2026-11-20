@@ -157,7 +157,7 @@ func (c *serializationChecker) checkBoxedStorage(location address, t types.Type,
 	}
 	switch shape := t.Underlying().(type) {
 	case *types.Struct:
-		for selected := range c.jsonShape.fields(shape, operand.codec == "json") {
+		for selected := range c.jsonShape.fields(t, operand.codec == "json") {
 			if operand.codec != "json" && !selected.field.Exported() {
 				continue
 			}

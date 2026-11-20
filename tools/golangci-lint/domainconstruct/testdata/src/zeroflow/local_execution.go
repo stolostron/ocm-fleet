@@ -61,6 +61,11 @@ func DeferredClearDoesNotWriteYet(valid ID, use func([]ID)) {
 	use(values)
 }
 
+func DeferredDeleteChecksCapturedKey(values map[ID]bool, valid ID) {
+	defer delete(values, valid)
+	defer delete(values, ID("")) // want "argument is an empty zeroflow.ID"
+}
+
 func DeferredCopyDoesNotWriteYet(valid ID, use func([]ID)) {
 	values := make([]ID, 1)
 	defer copy(values, []ID{valid})
@@ -76,6 +81,33 @@ func DeferredPointerReadsAtExit(valid ID, use func(*ID)) {
 func DeferredPointerStillZero(use func(*ID)) {
 	var value ID
 	defer use(&value) // want "argument is an empty zeroflow.ID"
+}
+
+func DeferredSliceReadsAtEarlyExit(early bool, valid ID, use func([]ID)) {
+	values := make([]ID, 1)
+	defer use(values) // want "argument contains an empty zeroflow.ID"
+	if early {
+		return
+	}
+	values[0] = valid
+}
+
+func DeferredSliceInitializedOnAllExits(early bool, valid ID, use func([]ID)) {
+	values := make([]ID, 1)
+	defer use(values)
+	if early {
+		values[0] = valid
+		return
+	}
+	values[0] = valid
+}
+
+func DeferredSliceRegisteredInsideLoop(length int, valid ID, use func([]ID)) {
+	for index := 0; index < length; index++ {
+		values := make([]ID, 1)
+		defer use(values)
+		values[0] = valid
+	}
 }
 
 func writeValidRaw(dst *string) { *dst = "valid" }
@@ -136,6 +168,23 @@ func DeferredWriteInOrderedCleanup(valid ID) (result ID) {
 	return // want "return produces an empty zeroflow.ID"
 }
 
+func ConditionalDeferredZero(erase bool, valid ID) (result ID) {
+	result = valid
+	if erase {
+		defer eraseScalar((*string)(&result))
+	}
+	return // want "return may produce an empty zeroflow.ID"
+}
+
+func DeferredZeroCannotReachEarlyReturn(early bool, valid ID) (result ID) {
+	result = valid
+	if early {
+		return
+	}
+	defer eraseScalar((*string)(&result))
+	return // want "return produces an empty zeroflow.ID"
+}
+
 func DeferredUseAfterRepair(use func(*ID)) {
 	var raw string
 	defer use((*ID)(&raw))
@@ -162,4 +211,47 @@ func IteratorFailureWithUnrelatedDefer(values iter.Seq[bool], valid ID) (ID, err
 		return "", errors.New("failure")
 	}
 	return valid, nil
+}
+
+func IteratorFlagFromPreviousPass(first, second iter.Seq[ID], use func(ID)) {
+	found := false
+	for _, values := range []iter.Seq[ID]{first, second} {
+		var id ID
+		for value := range values {
+			id = value
+			found = true
+		}
+		if found {
+			use(id) // want "argument may be an empty zeroflow.ID"
+		}
+	}
+}
+
+func IteratorFreshFlag(first, second iter.Seq[ID], use func(ID)) {
+	for _, values := range []iter.Seq[ID]{first, second} {
+		found := false
+		var id ID
+		for value := range values {
+			id = value
+			found = true
+		}
+		if found {
+			use(id)
+		}
+	}
+}
+
+func IteratorResetFlag(first, second iter.Seq[ID], use func(ID)) {
+	found := false
+	for _, values := range []iter.Seq[ID]{first, second} {
+		found = false
+		var id ID
+		for value := range values {
+			id = value
+			found = true
+		}
+		if found {
+			use(id)
+		}
+	}
 }

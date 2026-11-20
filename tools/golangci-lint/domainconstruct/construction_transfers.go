@@ -2,6 +2,8 @@ package domainconstruct
 
 import (
 	"go/ast"
+	"go/constant"
+	"go/token"
 	"go/types"
 	"slices"
 
@@ -13,8 +15,14 @@ func (c *checker) checkCallTransfers(call *ast.CallExpr, ancestors []ast.Node) {
 		switch builtin.Name() {
 		case "clear", "copy", "delete":
 			c.checkWrite(call.Args[0], ancestors)
+			return
+		case "append":
+			if call.Ellipsis.IsValid() {
+				return // A spread already has the destination element type, or appends string bytes.
+			}
+		default:
+			return
 		}
-		return
 	}
 	signature, ok := c.pass.TypesInfo.TypeOf(call.Fun).Underlying().(*types.Signature)
 	if !ok || len(call.Args) == 0 {
@@ -45,6 +53,37 @@ func (c *checker) checkLiteralTransfers(literal *ast.CompositeLit, ancestors []a
 			}
 		}
 		c.checkTransfer(value, info.TypeOf(value), c.literalElementType(shape, element, index), ancestors)
+	}
+}
+
+func (c *checker) checkReturnedSlice(value ast.Expr, ancestors []ast.Node) {
+	info := c.pass.TypesInfo
+	if _, slice := info.TypeOf(value).Underlying().(*types.Slice); !slice {
+		return
+	}
+	base := ast.Unparen(value)
+	for {
+		view, ok := base.(*ast.SliceExpr)
+		if !ok {
+			break
+		}
+		if _, slice := info.TypeOf(view.X).Underlying().(*types.Slice); !slice {
+			return // Slicing a protected array is already checked at the expression.
+		}
+		if view.Max != nil {
+			low := constant.MakeInt64(0)
+			if view.Low != nil {
+				low = info.Types[view.Low].Value
+			}
+			if limit := info.Types[view.Max].Value; low != nil && limit != nil && constant.Compare(low, token.EQL, limit) {
+				return // Nothing in the backing storage is accessible through this view.
+			}
+		}
+		base = ast.Unparen(view.X)
+	}
+	if p := c.unapprovedOwner(base, ancestors); p != nil {
+		c.reportProtected(value, p, "domainconstruct.mutable-exposure", "return", "mutable-contents",
+			"do not expose mutable contents of "+p.name)
 	}
 }
 

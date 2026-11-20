@@ -286,7 +286,7 @@ func (c *serializationChecker) encodingProblem(t types.Type, codec string, seen 
 		if standardPlainType(t) {
 			return nil
 		}
-		for selected := range c.jsonShape.fields(shape, codec == "json") {
+		for selected := range c.jsonShape.fields(t, codec == "json") {
 			if codec != "json" && !selected.field.Exported() {
 				continue
 			}

@@ -34,11 +34,18 @@ func (c *zeroChecker) joinedViewTruth(view collectionView, point flowPoint, cont
 	seen[visit] = true
 	defer delete(seen, visit)
 	state := isZero
+	checkedSharing := false
 	for index := point.index - 1; index >= 0; index-- {
 		if !c.work.take() {
 			return unknown
 		}
 		instruction := point.block.Instrs[index]
+		if !checkedSharing && channelHandoff(instruction) {
+			if c.collectionSharedBefore(view, flowPoint{point.block, index + 1}) {
+				return unknown
+			}
+			checkedSharing = true
+		}
 		if value, ok := instruction.(ssa.Value); ok && value == view.storage.root {
 			switch value.(type) {
 			case *ssa.Alloc, *ssa.MakeSlice:

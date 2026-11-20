@@ -4,6 +4,19 @@ import renamed "zeroflow"
 
 type LocalID = renamed.ID
 
+type concreteStatus struct{}
+
+func (*concreteStatus) Error() string { return "status" }
+
+func ImportedGenericErrorFallback() {
+	if renamed.OrZeroError[*concreteStatus](nil) != nil {
+		renamed.Accept("") // want "argument is an empty zeroflow.ID"
+	}
+	if renamed.OrZeroError[error](nil) != nil {
+		renamed.Accept("")
+	}
+}
+
 func CrossPackage() {
 	var id LocalID
 	renamed.Accept(id) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\""

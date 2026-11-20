@@ -56,12 +56,13 @@ func (c *zeroChecker) iteratorInitializes(call *ssa.CallCommon, location address
 		}
 		for index, binding := range closure.Bindings {
 			flag, ok := binding.(*ssa.Alloc)
-			if !ok || !c.zeroBefore(flag, before) {
+			if !ok {
 				continue
 			}
 			for value, state := range context.facts {
 				read, desired := guardRead(value, state)
 				if read == nil || read.X != flag || desired == nil || zeroConstant(desired) ||
+					!c.zeroBefore(flag, before, make(map[flowPoint]bool)) ||
 					!c.storageUnchanged(address{root: flag}, before, instructionPoint(read), make(map[*ssa.BasicBlock]bool)) {
 					continue
 				}
@@ -115,32 +116,37 @@ func guardRead(value ssa.Value, state truth) (*ssa.UnOp, *ssa.Const) {
 	return nil, nil
 }
 
-func (c *zeroChecker) zeroBefore(storage *ssa.Alloc, point flowPoint) bool {
-	for _, reference := range *storage.Referrers() {
-		if store, ok := reference.(*ssa.Store); ok {
-			if store.Block() == point.block && instructionPoint(store).index >= point.index || store.Block() != point.block && point.block.Dominates(store.Block()) {
-				continue
+func (c *zeroChecker) zeroBefore(storage *ssa.Alloc, point flowPoint, seen map[flowPoint]bool) bool {
+	if seen[point] {
+		return true
+	}
+	seen[point] = true
+	// A reaching reset or allocation must precede any possible write, even
+	// when the previous execution of the iterator came from a back edge.
+	for index := point.index - 1; index >= 0; index-- {
+		if !c.work.take() {
+			return false
+		}
+		instruction := point.block.Instrs[index]
+		if instruction == storage {
+			return true
+		}
+		if store, ok := instruction.(*ssa.Store); ok {
+			if target, known := addressOf(store.Addr); known && target.root == storage {
+				value, constant := store.Val.(*ssa.Const)
+				return constant && zeroConstant(value)
 			}
-			if !store.Block().Dominates(point.block) {
-				return false
-			}
-			if value, ok := store.Val.(*ssa.Const); !ok || !zeroConstant(value) {
+		}
+		if call, ok := instruction.(ssa.CallInstruction); ok {
+			if _, scheduled := call.(*ssa.Defer); !scheduled && c.callMayMutate(call.Common(), address{root: storage}, flowPoint{point.block, index}) {
 				return false
 			}
 		}
 	}
-	for _, block := range point.block.Parent().Blocks {
-		if block != point.block && point.block.Dominates(block) {
-			continue
-		}
-		for index, instruction := range block.Instrs {
-			if block == point.block && index >= point.index {
-				break
-			}
-			if call, ok := instruction.(ssa.CallInstruction); ok && c.callMayMutate(call.Common(), address{root: storage}, flowPoint{block, index}) {
-				return false
-			}
+	for _, predecessor := range point.block.Preds {
+		if !c.work.take() || !c.zeroBefore(storage, flowPoint{predecessor, len(predecessor.Instrs)}, seen) {
+			return false
 		}
 	}
-	return true
+	return len(point.block.Preds) != 0
 }

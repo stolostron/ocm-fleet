@@ -60,15 +60,20 @@ type sourceEvaluator struct {
 	builder   *contractBuilder
 	object    *types.Func
 	signature *types.Signature
-	returns   [][]valueSource
+	returns   []sourceReturn
 	complete  bool
 	work      workBudget
 }
 
-func (b *contractBuilder) inferSources(object *types.Func, declaration *ast.FuncDecl) []resultSource {
+type sourceReturn struct {
+	values     []valueSource
+	successful bool
+}
+
+func (b *contractBuilder) inferSources(object *types.Func, declaration *ast.FuncDecl) (successful, failed []resultSource) {
 	signature := object.Type().(*types.Signature)
 	if signature.TypeParams().Len() == 0 && signature.RecvTypeParams().Len() == 0 {
-		return nil
+		return nil, nil
 	}
 	e := sourceEvaluator{builder: b, object: object, signature: signature, complete: true, work: maxInferenceWork}
 	state := sourceState{values: make(map[*types.Var]valueSource), errors: make(nilnessEnv)}
@@ -84,31 +89,63 @@ func (b *contractBuilder) inferSources(object *types.Func, declaration *ast.Func
 	}
 	remaining := e.block(declaration.Body.List, []sourceState{state})
 	if !e.complete || len(remaining) != 0 || len(e.returns) == 0 {
-		return nil
+		return nil, nil
 	}
-	var results []resultSource
 	for index := range signature.Results().Len() {
 		if isErrorType(signature.Results().At(index).Type()) {
 			continue
 		}
-		var alternatives []valueSource
+		var accepted, rejected []valueSource
 		for _, returned := range e.returns {
 			// Count the expanded shape even when source subtrees share slices.
 			// Fact comparison and export consume the expanded representation.
-			if !sourceFits(returned[index], 0, &e.work) {
-				return nil
+			value := returned.values[index]
+			if !sourceFits(value, 0, &e.work) {
+				return nil, nil
 			}
-			alternatives = append(alternatives, returned[index])
+			if returned.successful {
+				accepted = append(accepted, value)
+			} else if value.hasConversion() {
+				rejected = append(rejected, value)
+			}
 		}
-		value := combineSources(alternatives)
-		if value.Kind == sourceChoice && !sourceFits(value, 0, &e.work) {
-			return nil
+		var complete bool
+		successful, complete = recordResultSource(successful, index, accepted, &e.work)
+		if !complete {
+			return nil, nil
 		}
-		if value.Kind != sourceUnknown {
-			results = append(results, resultSource{index, value})
+		failed, complete = recordResultSource(failed, index, rejected, &e.work)
+		if !complete {
+			return nil, nil
 		}
 	}
-	return results
+	return successful, failed
+}
+
+func recordResultSource(results []resultSource, index int, alternatives []valueSource, work *workBudget) ([]resultSource, bool) {
+	if len(alternatives) == 0 {
+		return results, true
+	}
+	value := combineSources(alternatives)
+	if value.Kind == sourceChoice && !sourceFits(value, 0, work) {
+		return nil, false
+	}
+	if value.Kind != sourceUnknown {
+		results = append(results, resultSource{index, value})
+	}
+	return results, true
+}
+
+func (source valueSource) hasConversion() bool {
+	if source.Kind == sourceConversion {
+		return true
+	}
+	for _, child := range source.Values {
+		if child.hasConversion() {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *sourceEvaluator) block(statements []ast.Stmt, states []sourceState) []sourceState {
@@ -152,31 +189,8 @@ func (e *sourceEvaluator) statement(statement ast.Stmt, state sourceState) []sou
 	nilness := nilnessEvaluator{builder: e.builder, complete: true, work: &e.work}
 	switch statement := statement.(type) {
 	case *ast.ReturnStmt:
-		values := make([]valueSource, e.signature.Results().Len())
-		for index := range values {
-			var expression ast.Expr
-			if len(statement.Results) == 0 {
-				values[index] = state.values[e.signature.Results().At(index)]
-			} else if len(statement.Results) == len(values) {
-				expression = statement.Results[index]
-				values[index] = e.expression(expression, state)
-			} else if call, ok := ast.Unparen(statement.Results[0]).(*ast.CallExpr); ok {
-				values[index] = e.call(call, index, state)
-			}
-			// Only present, successful returns contribute domain values. Known
-			// failure and absence payloads remain inert after instantiation.
-			presence := index == 1 && e.builder.set.hasPresence(e.object)
-			if presence || isErrorType(e.signature.Results().At(index).Type()) {
-				actual := state.errors[e.signature.Results().At(index)]
-				if expression != nil {
-					actual = nilness.converted(expression, e.signature.Results().At(index).Type(), state.errors)
-				}
-				if presence && actual == isZero || !presence && actual == notZero {
-					return nil
-				}
-			}
-		}
-		e.returns = append(e.returns, values)
+		e.recordReturn(statement, state, &nilness)
+		e.complete = e.complete && nilness.complete
 		return nil
 	case *ast.BlockStmt:
 		return e.block(statement.List, []sourceState{state})
@@ -263,6 +277,65 @@ func (e *sourceEvaluator) statement(statement ast.Stmt, state sourceState) []sou
 		e.complete = false
 	}
 	return []sourceState{state}
+}
+
+func (e *sourceEvaluator) recordReturn(statement *ast.ReturnStmt, state sourceState, nilness *nilnessEvaluator) {
+	results := e.signature.Results()
+	returned := sourceReturn{values: make([]valueSource, results.Len()), successful: true}
+	var forwarded []valueSource
+	for index := range results.Len() {
+		result := results.At(index)
+		presence := index == 1 && e.builder.set.hasPresence(e.object)
+		status := presence || isErrorType(result.Type())
+		actual := unknown
+		var call *ast.CallExpr
+		callResult := 0
+		switch {
+		case len(statement.Results) == 0:
+			returned.values[index] = state.values[result]
+			actual = state.errors[result]
+		case len(statement.Results) == results.Len():
+			expression := statement.Results[index]
+			returned.values[index] = e.expression(expression, state)
+			if status {
+				actual = nilness.converted(expression, result.Type(), state.errors)
+			} else {
+				call, _ = ast.Unparen(expression).(*ast.CallExpr)
+			}
+		default:
+			if spread, ok := ast.Unparen(statement.Results[0]).(*ast.CallExpr); ok {
+				returned.values[index] = e.call(spread, index, state)
+				switch {
+				case presence:
+					if returned.values[index].Kind == sourceZero {
+						actual = isZero
+					}
+				case status:
+					operand := e.builder.pass.TypesInfo.TypeOf(spread).(*types.Tuple).At(index).Type()
+					actual = nilness.convertedResult(spread, index, operand, result.Type(), state.errors)
+				default:
+					call, callResult = spread, index
+				}
+			}
+		}
+		// Only present, successful results can supply initialization facts.
+		// Construction checks also need conversions that ran before failure.
+		if status && (presence && actual == isZero || !presence && actual == notZero) {
+			returned.successful = false
+		}
+		if call != nil {
+			if value := e.inferredSource(call, callResult, state, true); value.Kind != sourceUnknown {
+				if forwarded == nil {
+					forwarded = make([]valueSource, results.Len())
+				}
+				forwarded[index] = value
+			}
+		}
+	}
+	e.returns = append(e.returns, returned)
+	if forwarded != nil {
+		e.returns = append(e.returns, sourceReturn{values: forwarded})
+	}
 }
 
 func (e *sourceEvaluator) expression(expression ast.Expr, state sourceState) valueSource {
@@ -374,9 +447,17 @@ func (e *sourceEvaluator) call(call *ast.CallExpr, result int, state sourceState
 			}
 		}
 	}
+	return e.inferredSource(call, result, state, false)
+}
+
+func (e *sourceEvaluator) inferredSource(call *ast.CallExpr, result int, state sourceState, failed bool) valueSource {
 	if function, ok := expressionObject(e.builder.pass.TypesInfo, call.Fun).(*types.Func); ok && function.Origin() != e.object {
 		if fact := e.builder.function(function); fact != nil {
-			for _, source := range fact.Sources {
+			sources := fact.Sources
+			if failed {
+				sources = fact.FailedSources
+			}
+			for _, source := range sources {
 				if source.Result == result {
 					arguments := make(map[int]valueSource)
 					bound, complete := substituteSource(source.Value, func(parameter int) valueSource {
@@ -390,6 +471,7 @@ func (e *sourceEvaluator) call(call *ast.CallExpr, result int, state sourceState
 							} else if spread, ok := ast.Unparen(argument.expression).(*ast.CallExpr); ok {
 								value = e.call(spread, argument.result, state)
 							}
+							value = projectSource(value, argument.projection)
 						}
 						arguments[parameter] = value
 						return value

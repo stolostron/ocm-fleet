@@ -127,7 +127,7 @@ func (c *zeroChecker) assume(context *flowContext, value ssa.Value, state truth)
 	case *ssa.Call:
 		if fact := c.callContract(&value.Call); fact != nil {
 			for _, rule := range fact.Errors {
-				if rule.Result == 0 && rule.Parameter >= 0 && (state == isZero || rule.Exact) {
+				if rule.Result == 0 && rule.Parameter >= 0 && (state == isZero || rule.Exact || boxedZeroTruth(rule.typeArgument(&value.Call)) == isZero) {
 					if argument := contractArgument(&value.Call, rule.Parameter); argument != nil {
 						c.assume(context, argument, state)
 					}

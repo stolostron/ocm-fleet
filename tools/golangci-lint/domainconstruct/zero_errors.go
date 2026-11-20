@@ -85,18 +85,27 @@ func (c *zeroChecker) callTruth(call *ssa.Call, result int, context flowContext,
 			if rule.Result != result {
 				continue
 			}
-			if rule.Parameter == -1 {
-				return notZero
-			}
-			if argument := contractArgument(&call.Call, rule.Parameter); argument != nil {
-				actual := c.valueTruth(argument, context, seen)
-				if actual == notZero || rule.Exact && actual == isZero {
-					return actual
+			actual := unknown
+			if rule.Parameter >= 0 {
+				if argument := contractArgument(&call.Call, rule.Parameter); argument != nil {
+					actual = c.valueTruth(argument, context, seen)
 				}
+			}
+			if result := rule.resultTruth(actual, rule.typeArgument(&call.Call)); result != unknown {
+				return result
 			}
 		}
 	}
 	return unknown
+}
+
+func (rule errorRule) typeArgument(call *ssa.CallCommon) types.Type {
+	if index := rule.BoxedZeroType; index != 0 {
+		if callee := call.StaticCallee(); callee != nil && index <= len(callee.TypeArgs()) {
+			return callee.TypeArgs()[index-1]
+		}
+	}
+	return nil
 }
 
 func contextReceiver(call *ssa.CallCommon, method string) ssa.Value {

@@ -71,9 +71,19 @@ func (c *zeroChecker) executedCallsAt(instruction ssa.Instruction, point flowPoi
 }
 
 // A small set of registrations in the cleanup block has a known LIFO order.
-// Other registrations retain possible effects without establishing a write.
+// A single dominating registration outside a cycle also executes exactly once.
 func (c *zeroChecker) defersAt(point flowPoint) ([]*ssa.Defer, bool) {
 	calls := c.functionDefers(point.block.Parent())
+	if len(calls) == 1 && calls[0].Block() != point.block {
+		registration := calls[0].Block()
+		if registration.Dominates(point.block) {
+			return calls, c.blockReachedFromPredecessors(registration, registration.Preds) == isZero
+		}
+		if c.blockReachedFromPredecessors(registration, point.block.Preds) == isZero {
+			return nil, true
+		}
+		return calls, false
+	}
 	if len(calls) > maxOrderedDefers {
 		return calls, false
 	}
@@ -83,6 +93,29 @@ func (c *zeroChecker) defersAt(point flowPoint) ([]*ssa.Defer, bool) {
 		}
 	}
 	return calls, true
+}
+
+func (c *zeroChecker) blockReachedFromPredecessors(target *ssa.BasicBlock, predecessors []*ssa.BasicBlock) truth {
+	if len(predecessors) == 0 {
+		return isZero
+	}
+	pending := slices.Clone(predecessors)
+	seen := make(map[*ssa.BasicBlock]bool)
+	for len(pending) != 0 {
+		if !c.work.take() {
+			return unknown
+		}
+		block := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if block == target {
+			return notZero
+		}
+		if !seen[block] {
+			seen[block] = true
+			pending = append(pending, block.Preds...)
+		}
+	}
+	return isZero
 }
 
 func (c *zeroChecker) functionDefers(function *ssa.Function) []*ssa.Defer {

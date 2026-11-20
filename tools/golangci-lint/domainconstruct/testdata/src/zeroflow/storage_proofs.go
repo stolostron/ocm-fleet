@@ -2,6 +2,29 @@ package zeroflow
 
 import "errors"
 
+type resettable string
+
+func (value *resettable) Reset() { *value = "" }
+
+//domain:constructors NewMarked
+type Marked struct {
+	resettable
+	mark int
+}
+
+func NewMarked(value resettable) Marked { return Marked{resettable: value, mark: 1} }
+
+func PromotedResetOnlyWritesReceiver(valid resettable) Marked {
+	out := NewMarked(valid)
+	(*Marked).Reset(&out)
+	return out
+}
+
+func ExactResetWritesZero(valid resettable) ID {
+	(*resettable).Reset(&valid)
+	return ID(valid) // want "return produces an empty zeroflow.ID"
+}
+
 func PreviousIterationError(read func() error, stop func() bool) (ID, error) {
 	previous := errors.New("initial")
 	for {
@@ -49,6 +72,90 @@ func PrivateFill(length int, valid ID, writes chan<- int, ack <-chan struct{}) [
 		<-ack
 	}
 	return values
+}
+
+var published []ID
+
+func PublishedFill(length int, valid ID, writes chan<- int, ack <-chan struct{}) []ID {
+	values := make([]ID, length)
+	for index := 0; index < len(values); index++ {
+		values[index] = valid
+	}
+	published = values
+	for index := 0; index < len(values); index++ {
+		values[index] = valid
+		writes <- index
+		<-ack
+	}
+	return values // want "return may contain an empty zeroflow.ID"
+}
+
+func PublishedWorker(writes <-chan int, ack chan<- struct{}) {
+	for index := range writes {
+		published[index] = ""
+		ack <- struct{}{}
+	}
+}
+
+func PublishedFillWithoutHandoff(length int, valid ID) []ID {
+	values := make([]ID, length)
+	for index := 0; index < len(values); index++ {
+		values[index] = valid
+	}
+	published = values
+	for index := 0; index < len(values); index++ {
+		values[index] = valid
+	}
+	return values
+}
+
+func PublishedFillWithHandoffOnEarlyExit(length int, valid ID, stop bool, ack <-chan struct{}) []ID {
+	values := make([]ID, length)
+	for index := 0; index < len(values); index++ {
+		values[index] = valid
+	}
+	published = values
+	for index := 0; index < len(values); index++ {
+		values[index] = valid
+		if stop {
+			<-ack
+			return nil
+		}
+	}
+	return values
+}
+
+func SharedJoinAfterHandoff() (ID, error) {
+	statuses := make([]error, 1)
+	start, done := make(chan struct{}), make(chan struct{})
+	go func(target []error) {
+		<-start
+		clear(target)
+		close(done)
+	}(statuses)
+	statuses[0] = errors.New("failure")
+	close(start)
+	<-done
+	return "", errors.Join(statuses...) // want "return produces an empty zeroflow.ID"
+}
+
+func PrivateJoinAfterHandoff(start chan<- struct{}, done <-chan struct{}) (ID, error) {
+	statuses := []error{errors.New("failure")}
+	close(start)
+	<-done
+	return "", errors.Join(statuses...)
+}
+
+func SharedJoinAfterRepair() (ID, error) {
+	statuses := make([]error, 1)
+	done := make(chan struct{})
+	go func(target []error) {
+		clear(target)
+		close(done)
+	}(statuses)
+	<-done
+	statuses[0] = errors.New("failure")
+	return "", errors.Join(statuses...)
 }
 
 var sharedRaw string

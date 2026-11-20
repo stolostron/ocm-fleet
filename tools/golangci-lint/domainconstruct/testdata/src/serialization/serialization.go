@@ -9,7 +9,14 @@ import (
 	"time"
 
 	"encodingvalues"
+	"jsonembedding"
 )
+
+func EncodeRepeatedEmbedding() {
+	json.Marshal(jsonembedding.Diamond[encodingvalues.Unsupported, string]{}) // want "at path Left.Shared.Leaf.Value"
+	json.Marshal(jsonembedding.Diamond[string, encodingvalues.Unsupported]{})
+	json.Marshal(jsonembedding.NamedTie[encodingvalues.Unsupported]{})
+}
 
 type Envelope struct {
 	ID encodingvalues.ID

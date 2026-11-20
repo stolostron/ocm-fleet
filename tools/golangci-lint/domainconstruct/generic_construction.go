@@ -15,13 +15,15 @@ func (c *checker) checkGenericConstruction(call *ast.CallExpr, ancestors []ast.N
 	if fact == nil {
 		return true
 	}
-	for _, result := range fact.Sources {
-		target := c.pass.TypesInfo.TypeOf(call)
-		if tuple, ok := target.(*types.Tuple); ok {
-			target = tuple.At(result.Result).Type()
-		}
-		if !c.checkGenericSource(result.Value, target, call, function, ancestors) {
-			return false
+	for _, sources := range [][]resultSource{fact.Sources, fact.FailedSources} {
+		for _, result := range sources {
+			target := c.pass.TypesInfo.TypeOf(call)
+			if tuple, ok := target.(*types.Tuple); ok {
+				target = tuple.At(result.Result).Type()
+			}
+			if !c.checkGenericSource(result.Value, target, call, function, ancestors) {
+				return false
+			}
 		}
 	}
 	return true
@@ -62,7 +64,11 @@ func (c *checker) genericIdentityConversion(source valueSource, target types.Typ
 		return false
 	}
 	if argument := callParameter(c.pass.TypesInfo, call, source.Parameter); argument.expression != nil {
-		t := projectedType(argument.actual, source.Path)
+		actual := argument.actual
+		if source.Parameter == -1 && len(source.Path) != 0 {
+			actual = compositeShape(actual)
+		}
+		t := projectedType(actual, source.Path)
 		return t != nil && types.Identical(t, target)
 	}
 	return false

@@ -46,6 +46,30 @@ func UnnamedTransfers() ID {
 	return [2]byte{9, 10}                  // want "construct protection.ID through NewID"
 }
 
+func rawAppendPair() ([]ID, [2]byte) { return nil, [2]byte{1} }
+
+func AppendTransfers(raw [2]byte, valid ID, values []ID) {
+	_ = append(values, raw)     // want "construct protection.ID through NewID"
+	_ = append(rawAppendPair()) // want "construct protection.ID through NewID"
+	_ = append(values, valid, [2]byte{})
+	_ = append(values, values...)
+	_ = append([]byte(nil), "text"...)
+}
+
+func ReturnOwnedView(value Record) []int {
+	return value.items[1:] // want "do not expose mutable contents of protection.Record"
+}
+
+func ReturnOwnedSlice(value Record) []int {
+	return value.items // want "do not expose mutable contents of protection.Record"
+}
+
+func InspectOwnedSlice(value Record, independent []int) []int {
+	_ = len(value.items[:])
+	copy(independent, value.items[1:])
+	return value.items[:0:0][:0]
+}
+
 //domain:constructors NewCount
 type Count int // want Count:"requires constructors"
 
@@ -78,6 +102,29 @@ func copyCount[T ~int, U ~int](_ bool, value U) T { return T(value) }
 func TupleIdentity(count Count, raw int) {
 	_ = copyCount[Count](countPair(count))
 	_ = copyCount[Count](true, raw) // want "construct protection.Count through NewCount"
+}
+
+type box[T, R ~int] struct{ Value R }
+
+func (value box[T, R]) Recast() T { return T(value.Value) }
+
+type promotedRaw struct {
+	Decoy Count
+	box[Count, int]
+}
+
+type promotedCopy struct {
+	Decoy int
+	*box[Count, Count]
+}
+
+func PromotedTransfers(raw promotedRaw, valid promotedCopy) {
+	_ = raw.Recast()            // want "construct protection.Count through NewCount"
+	_ = promotedRaw.Recast(raw) // want "construct protection.Count through NewCount"
+	_ = valid.Recast()
+	_ = promotedCopy.Recast(valid)
+	_ = raw.box.Recast() // want "construct protection.Count through NewCount"
+	_ = valid.box.Recast()
 }
 
 func RangeTransfers(raw [][2]byte, keys map[[2]byte]int, channel <-chan [2]byte, iterator func(func([2]byte) bool), typed []ID, id ID) {

@@ -46,8 +46,9 @@ func (c *zeroChecker) projectedReference(value ssa.Value, path []int, seen map[v
 				if search == nil {
 					return c.storedReference(location, point)
 				}
-				origin, _ := c.referenceOrigin(location, point, search)
-				return origin
+				if origin, known := c.referenceOrigin(location, point, search); known {
+					return origin
+				}
 			}
 		}
 	}
@@ -58,12 +59,20 @@ func (c *zeroChecker) projectedReference(value ssa.Value, path []int, seen map[v
 // referenced contents at assignment time. Multiple predecessors must agree;
 // unknown effects and loop-carried mutations retain no assumed origin.
 func (c *zeroChecker) storedReference(location address, point flowPoint) ssa.Value {
+	if value, known := c.referenceAt(location, point); known {
+		return value
+	}
+	return nil
+}
+
+// A possible origin only supplies reachability. It cannot prove where a later
+// successful output write lands.
+func (c *zeroChecker) referenceAt(location address, point flowPoint) (ssa.Value, bool) {
 	if slices.Contains(location.path, -1) {
-		return nil
+		return nil, false
 	}
 	search := &referenceSearch{active: make(map[memoryVisit]bool)}
-	value, _ := c.referenceOrigin(location, point, search)
-	return value
+	return c.referenceOrigin(location, point, search)
 }
 
 func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search *referenceSearch) (origin ssa.Value, known bool) {
@@ -86,6 +95,7 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 			search.completed[visit] = referenceResult{origin, known}
 		}
 	}()
+	possiblyChanged := false
 	for index := point.index - 1; index >= 0; index-- {
 		if !c.work.take() {
 			return nil, false
@@ -93,7 +103,7 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 		instruction := point.block.Instrs[index]
 		if value, ok := instruction.(ssa.Value); ok && value == location.root {
 			value := zeroStoredReference(location)
-			return value, value != nil
+			return value, value != nil && !possiblyChanged
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
 			if target, known := c.collectionAddress(store.Addr); known && (mutationTarget{address: location}).overlaps(target) {
@@ -101,12 +111,12 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 					return nil, false
 				}
 				if sameStorage(target, location) {
-					return store.Val, true
+					return store.Val, !possiblyChanged
 				}
 				if pathPrefix(location.path, target.path) {
 					path := location.path[len(target.path):]
 					value := c.projectedReference(store.Val, path, make(map[valueVisit]bool), search)
-					return value, value != nil
+					return value, value != nil && !possiblyChanged
 				}
 				if storagePathsOverlap(target.path, location.path) {
 					return nil, false
@@ -152,6 +162,7 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 					return nil, false
 				}
 			}
+			possiblyChanged = possiblyChanged || c.sliceArgumentMayWriteSlot(common, location)
 		}
 	}
 	if len(point.block.Preds) > 1 && search.completed == nil {
@@ -171,7 +182,31 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 		}
 		result = incoming
 	}
-	return result, len(point.block.Preds) != 0
+	return result, len(point.block.Preds) != 0 && !possiblyChanged
+}
+
+func (c *zeroChecker) sliceArgumentMayWriteSlot(call *ssa.CallCommon, location address) bool {
+	if len(location.path) == 0 {
+		return false
+	}
+	for index, argument := range call.Args {
+		if _, slice := argument.Type().Underlying().(*types.Slice); !slice {
+			continue
+		}
+		view, known := c.collectionOf(argument)
+		if !known || view.storage.root != location.root || len(location.path) <= len(view.storage.path) ||
+			!pathPrefix(location.path, view.storage.path) {
+			continue
+		}
+		// The helper can reslice the argument up to its capacity. Check the
+		// slot directly to avoid recursion through a full mutation query.
+		offset := int64(location.path[len(view.storage.path)])
+		if offset >= view.start && (view.capEnd < 0 || offset < view.capEnd) &&
+			c.callContract(call).effectForParameter(index-callArgumentIndex(call, 0)).Kind != mutationReadOnly {
+			return true
+		}
+	}
+	return false
 }
 
 func zeroStoredReference(location address) ssa.Value {

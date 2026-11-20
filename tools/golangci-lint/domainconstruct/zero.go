@@ -266,8 +266,8 @@ func (c *zeroChecker) checkCall(instruction ssa.CallInstruction, point flowPoint
 		return
 	}
 	if deferred && !executingDefer {
-		if _, builtin := call.Value.(*ssa.Builtin); builtin {
-			return // Collection builtins observe their captured backing storage at execution.
+		if builtin, ok := call.Value.(*ssa.Builtin); ok && (builtin.Name() == "copy" || builtin.Name() == "clear") {
+			return // Copy and clear observe captured backing storage at execution.
 		}
 	}
 	check := func(value ssa.Value, operation string, index int) {
@@ -280,7 +280,7 @@ func (c *zeroChecker) checkCall(instruction ssa.CallInstruction, point flowPoint
 		}
 		useContext := context
 		useContext.use = use
-		if problem := c.problem(value, nil, value.Type(), point, useContext, make(map[valueVisit]bool)); problem != nil {
+		if problem := c.callOperandProblem(value, point, useContext); problem != nil {
 			ref := zeroUse{pos: instructionPosition(instruction, point), call: call, argument: index}
 			c.report(ref, problem, operation, value)
 		}
@@ -289,6 +289,28 @@ func (c *zeroChecker) checkCall(instruction ssa.CallInstruction, point flowPoint
 	for index, argument := range call.Args {
 		check(argument, "argument", index)
 	}
+}
+
+func (c *zeroChecker) callOperandProblem(value ssa.Value, point flowPoint, context flowContext) *zeroProblem {
+	if !c.work.exhausted() {
+		return c.problem(value, nil, value.Type(), point, context, make(map[valueVisit]bool))
+	}
+	// A literal needs no storage or path search. Keep this check available
+	// when an earlier operand has used the instruction's flow allowance.
+	if context.possible && scalarZero(value) {
+		return c.zeroType(value.Type(), "", context.use).withValue(c.valueName(value, nil)).
+			step("source", value.Pos(), "value is zero on this path")
+	}
+	return nil
+}
+
+func scalarZero(value ssa.Value) bool {
+	literal, ok := value.(*ssa.Const)
+	if !ok {
+		return false
+	}
+	_, scalar := literal.Type().Underlying().(*types.Basic)
+	return scalar && zeroConstant(literal)
 }
 
 func (c *zeroChecker) ownRepresentation(t types.Type, point flowPoint) bool {
@@ -406,19 +428,19 @@ func (c *zeroChecker) zeroTypeShape(t types.Type, use valueUse) *zeroProblem {
 		return &zeroProblem{name: p.name, typ: p.typ, reason: reasonZeroValue}
 	}
 	use = c.useForType(t, use)
-	switch t := t.Underlying().(type) {
+	switch shape := t.Underlying().(type) {
 	case *types.Struct:
 		return c.zeroFields(t, "", use)
 	case *types.Array:
-		if t.Len() != 0 {
-			return c.zeroType(t.Elem(), "[0]", use)
+		if shape.Len() != 0 {
+			return c.zeroType(shape.Elem(), "[0]", use)
 		}
 	}
 	return nil
 }
 
-func (c *zeroChecker) zeroFields(structure *types.Struct, path string, use valueUse) *zeroProblem {
-	for selected := range c.jsonShape.fields(structure, use.json()) {
+func (c *zeroChecker) zeroFields(t types.Type, path string, use valueUse) *zeroProblem {
+	for selected := range c.jsonShape.fields(t, use.json()) {
 		if !selected.indirect {
 			if problem := c.zeroType(selected.field.Type(), fieldPath(path, selected.path), use); problem != nil {
 				return problem

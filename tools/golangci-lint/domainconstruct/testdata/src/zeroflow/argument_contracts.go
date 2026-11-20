@@ -1,5 +1,7 @@
 package zeroflow
 
+import "errors"
+
 type errorForwarder struct{}
 
 func (*errorForwarder) pass(err error) error { return err }
@@ -79,6 +81,69 @@ func UseForwardedBoxedStatus(use func(ID)) {
 	id, err := forwardedBoxedStatus[ID]()
 	if err == nil {
 		use(id)
+	}
+}
+
+func OrZeroError[T error](err error) error {
+	if err != nil {
+		return err
+	}
+	var zero T
+	return zero
+}
+
+func boxedFallback[T ~string]() (T, error) {
+	if OrZeroError[*concreteStatus](nil) != nil {
+		return T(""), nil
+	}
+	return T("valid"), nil
+}
+
+func nilInterfaceFallback[T ~string]() (T, error) {
+	if OrZeroError[error](nil) != nil {
+		return T(""), nil
+	}
+	return T("valid"), nil
+}
+
+func UseGenericErrorFallback(use func(ID)) {
+	if OrZeroError[*concreteStatus](nil) != nil {
+		use("") // want "argument is an empty zeroflow.ID"
+	}
+	if OrZeroError[error](nil) != nil {
+		use("")
+	}
+	if id, err := boxedFallback[ID](); err == nil {
+		use(id) // want "argument is an empty zeroflow.ID"
+	}
+	if id, err := nilInterfaceFallback[ID](); err == nil {
+		use(id)
+	}
+}
+
+func checkedGenericError[T error]() error {
+	var zero T
+	var boxed error = zero
+	if boxed == nil {
+		return nil
+	}
+	return boxed
+}
+
+func joinedGenericError[T error](err error) error {
+	var zero T
+	return errors.Join(err, zero)
+}
+
+func UseDependentErrorConditions(use func(ID)) {
+	if checkedGenericError[error]() == nil {
+		use("") // want "argument is an empty zeroflow.ID"
+	}
+	if joinedGenericError[*concreteStatus](nil) != nil {
+		use("") // want "argument is an empty zeroflow.ID"
+	}
+	if joinedGenericError[error](nil) != nil {
+		use("")
 	}
 }
 

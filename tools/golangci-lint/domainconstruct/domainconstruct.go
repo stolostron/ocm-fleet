@@ -85,6 +85,9 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 		}, ancestors)
 	case *ast.ReturnStmt:
 		if len(node.Results) > 0 {
+			for _, result := range node.Results {
+				c.checkReturnedSlice(result, ancestors)
+			}
 			results := c.enclosingResults(ancestors)
 			c.checkTransfers(node.Results, results.Len(), func(index int) types.Type {
 				return results.At(index).Type()

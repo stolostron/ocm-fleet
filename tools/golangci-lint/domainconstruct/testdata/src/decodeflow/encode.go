@@ -6,7 +6,14 @@ import (
 	"io"
 
 	"encodingvalues"
+	"jsonembedding"
 )
+
+func EncodeRepeatedEmbedding() {
+	json.Marshal(jsonembedding.Diamond[encodingvalues.ID, string]{}) // want "at path Left.Shared.Leaf.Value"
+	json.Marshal(jsonembedding.Diamond[string, encodingvalues.ID]{})
+	json.Marshal(jsonembedding.NamedTie[encodingvalues.ID]{})
+}
 
 type ignoredFields struct {
 	ID encodingvalues.ID `json:"-"`
@@ -178,4 +185,21 @@ func UseIgnoredFieldsOutsideJSON() ignoredFields {
 	json.Marshal(value)
 	encodeDeclared(value) // want "at path ID"
 	return value          // want "at path ID"
+}
+
+type pointerMarshaler struct {
+	ID encodingvalues.ID `json:"-"`
+}
+
+func (value *pointerMarshaler) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(value.ID))
+}
+
+type embeddedMarshaler struct{ Child pointerMarshaler }
+
+func EncodeAddressablePromotedChild() {
+	json.Marshal(struct{ *embeddedMarshaler }{&embeddedMarshaler{}}) // want "at path embeddedMarshaler.Child.ID"
+	json.Marshal(struct{ embeddedMarshaler }{})
+	json.Marshal(&struct{ embeddedMarshaler }{}) // want "at path embeddedMarshaler.Child.ID"
+	json.Marshal(struct{ *embeddedMarshaler }{})
 }

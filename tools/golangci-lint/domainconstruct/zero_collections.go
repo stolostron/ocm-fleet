@@ -22,6 +22,7 @@ type collectionView struct {
 	length       ssa.Value
 	lengthBase   int64
 	dynamicStart bool
+	offset       ssa.Value // The offset of a single dynamically shifted view.
 	value        ssa.Value
 }
 
@@ -69,7 +70,7 @@ func (c *zeroChecker) checkCollectionBuiltin(instruction ssa.CallInstruction, po
 		}
 	case "append", "copy", "clear":
 		if builtin.Name() != "append" {
-			if view, ok := c.collectionOf(call.Args[0]); ok && view.size() == 0 {
+			if view, ok := c.collectionOf(call.Args[0]); ok && boundedView(view, context).size() == 0 {
 				return true
 			}
 		}
@@ -89,6 +90,7 @@ func (c *zeroChecker) checkCollectionBuiltin(instruction ssa.CallInstruction, po
 				destination, destKnown := c.collectionOf(call.Args[0])
 				source, sourceKnown := c.collectionOf(argument)
 				if builtin.Name() == "copy" && destKnown && sourceKnown {
+					destination, source = boundedView(destination, context), boundedView(source, context)
 					definite := destination.size() >= 0 && source.size() >= 0
 					source.end = endFromCount(source.start, minEnd(destination.size(), source.size()))
 					problem = c.collectionStorageProblem(source, point, context, make(map[valueVisit]bool), nil, make(map[collectionVisit]bool))
@@ -272,6 +274,11 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 				if !known {
 					if value.Low == value.High {
 						view.end, view.length, view.value = view.start, nil, value
+						if view.dynamicStart {
+							view.offset = nil
+						} else {
+							view.offset = value.Low
+						}
 						view.dynamicStart = true
 						return view, true
 					}
@@ -342,6 +349,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 	}
 	if view.dynamicStart {
 		view.end, view.length, view.dynamicStart = view.possibleEnd(), nil, false
+		view.offset = nil
 		return c.collectionAtProblem(view, point, use, context, values, covered, seen).uncertain()
 	}
 	if rangeCovered(covered, view.start, view.end) {
@@ -453,8 +461,11 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 					}
 				case "copy":
 					if destination, ok := c.collectionOf(common.Args[0]); ok && sameStorage(destination.storage, view.storage) {
-						if source, ok := c.collectionOf(common.Args[1]); ok && !destination.dynamicStart && !source.dynamicStart {
+						if source, ok := c.collectionOf(common.Args[1]); ok {
 							destination, source = boundedView(destination, context), boundedView(source, context)
+							if destination.dynamicStart || source.dynamicStart {
+								continue
+							}
 							transferred := intersectView(view, destination.start, endFromCount(destination.start, minEnd(destination.size(), source.size())))
 							covers := !execution.conditional && copyCoversView(destination, source, view)
 							definite := !execution.conditional && (destination.end >= 0 && source.end >= 0 || covers)
@@ -513,8 +524,13 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 		if !edge.possible {
 			continue
 		}
-		if c.filledByLoop(view, predecessor, point.block, context.use, values) {
-			if alternatives.add(nil) {
+		if filled, handoff := c.filledByLoop(view, predecessor, point.block, context.use, values); filled || handoff != nil {
+			var problem *zeroProblem
+			if handoff != nil {
+				problem = c.unfilledCollection(view, covered, reasonInputMayBeZero, context.use).uncertain().
+					step("mutation", handoff.Pos(), "shared backing storage may change during a channel handoff")
+			}
+			if alternatives.add(problem) {
 				break
 			}
 			continue
@@ -620,9 +636,25 @@ func endFromCount(start, count int64) int64 {
 }
 
 func boundedView(view collectionView, context flowContext) collectionView {
-	if view.end >= 0 || view.length == nil {
-		return view
+	if view.offset != nil {
+		if offset, known := guardedInteger(view.offset, context); known && offset >= 0 {
+			view.start += offset
+			if view.end >= 0 {
+				view.end += offset
+			}
+			view.lengthBase += offset
+			view.dynamicStart, view.offset = false, nil
+		}
 	}
+	if view.end < 0 && view.length != nil {
+		if upper, known := guardedInteger(view.length, context); known {
+			view.end = view.lengthBase + upper
+		}
+	}
+	return view
+}
+
+func guardedInteger(target ssa.Value, context flowContext) (int64, bool) {
 	for value, state := range context.facts {
 		comparison, ok := value.(*ssa.BinOp)
 		if !ok {
@@ -633,15 +665,14 @@ func boundedView(view collectionView, context flowContext) collectionView {
 			continue
 		}
 		for _, pair := range [][2]ssa.Value{{comparison.X, comparison.Y}, {comparison.Y, comparison.X}} {
-			if pair[0] == view.length {
+			if pair[0] == target {
 				if upper, known := integerValue(pair[1]); known {
-					view.end = view.lengthBase + upper
-					return view
+					return upper, true
 				}
 			}
 		}
 	}
-	return view
+	return 0, false
 }
 
 func (c *zeroChecker) unfilledCollection(view collectionView, covered []elementRange, reason zeroReason, use valueUse) *zeroProblem {

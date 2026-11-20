@@ -24,6 +24,17 @@ type parameterEffect struct {
 	LocalStorageOnly bool
 }
 
+func (fact *functionContract) effectForParameter(index int) parameterEffect {
+	if fact != nil {
+		for _, effect := range fact.Effects {
+			if effect.Parameter == index {
+				return effect
+			}
+		}
+	}
+	return parameterEffect{}
+}
+
 func (b *contractBuilder) inferEffects(object *types.Func, declaration *ast.FuncDecl) []parameterEffect {
 	signature := object.Type().(*types.Signature)
 	var effects []parameterEffect

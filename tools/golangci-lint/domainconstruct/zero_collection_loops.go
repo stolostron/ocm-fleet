@@ -10,18 +10,19 @@ import (
 // filledByLoop recognizes one complete sequential fill. The loop must have no
 // break into its exit and must write every element on every back edge. Error
 // checks after an assignment are evaluated at the back edge, so early returns
-// on parse failure do not invalidate a successful fill.
-func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicBlock, use valueUse, seen map[valueVisit]bool) bool {
+// on parse failure do not invalidate a successful fill. A handoff on a fill
+// with shared backing storage can expose an intervening write.
+func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicBlock, use valueUse, seen map[valueVisit]bool) (complete bool, sharedHandoff ssa.Instruction) {
 	if view.dynamicStart || len(exit.Preds) != 1 || len(header.Instrs) == 0 || !c.work.take() {
-		return false
+		return false, nil
 	}
 	branch, ok := header.Instrs[len(header.Instrs)-1].(*ssa.If)
 	if !ok || header.Succs[1] != exit {
-		return false
+		return false, nil
 	}
 	condition, ok := branch.Cond.(*ssa.BinOp)
 	if !ok || condition.Op != token.LSS || !sequentialIndex(condition.X, header) || !c.lengthCoversView(condition.Y, view) {
-		return false
+		return false, nil
 	}
 	var backEdges []*ssa.BasicBlock
 	for _, predecessor := range header.Preds {
@@ -30,95 +31,120 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 		}
 	}
 	if len(backEdges) == 0 {
-		return false
+		return false, nil
 	}
 	assignments := make(map[*ssa.Store]bool)
-	handoff := false
+	var handoffs []flowPoint
 	for _, block := range header.Parent().Blocks {
 		if !header.Dominates(block) || exit.Dominates(block) {
 			continue
 		}
 		for index, instruction := range block.Instrs {
 			if !c.work.take() {
-				return false
+				return false, nil
 			}
 			if _, scheduled := instruction.(*ssa.Defer); scheduled {
 				continue
 			}
-			handoff = handoff || channelHandoff(instruction)
+			if channelHandoff(instruction) {
+				handoffs = append(handoffs, flowPoint{block, index})
+			}
 			if call, ok := instruction.(ssa.CallInstruction); ok {
 				point := flowPoint{block, index}
 				if builtin, builtinCall := call.Common().Value.(*ssa.Builtin); builtinCall {
 					if builtin.Name() == "copy" || builtin.Name() == "append" || builtin.Name() == "clear" {
 						if c.mayReferenceStorage(call.Common().Args[0], mutationTarget{view.storage, &elementRange{view.start, view.end}}, point, make(map[ssa.Value]bool)) {
-							return false
+							return false, nil
 						}
 					}
 				} else if c.collectionMutation(call.Common(), view, point) != mutationReadOnly {
-					return false
+					return false, nil
 				}
 			}
 			if store, ok := instruction.(*ssa.Store); ok {
 				if location, ok := c.collectionAddress(store.Addr); ok && location.root == view.storage.root && pathPrefix(location.path, view.storage.path) {
 					indexed, ok := store.Addr.(*ssa.IndexAddr)
 					if !ok || indexed.Index != condition.X {
-						return false
+						return false, nil
 					}
 					target, ok := c.collectionOf(indexed.X)
 					if !ok || target.dynamicStart || target.start != 0 || !sameStorage(target.storage, view.storage) {
-						return false
+						return false, nil
 					}
 					assignments[store] = true
 				} else if c.mayReferenceStorage(store.Addr, mutationTarget{view.storage, &elementRange{view.start, view.end}}, flowPoint{block, index}, make(map[ssa.Value]bool)) {
-					return false
+					return false, nil
 				}
 			}
 		}
 	}
-	if len(assignments) == 0 || handoff && c.collectionSharedBeforeExit(view, exit) {
-		return false
+	if len(assignments) == 0 {
+		return false, nil
 	}
 	for _, backEdge := range backEdges {
 		context := c.contextAt(backEdge).clone()
 		context.use = use
 		c.assumeEdge(&context, backEdge, header)
 		if !c.filledOnPaths(view, header, backEdge, assignments, context, seen, make(map[*ssa.BasicBlock]bool)) {
-			return false
+			return false, nil
 		}
 	}
-	return true
+	// A handoff on a path that leaves the function cannot affect this fill's
+	// normal exit. Sharing must also reach the handoff itself.
+	for _, handoff := range handoffs {
+		if c.blockReachedFromPredecessors(handoff.block, backEdges) == notZero &&
+			c.collectionSharedBefore(view, flowPoint{handoff.block, handoff.index + 1}) {
+			if !c.work.exhausted() && !borrowedRoot(view.storage.root) {
+				return false, handoff.block.Instrs[handoff.index]
+			}
+			return false, nil
+		}
+	}
+	return !c.work.exhausted(), nil
 }
 
-func (c *zeroChecker) collectionSharedBeforeExit(view collectionView, exit *ssa.BasicBlock) bool {
+func (c *zeroChecker) collectionSharedBefore(view collectionView, point flowPoint) bool {
 	if borrowedRoot(view.storage.root) {
 		return true
 	}
 	storage := mutationTarget{view.storage, &elementRange{view.start, view.end}}
-	for _, block := range exit.Parent().Blocks {
-		if exit.Dominates(block) {
+	pending := []flowPoint{point}
+	seen := make(map[flowPoint]bool)
+	for len(pending) != 0 {
+		point, pending = pending[len(pending)-1], pending[:len(pending)-1]
+		if seen[point] {
 			continue
 		}
-		for index, instruction := range block.Instrs {
+		seen[point] = true
+		for index := point.index - 1; index >= 0; index-- {
 			if !c.work.take() {
 				return true
 			}
-			point := flowPoint{block, index}
-			switch instruction := instruction.(type) {
+			before := flowPoint{point.block, index}
+			switch instruction := point.block.Instrs[index].(type) {
 			case *ssa.Go:
-				if c.collectionMutation(instruction.Common(), view, point) != mutationReadOnly {
+				if c.collectionMutation(instruction.Common(), view, before) != mutationReadOnly {
 					return true
 				}
 			case *ssa.Send:
-				if c.mayReferenceStorage(instruction.X, storage, point, make(map[ssa.Value]bool)) {
+				if c.mayReferenceStorage(instruction.X, storage, before, make(map[ssa.Value]bool)) {
 					return true
 				}
 			case *ssa.Select:
 				for _, state := range instruction.States {
-					if state.Send != nil && c.mayReferenceStorage(state.Send, storage, point, make(map[ssa.Value]bool)) {
+					if state.Send != nil && c.mayReferenceStorage(state.Send, storage, before, make(map[ssa.Value]bool)) {
 						return true
 					}
 				}
+			case *ssa.Store:
+				if target, known := addressOf(instruction.Addr); known && borrowedRoot(target.root) &&
+					c.mayReferenceStorage(instruction.Val, storage, before, make(map[ssa.Value]bool)) {
+					return true
+				}
 			}
+		}
+		for _, predecessor := range point.block.Preds {
+			pending = append(pending, flowPoint{predecessor, len(predecessor.Instrs)})
 		}
 	}
 	return false

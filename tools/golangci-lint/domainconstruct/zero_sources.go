@@ -66,8 +66,8 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 			}
 			return c.sourceProblem(source.Values[0], call, result, nil, payload, point, context, seen)
 		}
-		if structure, ok := t.Underlying().(*types.Struct); ok {
-			for selected := range c.jsonShape.fields(structure, context.use.json()) {
+		if _, ok := t.Underlying().(*types.Struct); ok {
+			for selected := range c.jsonShape.fields(t, context.use.json()) {
 				index := selected.indices[0]
 				if index < len(source.Values) && !selected.indirect {
 					if problem := c.sourceProblem(source.Values[index], call, result, selected.indices[1:], selected.field.Type(), point, context, seen); problem != nil {

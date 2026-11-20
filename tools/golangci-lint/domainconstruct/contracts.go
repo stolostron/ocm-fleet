@@ -31,21 +31,57 @@ type contractSet struct {
 	writes              map[*types.Var][]token.Pos
 }
 
-// A rule describes one error result. Parameter -1 means always non-nil;
-// otherwise a non-nil argument guarantees a non-nil result. Exact also proves
-// that a nil argument produces nil, permitting wrapped result/error forwarding.
+// A rule describes one error result. A non-nil argument guarantees a non-nil
+// result. Parameter -1 makes the rule independent of the arguments. Exact
+// preserves nil, and BoxedZeroType identifies a zero of a type parameter whose
+// conversion to an interface determines the result when the argument is nil.
 type errorRule struct {
-	Result    int
-	Parameter int
-	Exact     bool
+	Result        int
+	Parameter     int
+	Exact         bool
+	BoxedZeroType int // The one-based index in the function's type parameters.
+}
+
+func (rule errorRule) resultTruth(argument truth, typeArgument types.Type) truth {
+	if rule.Parameter >= 0 && argument == notZero {
+		return notZero
+	}
+	if rule.BoxedZeroType != 0 {
+		boxed := boxedZeroTruth(typeArgument)
+		if boxed == notZero || rule.Parameter < 0 || argument == isZero {
+			return boxed
+		}
+		return unknown
+	}
+	if rule.Parameter < 0 {
+		return notZero
+	}
+	if rule.Exact && argument == isZero {
+		return isZero
+	}
+	return unknown
+}
+
+func boxedZeroTruth(t types.Type) truth {
+	if t == nil {
+		return unknown
+	}
+	if _, parameter := types.Unalias(t).(*types.TypeParam); parameter {
+		return unknown
+	}
+	if interfaceValueType(t) {
+		return isZero
+	}
+	return notZero
 }
 
 type functionContract struct {
-	Errors   []errorRule
-	Sources  []resultSource
-	Payloads []payloadRule
-	Lengths  []resultLength
-	Effects  []parameterEffect
+	Errors        []errorRule
+	Sources       []resultSource
+	FailedSources []resultSource
+	Payloads      []payloadRule
+	Lengths       []resultLength
+	Effects       []parameterEffect
 }
 
 func (*functionContract) AFact() {}
@@ -213,11 +249,12 @@ func (b *contractBuilder) inferContracts() {
 				}
 				fact.Payloads = payloads
 			}
-			if sources := b.inferSources(object, syntax); len(sources) != 0 {
+			if sources, failed := b.inferSources(object, syntax); len(sources)+len(failed) != 0 {
 				if fact == nil {
 					fact = new(functionContract)
 				}
 				fact.Sources = sources
+				fact.FailedSources = failed
 			}
 			if lengths := b.inferLengths(object, syntax); len(lengths) != 0 {
 				if fact == nil {
@@ -306,8 +343,12 @@ func (b *contractBuilder) inferErrors(object *types.Func, declaration *ast.FuncD
 			continue
 		}
 		e := nilnessEvaluator{builder: b, signature: signature, result: result}
-		if e.function(declaration.Body, nil) == notZero {
+		switch e.function(declaration.Body, nil) {
+		case notZero:
 			rules = append(rules, errorRule{Result: result, Parameter: -1})
+			continue
+		case boxedTypeZero:
+			rules = append(rules, errorRule{Result: result, Parameter: -1, BoxedZeroType: e.boxedZeroType})
 			continue
 		}
 		for parameter := range signature.Params().Len() {
@@ -316,8 +357,14 @@ func (b *contractBuilder) inferErrors(object *types.Func, declaration *ast.FuncD
 				continue
 			}
 			if e.function(declaration.Body, nilnessEnv{variable: notZero}) == notZero {
-				exact := e.function(declaration.Body, nilnessEnv{variable: isZero}) == isZero
-				rules = append(rules, errorRule{Result: result, Parameter: parameter, Exact: exact})
+				rule := errorRule{Result: result, Parameter: parameter}
+				switch e.function(declaration.Body, nilnessEnv{variable: isZero}) {
+				case isZero:
+					rule.Exact = true
+				case boxedTypeZero:
+					rule.BoxedZeroType = e.boxedZeroType
+				}
+				rules = append(rules, rule)
 			}
 		}
 	}
@@ -345,19 +392,28 @@ type boundParameter struct {
 	expression ast.Expr
 	actual     types.Type
 	formal     types.Type
-	result     int // -1 for a single-valued expression.
+	projection []int // Fields traversed to reach an embedded receiver.
+	result     int   // -1 for a single-valued expression.
 }
 
 func callParameter(info *types.Info, call *ast.CallExpr, index int) boundParameter {
+	bound := boundParameter{result: -1}
 	expression := ast.Unparen(call.Fun)
 	if selector, ok := expression.(*ast.SelectorExpr); ok {
 		if selection := info.Selections[selector]; selection != nil {
 			switch selection.Kind() {
-			case types.MethodExpr:
-				index++ // The explicit receiver precedes the declared parameters.
-			case types.MethodVal:
+			case types.MethodVal, types.MethodExpr:
 				if index == -1 {
-					return boundParameter{selector.X, info.TypeOf(selector.X), selection.Recv(), -1}
+					indices := selection.Index()
+					bound.projection = indices[:len(indices)-1]
+					bound.actual = selection.Obj().Type().(*types.Signature).Recv().Type()
+					if selection.Kind() == types.MethodVal {
+						bound.expression, bound.formal = selector.X, bound.actual
+						return bound
+					}
+				}
+				if selection.Kind() == types.MethodExpr {
+					index++ // The explicit receiver precedes the declared parameters.
 				}
 			}
 		}
@@ -369,15 +425,22 @@ func callParameter(info *types.Info, call *ast.CallExpr, index int) boundParamet
 	if signature.Variadic() && index == signature.Params().Len()-1 && !call.Ellipsis.IsValid() {
 		return boundParameter{} // A packed slice differs from its individual arguments.
 	}
-	formal := signature.Params().At(index).Type()
+	bound.formal = signature.Params().At(index).Type()
 	if len(call.Args) == 1 {
 		if tuple, ok := info.TypeOf(call.Args[0]).(*types.Tuple); ok && index < tuple.Len() {
-			return boundParameter{call.Args[0], tuple.At(index).Type(), formal, index}
+			bound.expression, bound.result = call.Args[0], index
+			if bound.actual == nil {
+				bound.actual = tuple.At(index).Type()
+			}
+			return bound
 		}
 	}
 	if index < len(call.Args) {
-		argument := call.Args[index]
-		return boundParameter{argument, info.TypeOf(argument), formal, -1}
+		bound.expression = call.Args[index]
+		if bound.actual == nil {
+			bound.actual = info.TypeOf(bound.expression)
+		}
+		return bound
 	}
 	return boundParameter{}
 }

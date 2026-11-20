@@ -168,14 +168,24 @@ func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen 
 		return c.decodeDestinations(value.X, point, seen)
 	case *ssa.Phi:
 		var destinations []decodeDestination
+		agree := true
 		for _, edge := range value.Edges {
-			for _, destination := range c.decodeDestinations(edge, point, seen) {
-				destination.conditional = true
-				destinations = append(destinations, destination)
+			incoming := c.decodeDestinations(edge, point, seen)
+			if len(incoming) != 1 || incoming[0].conditional || incoming[0].value == nil {
+				agree = false
+			} else if agree && len(destinations) != 0 {
+				agree = c.sameDecodeDestination(destinations[0].value, incoming[0].value)
 			}
 			if c.work.exhausted() {
 				return []decodeDestination{{}}
 			}
+			destinations = append(destinations, incoming...)
+		}
+		if agree && len(destinations) != 0 {
+			return destinations[:1]
+		}
+		for index := range destinations {
+			destinations[index].conditional = true
 		}
 		return destinations
 	case *ssa.UnOp:
@@ -218,4 +228,13 @@ func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, seen 
 		destinations = append(destinations, decodeDestination{})
 	}
 	return destinations
+}
+
+func (c *zeroChecker) sameDecodeDestination(first, second ssa.Value) bool {
+	if !types.Identical(first.Type(), second.Type()) {
+		return false
+	}
+	left, leftKnown := c.collectionAddress(first)
+	right, rightKnown := c.collectionAddress(second)
+	return leftKnown && rightKnown && sameStorage(left, right) && !slices.Contains(left.path, -1)
 }

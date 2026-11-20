@@ -1,6 +1,7 @@
 package domainconstruct_test
 
 import (
+	"fmt"
 	"go/ast"
 	"strings"
 	"testing"
@@ -9,6 +10,37 @@ import (
 
 	"github.com/stolostron/ocm-fleet/tools/golangci-lint/domainconstruct"
 )
+
+func TestLateZeroCallArgument(t *testing.T) {
+	const fields = 64
+	var declarations strings.Builder
+	for index := range fields {
+		fmt.Fprintf(&declarations, "F%d ID\n", index)
+	}
+	source := fmt.Sprintf(`package callbudget
+
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) ID { return ID(raw) }
+
+type Wide struct { %s }
+
+func first(Wide, ID) {}
+func reverse(ID, Wide) {}
+
+func Use(valid ID) {
+	first(Wide{%s}, "") // want "argument is an empty callbudget.ID"
+	reverse("", Wide{%s}) // want "argument is an empty callbudget.ID"
+}
+`, declarations.String(), strings.Repeat("valid,", fields), strings.Repeat("valid,", fields))
+	dir, cleanup, err := analysistest.WriteFiles(map[string]string{"callbudget/callbudget.go": source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
+	analysistest.Run(t, dir, domainconstruct.ZeroAnalyzer, "callbudget")
+}
 
 func TestZeroFlow(t *testing.T) {
 	results := analysistest.Run(t, analysistest.TestData(), domainconstruct.ZeroAnalyzer,

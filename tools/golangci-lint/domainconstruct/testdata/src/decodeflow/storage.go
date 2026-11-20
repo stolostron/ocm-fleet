@@ -7,6 +7,32 @@ import (
 	"encodingvalues"
 )
 
+func DecodeSameBoxedDestination(data []byte, choose bool) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	var destination any
+	if choose {
+		destination = any(&id)
+	} else {
+		destination = any(&id)
+	}
+	if err := json.Unmarshal(data, destination); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func DecodeDifferentPointerTypes(data []byte, choose bool) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	var destination any = &id
+	if choose {
+		destination = (*string)(&id) // want "conversion uses an empty encodingvalues.ID"
+	}
+	if err := json.Unmarshal(data, destination); err != nil {
+		return "", err
+	}
+	return id, nil // want "return may produce an empty encodingvalues.ID"
+}
+
 func ScanWithAliasingAlternative(row *sql.Row, alias bool) (encodingvalues.ID, error) {
 	var id encodingvalues.ID
 	var other string
@@ -67,4 +93,40 @@ func DecodeAfterHandoff(data []byte) (encodingvalues.ID, error) {
 		return "", err
 	}
 	return a, nil // want "return may produce an empty encodingvalues.ID"
+}
+
+func replaceSlot(slots []*encodingvalues.ID, next *encodingvalues.ID) {
+	slots[0] = next
+}
+
+func slotCount(slots []*encodingvalues.ID) int { return len(slots) }
+
+func DecodeAfterReplacedSlot(data []byte, a, b encodingvalues.ID) (encodingvalues.ID, error) {
+	slots := [1]*encodingvalues.ID{&a}
+	replaceSlot(slots[:], &b)
+	a = ""
+	if err := json.Unmarshal(data, slots[0]); err != nil {
+		return "", err
+	}
+	return a, nil // want "return may produce an empty encodingvalues.ID"
+}
+
+func DecodeAfterDisjointSlotWrite(data []byte, a, b encodingvalues.ID) (encodingvalues.ID, error) {
+	slots := [2]*encodingvalues.ID{&a, &b}
+	replaceSlot(slots[1:], &b)
+	a = ""
+	if err := json.Unmarshal(data, slots[0]); err != nil {
+		return "", err
+	}
+	return a, nil
+}
+
+func DecodeAfterReadOnlySlotUse(data []byte, a encodingvalues.ID) (encodingvalues.ID, error) {
+	slots := [1]*encodingvalues.ID{&a}
+	_ = slotCount(slots[:])
+	a = ""
+	if err := json.Unmarshal(data, slots[0]); err != nil {
+		return "", err
+	}
+	return a, nil
 }

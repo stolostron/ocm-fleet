@@ -78,21 +78,18 @@ func (c *zeroChecker) findMutation(call *ssa.CallCommon, storage mutationTarget,
 	offset := callArgumentIndex(call, 0)
 	for index, argument := range call.Args {
 		if c.mayReferenceStorage(argument, storage, point, seen) {
-			effect := mutationUnknown
-			if fact != nil {
-				for _, parameter := range fact.Effects {
-					if parameter.Parameter == index-offset {
-						if !parameter.LocalStorageOnly || !borrowedRoot(storage.root) {
-							effect = parameter.Kind
-						}
-						break
-					}
-				}
+			parameter := fact.effectForParameter(index - offset)
+			effect := parameter.Kind
+			if parameter.LocalStorageOnly && borrowedRoot(storage.root) {
+				effect = mutationUnknown
 			}
 			if effect == mutationReadOnly {
 				continue
 			}
 			if target, exact := c.collectionAddress(argument); !exact || storage.elements != nil || !sameStorage(target, storage.address) {
+				effect = mutationUnknown
+			}
+			if effect != mutationUnknown && index-offset == -1 && !exactEffectReceiver(call, argument) {
 				effect = mutationUnknown
 			}
 			if effect == mutationUnknown || kind != mutationReadOnly && kind != effect {
@@ -102,6 +99,20 @@ func (c *zeroChecker) findMutation(call *ssa.CallCommon, storage mutationTarget,
 		}
 	}
 	return kind
+}
+
+func exactEffectReceiver(call *ssa.CallCommon, argument ssa.Value) bool {
+	if call.Signature().Recv() != nil {
+		return true
+	}
+	// A method expression can pass an outer value to a thunk that then
+	// projects the embedded receiver. Its argument is not the written slot.
+	if method := callObject(call); method != nil {
+		if receiver := method.Type().(*types.Signature).Recv(); receiver != nil {
+			return types.Identical(receiver.Type(), argument.Type())
+		}
+	}
+	return false
 }
 
 func (c *zeroChecker) mayReferenceStorage(value ssa.Value, storage mutationTarget, point flowPoint, seen map[ssa.Value]bool) bool {
@@ -202,7 +213,7 @@ func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage
 	}
 	switch t.Underlying().(type) {
 	case *types.Pointer, *types.Interface, *types.Signature, *types.Slice:
-		if origin := c.storedReference(location, point); origin != nil {
+		if origin, _ := c.referenceAt(location, point); origin != nil {
 			return c.mayReferenceStorage(origin, storage, point, seen)
 		}
 		if borrowedRoot(location.root) {

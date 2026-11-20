@@ -10,17 +10,23 @@ import (
 
 type nilnessEnv map[*types.Var]truth
 
+// A local AST proof of a boxed zero depends on one function type parameter.
+// SSA flow only sees the result after the caller supplies a concrete type.
+const boxedTypeZero truth = notZero + 1
+
 type nilnessEvaluator struct {
-	builder   *contractBuilder
-	signature *types.Signature
-	result    int
-	returns   []truth
-	complete  bool
-	work      *workBudget
+	builder       *contractBuilder
+	signature     *types.Signature
+	result        int
+	returns       []truth
+	boxedZeroType int
+	complete      bool
+	work          *workBudget
 }
 
 func (e *nilnessEvaluator) function(body *ast.BlockStmt, initial nilnessEnv) truth {
 	e.returns, e.complete = nil, true
+	e.boxedZeroType = 0
 	work := workBudget(maxInferenceWork)
 	e.work = &work
 	environment := maps.Clone(initial)
@@ -90,7 +96,8 @@ func (e *nilnessEvaluator) statement(statement ast.Stmt, state nilnessEnv) []nil
 		} else if len(statement.Results) == e.signature.Results().Len() {
 			result = e.converted(statement.Results[e.result], e.signature.Results().At(e.result).Type(), state)
 		} else if call, ok := ast.Unparen(statement.Results[0]).(*ast.CallExpr); ok {
-			result = e.call(call, e.result, state)
+			actual := e.builder.pass.TypesInfo.TypeOf(call).(*types.Tuple).At(e.result).Type()
+			result = e.convertedResult(call, e.result, actual, e.signature.Results().At(e.result).Type(), state)
 		}
 		e.returns = append(e.returns, result)
 		return nil
@@ -126,7 +133,8 @@ func (e *nilnessEvaluator) statement(statement ast.Stmt, state nilnessEnv) []nil
 				value = e.converted(statement.Rhs[index], e.builder.pass.TypesInfo.TypeOf(target), state)
 			} else if len(statement.Rhs) == 1 {
 				if call, ok := ast.Unparen(statement.Rhs[0]).(*ast.CallExpr); ok {
-					value = e.call(call, index, state)
+					actual := e.builder.pass.TypesInfo.TypeOf(call).(*types.Tuple).At(index).Type()
+					value = e.convertedResult(call, index, actual, e.builder.pass.TypesInfo.TypeOf(target), state)
 				}
 			}
 			values = append(values, value)
@@ -187,16 +195,49 @@ func (e *nilnessEvaluator) converted(expression ast.Expr, target types.Type, sta
 	if boxedByConversion(actual, target) {
 		return notZero
 	}
-	return e.expression(expression, state)
+	return e.conversionTruth(actual, target, e.expression(expression, state))
 }
 
 func boxedByConversion(actual, target types.Type) bool {
-	if actual == nil || target == nil || actual == types.Typ[types.UntypedNil] {
+	if actual == nil || actual == types.Typ[types.UntypedNil] || !interfaceValueType(target) {
 		return false
 	}
-	_, boxed := target.Underlying().(*types.Interface)
-	_, alreadyInterface := actual.Underlying().(*types.Interface)
-	return boxed && !alreadyInterface
+	_, parameter := types.Unalias(actual).(*types.TypeParam)
+	return !parameter && !interfaceValueType(actual)
+}
+
+func interfaceValueType(t types.Type) bool {
+	if t == nil {
+		return false
+	}
+	if _, parameter := types.Unalias(t).(*types.TypeParam); parameter {
+		return false
+	}
+	_, ok := t.Underlying().(*types.Interface)
+	return ok
+}
+
+func (e *nilnessEvaluator) convertedResult(call *ast.CallExpr, index int, actual, target types.Type, state nilnessEnv) truth {
+	if boxedByConversion(actual, target) {
+		return notZero
+	}
+	return e.conversionTruth(actual, target, e.call(call, index, state))
+}
+
+func (e *nilnessEvaluator) conversionTruth(actual, target types.Type, value truth) truth {
+	parameter, generic := types.Unalias(actual).(*types.TypeParam)
+	if !generic || !interfaceValueType(target) || value == notZero {
+		return value
+	}
+	if value == isZero && e.signature != nil {
+		index := parameter.Index()
+		parameters := e.signature.TypeParams()
+		if index >= 0 && index < parameters.Len() && parameters.At(index) == parameter && (e.boxedZeroType == 0 || e.boxedZeroType == index+1) {
+			e.boxedZeroType = index + 1
+			return boxedTypeZero
+		}
+	}
+	return unknown
 }
 
 func (e *nilnessEvaluator) expression(expression ast.Expr, state nilnessEnv) truth {
@@ -255,12 +296,15 @@ func (e *nilnessEvaluator) call(call *ast.CallExpr, result int, state nilnessEnv
 				if _, tuple := e.builder.pass.TypesInfo.TypeOf(argument).(*types.Tuple); tuple {
 					return unknown
 				}
-				actual := e.converted(argument, types.Universe.Lookup("error").Type(), state)
-				if actual == notZero {
+				switch e.converted(argument, types.Universe.Lookup("error").Type(), state) {
+				case notZero:
 					return notZero
-				}
-				if actual == unknown {
+				case unknown:
 					joined = unknown
+				case boxedTypeZero:
+					if joined == isZero {
+						joined = boxedTypeZero
+					}
 				}
 			}
 			return joined
@@ -271,21 +315,27 @@ func (e *nilnessEvaluator) call(call *ast.CallExpr, result int, state nilnessEnv
 			if rule.Result != result {
 				continue
 			}
-			if rule.Parameter == -1 {
-				return notZero
-			}
-			if argument := callParameter(e.builder.pass.TypesInfo, call, rule.Parameter); argument.expression != nil {
-				value := unknown
+			value := unknown
+			if rule.Parameter >= 0 {
+				argument := callParameter(e.builder.pass.TypesInfo, call, rule.Parameter)
+				if argument.expression == nil {
+					continue
+				}
 				if argument.result < 0 {
 					value = e.converted(argument.expression, argument.formal, state)
-				} else if boxedByConversion(argument.actual, argument.formal) {
-					value = notZero
 				} else if spread, ok := ast.Unparen(argument.expression).(*ast.CallExpr); ok {
-					value = e.call(spread, argument.result, state)
+					value = e.convertedResult(spread, argument.result, argument.actual, argument.formal, state)
 				}
-				if value == notZero || rule.Exact && value == isZero {
-					return value
+			}
+			var typeArgument types.Type
+			if rule.BoxedZeroType != 0 {
+				instance := e.builder.pass.TypesInfo.Instances[calledIdentifier(ast.Unparen(call.Fun))]
+				if rule.BoxedZeroType <= instance.TypeArgs.Len() {
+					typeArgument = instance.TypeArgs.At(rule.BoxedZeroType - 1)
 				}
+			}
+			if state := rule.resultTruth(value, typeArgument); state != unknown {
+				return state
 			}
 		}
 	}
@@ -300,14 +350,14 @@ func (e *nilnessEvaluator) condition(expression ast.Expr, state nilnessEnv) trut
 		return isZero
 	}
 	if unary, ok := ast.Unparen(expression).(*ast.UnaryExpr); ok && unary.Op == token.NOT {
-		if result := e.condition(unary.X, state); result != unknown {
+		if result := e.condition(unary.X, state); result == isZero || result == notZero {
 			return opposite(result)
 		}
 	}
 	if binary, ok := ast.Unparen(expression).(*ast.BinaryExpr); ok && (binary.Op == token.EQL || binary.Op == token.NEQ) {
 		for _, pair := range [][2]ast.Expr{{binary.X, binary.Y}, {binary.Y, binary.X}} {
 			if e.builder.pass.TypesInfo.Types[pair[1]].IsNil() {
-				if result := e.expression(pair[0], state); result != unknown {
+				if result := e.expression(pair[0], state); result == isZero || result == notZero {
 					if binary.Op == token.EQL {
 						result = opposite(result)
 					}
