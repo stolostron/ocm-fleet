@@ -1,9 +1,5 @@
 import type { ResourceResult, SearchResultResolve } from "@ocm-fleet/common";
-import { createResourceApi } from "@ocm-fleet/common";
-import {
-  useExtensions,
-  useResolvedExtensions,
-} from "@openshift/dynamic-plugin-sdk";
+import { createResourceApi, useDynamicExtension } from "@ocm-fleet/common";
 import { Label } from "@patternfly/react-core";
 import {
   type ComponentType,
@@ -18,7 +14,6 @@ import {
 } from "../components/Search/advanced/extractMatchFields";
 import { highlightText } from "../components/Search/highlightUtils";
 import type { SearchResultItem } from "../components/Search/searchIndex";
-import type { SearchResultRendererExtension } from "../extensions/isSearchResultRendererExtension";
 import { isSearchResultRendererExtension } from "../extensions/isSearchResultRendererExtension";
 
 interface ResolvedRenderer {
@@ -45,11 +40,9 @@ export function useInventorySearch(): {
   filterSearch: (celFilter: string) => Promise<SearchResultItem[]>;
   loaded: boolean;
 } {
-  const rendererExtensions = useExtensions<SearchResultRendererExtension>(
+  const [extensions, loaded] = useDynamicExtension(
     isSearchResultRendererExtension,
   );
-  const [extensions, loaded] =
-    useResolvedExtensions<SearchResultRendererExtension>(rendererExtensions);
 
   const rendererMap = useMemo(() => {
     const map = new Map<string, ResolvedRenderer>();

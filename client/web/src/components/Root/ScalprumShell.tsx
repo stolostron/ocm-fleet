@@ -4,7 +4,6 @@ import { PropsWithChildren, useMemo, useRef } from "react";
 
 import { APP_BASENAME } from "../../appBase";
 import { useAppConfig } from "../../contexts/AppConfigContext";
-import PluginLoader from "./PluginLoader";
 import { scopeListenersRef, scopeRef } from "./ScopeBridge";
 
 const ScalprumShell = ({ children }: PropsWithChildren) => {
@@ -105,7 +104,7 @@ const ScalprumShell = ({ children }: PropsWithChildren) => {
         },
       }}
     >
-      <PluginLoader>{children}</PluginLoader>
+      {children}
     </ScalprumProvider>
   );
 };

@@ -84,3 +84,4 @@ export { default as useNavLayout } from "./useNavLayout.js";
 export { default as useNavOrder } from "./useNavOrder.js";
 export type { PluginNavigateTo } from "./usePluginNavigate.js";
 export { default as usePluginNavigate } from "./usePluginNavigate.js";
+export { default as useDynamicExtension } from "./useDynamicExtension/index.js";
