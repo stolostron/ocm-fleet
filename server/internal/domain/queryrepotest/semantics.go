@@ -155,8 +155,8 @@ func runSemanticFilterTests(t *testing.T, factory Factory) {
 		const key = `has"quote`
 		quotedUID := domain.NewExtensionResourceUID()
 		quotedName := domain.ResourceName("nodes/quoted-key")
-		if err := tx.ExtensionResources().Create(ctx, domain.NewExtensionResource(
-			quotedUID, fx.InventoryType, quotedName, fixedTime,
+		if _, err := tx.ExtensionResources().Create(ctx, domain.NewExtensionResource(
+			quotedUID, fx.InventoryType, quotedName, "create-"+quotedUID.String(), nil, fixedTime,
 			domain.WithExtensionLabels(map[string]string{key: "lab"}),
 		)); err != nil {
 			t.Fatalf("seed quoted-key extension labels: %v", err)

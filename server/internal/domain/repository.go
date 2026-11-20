@@ -66,11 +66,15 @@ type DeliveryRepository interface {
 // boundary for the extension resource model.
 //
 // Intent versioning is owned by the [ExtensionResource] aggregate (via
-// [ManagedState]). Create reads pending intents from the aggregate's
-// [ExtensionResource.Snapshot] and flushes them to storage. The
-// aggregate is only valid within the scope of a single transaction; on
+// [ManagedState]). Create and Update read pending intents and creation decisions
+// from the aggregate's [ExtensionResource.Snapshot] and persist them atomically
+// with the resource. Creation decisions survive resource deletion. The creation
+// nonce is required by [NewExtensionResource], which records acceptance
+// without a separate mutation or persistence call. Successful saves drain pending
+// creation decisions so later saves in the same transaction do not replay them.
+// The aggregate is only valid within the scope of a single transaction; on
 // the next read, [ExtensionResourceFromSnapshot] naturally produces an
-// aggregate with no pending intents.
+// aggregate with no pending writes.
 type ExtensionResourceRepository interface {
 	// Type registration
 	CreateType(ctx context.Context, def ExtensionResourceType) error
@@ -84,7 +88,26 @@ type ExtensionResourceRepository interface {
 	DeleteType(ctx context.Context, rt ResourceType) error
 
 	// Instance aggregate
-	Create(ctx context.Context, r *ExtensionResource) error
+	// Create attempts insertion without a prior lookup. Resource names and
+	// request IDs are independently unique. It saves either a new aggregate and
+	// acceptance, or only a name-conflict rejection; commit either outcome before
+	// replying. An already decided request leaves no attempted aggregate behind.
+	Create(ctx context.Context, r *ExtensionResource) (ExtensionResourceCreateResult, error)
+	// Update conditionally persists managed intent/HEAD, user labels, update
+	// time, and the aggregate root revision, comparing its loaded revision.
+	// On success r has no pending writes and its saved revision becomes the
+	// baseline for subsequent mutations within the transaction. It preserves
+	// independently reported inventory and identity information. A stale HEAD or
+	// revision returns ErrStaleGeneration; callers must roll back a failed save.
+	Update(ctx context.Context, r *ExtensionResource) error
+	// FenceUpdate retires expected for this incarnation without changing intent,
+	// labels, or timestamps. Already retired revisions and absent resources are
+	// successful no-ops. It serializes with Update's revision compare-and-swap,
+	// so a delayed save using expected cannot commit after the fence commits.
+	FenceUpdate(ctx context.Context, uid ExtensionResourceUID, expected ExtensionResourceRevision) error
+	// Get locks the aggregate root for read-modify-write operations in a
+	// read-write Tx until the transaction ends, serializing with Update and
+	// FenceUpdate. Read-only transactions do not acquire the root's write lock.
 	Get(ctx context.Context, name FullResourceName) (*ExtensionResource, error)
 	GetByUID(ctx context.Context, uid ExtensionResourceUID) (*ExtensionResource, error)
 	ListByResourceType(ctx context.Context, rt ResourceType) ([]*ExtensionResource, error)
@@ -93,8 +116,17 @@ type ExtensionResourceRepository interface {
 	// representation (see [ResourceRepresentation]'s doc) and its own
 	// reported-alias payload (see [InventoryReplacement.Aliases]) --
 	// there is nothing else to reconcile, since that payload was
-	// never folded into any cross-resource state.
+	// never folded into any cross-resource state. Compact creation decisions
+	// remain available through GetCreation after deletion.
 	Delete(ctx context.Context, name FullResourceName) error
+
+	// GetCreation reads the immutable outcome of a Create, including after the
+	// incarnation was removed. It takes no locks and is needed only when Create
+	// reports that a request was already decided.
+	GetCreation(ctx context.Context, requestID string) (ManagedResourceCreation, error)
+	// ListManagedResourceWork uses a UID cursor so failed or paused deletions
+	// cannot starve later work. It returns no intent payload or credentials.
+	ListManagedResourceWork(ctx context.Context, after ExtensionResourceUID, limit int) ([]ManagedResourceWork, error)
 
 	// Read views (join extension resource + managed state + intent + fulfillment + inventory)
 	GetView(ctx context.Context, name FullResourceName) (ExtensionResourceView, error)

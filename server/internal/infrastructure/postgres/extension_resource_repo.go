@@ -22,6 +22,7 @@ type ExtensionResourceRepo struct {
 		QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 		QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	}
+	forUpdate bool
 }
 
 // ---------------------------------------------------------------------------
@@ -120,25 +121,55 @@ func (r *ExtensionResourceRepo) DeleteType(ctx context.Context, rt domain.Resour
 // Instance CRUD
 // ---------------------------------------------------------------------------
 
-func (r *ExtensionResourceRepo) Create(ctx context.Context, er *domain.ExtensionResource) error {
+func (r *ExtensionResourceRepo) Create(ctx context.Context, er *domain.ExtensionResource) (domain.ExtensionResourceCreateResult, error) {
 	snap := er.Snapshot()
+	if snap.PendingCreation == nil {
+		return 0, fmt.Errorf("%w: Create requires a new extension resource", domain.ErrInvalidArgument)
+	}
 
 	labelsJSON, err := json.Marshal(nonNilLabels(snap.Labels))
 	if err != nil {
-		return fmt.Errorf("marshal labels: %w", err)
+		return 0, fmt.Errorf("marshal labels: %w", err)
 	}
-	_, err = r.DB.ExecContext(ctx,
-		`INSERT INTO extension_resources (uid, service_name, type_name, collection_name, resource_id, labels, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+	res, err := r.DB.ExecContext(ctx,
+		`INSERT INTO extension_resources (uid, service_name, type_name, collection_name, resource_id, labels, created_at, updated_at, revision)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		 ON CONFLICT (service_name, collection_name, resource_id) DO NOTHING`,
 		snap.UID.String(), string(snap.ResourceType.ServiceName()), snap.ResourceType.TypeName(),
 		string(snap.Name.Collection()), string(snap.Name.ID()),
 		string(labelsJSON),
-		snap.CreatedAt.UTC(), snap.UpdatedAt.UTC())
+		snap.CreatedAt.UTC(), snap.UpdatedAt.UTC(), snap.Revision)
 	if err != nil {
-		if isUniqueViolation(err) {
-			return fmt.Errorf("%w: extension resource %s/%s", domain.ErrAlreadyExists, snap.ResourceType.ServiceName(), snap.Name)
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	created := n == 1
+	decision := *snap.PendingCreation
+	if !created {
+		decision.UID = domain.ExtensionResourceUID{}
+	}
+	recorded, err := r.insertCreationDecision(ctx, decision)
+	if err != nil {
+		return 0, err
+	}
+	if !recorded {
+		// A retained nonce must fence recreation even when its name is free.
+		// No child rows have been written yet. Discard the provisional parent
+		// here so even a caller committing this outcome cannot resurrect it.
+		if created {
+			if _, err := r.DB.ExecContext(ctx, `DELETE FROM extension_resources WHERE uid = $1`, snap.UID.String()); err != nil {
+				return 0, fmt.Errorf("discard replayed creation: %w", err)
+			}
 		}
-		return err
+		er.DrainPendingCreation()
+		return domain.ExtensionResourceCreateAlreadyDecided, nil
+	}
+	if !created {
+		er.DrainPendingCreation()
+		return domain.ExtensionResourceCreateRejected, nil
 	}
 
 	// Flush pending intents to the resource_intents table keyed by UID.
@@ -148,10 +179,7 @@ func (r *ExtensionResourceRepo) Create(ctx context.Context, er *domain.Extension
 			 VALUES ($1, $2, $3, $4)`,
 			intent.ExtensionResourceUID.String(), intent.Version, string(intent.Spec),
 			intent.CreatedAt.UTC().Format(time.RFC3339)); err != nil {
-			if isUniqueViolation(err) {
-				return fmt.Errorf("%w: intent %s v%d", domain.ErrAlreadyExists, intent.ExtensionResourceUID, intent.Version)
-			}
-			return err
+			return 0, fmt.Errorf("insert intent %s v%d: %w", intent.ExtensionResourceUID, intent.Version, err)
 		}
 	}
 
@@ -163,17 +191,80 @@ func (r *ExtensionResourceRepo) Create(ctx context.Context, er *domain.Extension
 			snap.UID.String(), snap.Managed.CurrentVersion,
 			string(snap.Managed.FulfillmentID))
 		if err != nil {
-			return fmt.Errorf("insert managed state: %w", err)
+			return 0, fmt.Errorf("insert managed state: %w", err)
 		}
 	}
 
 	if snap.Inventory != nil {
 		if err := r.insertInventory(ctx, snap.UID, snap.Inventory); err != nil {
-			return fmt.Errorf("insert inventory state: %w", err)
+			return 0, fmt.Errorf("insert inventory state: %w", err)
 		}
 	}
 
+	*er = *domain.ExtensionResourceFromSnapshot(snap)
+	return domain.ExtensionResourceCreated, nil
+}
+
+// Update persists user labels and optional managed intent. Inventory
+// reporters can continue updating their independent state without losing it.
+func (r *ExtensionResourceRepo) Update(ctx context.Context, er *domain.ExtensionResource) error {
+	s := er.Snapshot()
+	labels, err := json.Marshal(nonNilLabels(s.Labels))
+	if err != nil {
+		return err
+	}
+	res, err := r.DB.ExecContext(ctx, `UPDATE extension_resources SET labels = $1, updated_at = $2, revision = $3 WHERE uid = $4 AND revision = $5`,
+		string(labels), s.UpdatedAt.UTC(), s.Revision, s.UID.String(), s.LoadedRevision)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		// Distinguish a stale snapshot from deletion only on the failure path.
+		var exists bool
+		if err := r.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM extension_resources WHERE uid = $1)`, s.UID.String()).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return domain.ErrNotFound
+		}
+		return domain.ErrStaleGeneration
+	}
+	if len(s.PendingIntents) > 0 {
+		res, err := r.DB.ExecContext(ctx, `UPDATE extension_resource_managed SET current_version = $1 WHERE extension_resource_uid = $2 AND current_version = $3`,
+			s.Managed.CurrentVersion, s.UID.String(), int64(s.Managed.CurrentVersion)-int64(len(s.PendingIntents)))
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return domain.ErrStaleGeneration
+		}
+	}
+	for _, intent := range s.PendingIntents {
+		if _, err := r.DB.ExecContext(ctx, `INSERT INTO resource_intents (extension_resource_uid, version, spec, created_at) VALUES ($1, $2, $3, $4)`,
+			intent.ExtensionResourceUID.String(), intent.Version, string(intent.Spec), intent.CreatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
+			return err
+		}
+	}
+	// Reconstitute the saved state to establish its new persistence baseline
+	// and clear pending intents. Saving does not change the aggregate's etag.
+	*er = *domain.ExtensionResourceFromSnapshot(s)
 	return nil
+}
+
+// FenceUpdate uses the same row and revision predicate as Update. The two
+// statements serialize through normal row writes; no preliminary read or extra
+// root lock is needed. Zero affected rows already satisfy the fence.
+func (r *ExtensionResourceRepo) FenceUpdate(ctx context.Context, uid domain.ExtensionResourceUID, expected domain.ExtensionResourceRevision) error {
+	_, err := r.DB.ExecContext(ctx, `UPDATE extension_resources SET revision = revision + 1 WHERE uid = $1 AND revision = $2`, uid.String(), expected)
+	return err
 }
 
 // erInstanceFromClause is the shared FROM + JOINs for instance
@@ -186,6 +277,16 @@ LEFT JOIN extension_resource_inventory inv ON inv.extension_resource_uid = er.ui
 
 func (r *ExtensionResourceRepo) Get(ctx context.Context, name domain.FullResourceName) (*domain.ExtensionResource, error) {
 	rn := name.ResourceName()
+	if r.forUpdate {
+		var locked string
+		if err := r.DB.QueryRowContext(ctx, `SELECT uid FROM extension_resources WHERE service_name = $1 AND collection_name = $2 AND resource_id = $3 FOR UPDATE`,
+			string(name.ServiceName()), string(rn.Collection()), string(rn.ID())).Scan(&locked); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, domain.ErrNotFound
+			}
+			return nil, err
+		}
+	}
 	row := r.DB.QueryRowContext(ctx,
 		erSelectColumns+erInstanceFromClause+`WHERE er.service_name = $1 AND er.collection_name = $2 AND er.resource_id = $3`,
 		string(name.ServiceName()), string(rn.Collection()), string(rn.ID()))
@@ -392,13 +493,13 @@ func (r *ExtensionResourceRepo) GetIntent(ctx context.Context, uid domain.Extens
 // [domain.InventoryReplacement.Aliases]'s doc. Postgres stores that
 // payload as a JSONB object for SQL-native delta merging, but read
 // paths decode it back into [domain.ExtensionResource.ReportedAliases].
-const erSelectColumns = `SELECT er.uid, er.service_name, er.type_name, er.collection_name, er.resource_id, er.labels, er.reported_aliases, er.created_at, er.updated_at,
+const erSelectColumns = `SELECT er.uid, er.service_name, er.type_name, er.collection_name, er.resource_id, er.labels, er.reported_aliases, er.created_at, er.updated_at, er.revision,
 	erm.current_version, erm.fulfillment_id,
 	inv.labels, inv.observation, inv.observed_at, inv.updated_at, inv.conditions
 `
 
 var erViewQueryPG = `SELECT
-	er.uid, er.service_name, er.type_name, er.collection_name, er.resource_id, er.labels, er.reported_aliases, er.created_at, er.updated_at,
+	er.uid, er.service_name, er.type_name, er.collection_name, er.resource_id, er.labels, er.reported_aliases, er.created_at, er.updated_at, er.revision,
 	erm.current_version, erm.fulfillment_id,
 	ri.spec, ri.created_at,
 	` + fulfillmentColumnsJoined("f") + `,
@@ -459,7 +560,7 @@ func scanExtensionResourceSnapshot(s scanner) (domain.ExtensionResourceSnapshot,
 
 	if err := s.Scan(
 		&snap.UID, &serviceName, &typeName, &collectionName, &resourceID, &labelsStr, &reportedAliasesStr,
-		&snap.CreatedAt, &snap.UpdatedAt,
+		&snap.CreatedAt, &snap.UpdatedAt, &snap.Revision,
 		&currentVersion, &fulfillmentID,
 		&invLabels, &invObservation, &invObservedAt, &invUpdatedAt,
 		&invConditionsJSON,
@@ -517,6 +618,7 @@ func scanExtensionResourceView(s scanner) (domain.ExtensionResourceView, error) 
 	var serviceName, typeName, collectionName, resourceID string
 	var labelsStr, reportedAliasesStr string
 	var erCreatedAt, erUpdatedAt time.Time
+	var revision domain.ExtensionResourceRevision
 
 	var currentVersion sql.NullInt64
 	var managedFID sql.NullString
@@ -535,7 +637,7 @@ func scanExtensionResourceView(s scanner) (domain.ExtensionResourceView, error) 
 
 	if err := s.Scan(
 		&uid, &serviceName, &typeName, &collectionName, &resourceID, &labelsStr, &reportedAliasesStr,
-		&erCreatedAt, &erUpdatedAt,
+		&erCreatedAt, &erUpdatedAt, &revision,
 		&currentVersion, &managedFID,
 		&riSpec, &riCreatedAt,
 		&fID, &msVer, &msSpec, &psVer, &psSpec, &rsVer, &rsSpec,
@@ -553,7 +655,7 @@ func scanExtensionResourceView(s scanner) (domain.ExtensionResourceView, error) 
 
 	return extensionResourceViewFromColumns(
 		uid, serviceName, typeName, collectionName, resourceID, labelsStr, reportedAliasesStr,
-		erCreatedAt, erUpdatedAt,
+		erCreatedAt, erUpdatedAt, revision,
 		currentVersion, managedFID,
 		riSpec, riCreatedAt,
 		fID, msVer, msSpec, psVer, psSpec, rsVer, rsSpec,
@@ -576,6 +678,7 @@ func extensionResourceViewFromColumns(
 	serviceName, typeName, collectionName, resourceID string,
 	labelsStr, reportedAliasesStr string,
 	erCreatedAt, erUpdatedAt time.Time,
+	revision domain.ExtensionResourceRevision,
 	currentVersion sql.NullInt64,
 	managedFID sql.NullString,
 	riSpec, riCreatedAt sql.NullString,
@@ -608,6 +711,7 @@ func extensionResourceViewFromColumns(
 		ResourceType:    resourceType,
 		Name:            name,
 		Labels:          labels,
+		Revision:        revision,
 		CreatedAt:       erCreatedAt,
 		UpdatedAt:       erUpdatedAt,
 		ReportedAliases: reportedAliases,

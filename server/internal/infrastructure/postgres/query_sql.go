@@ -94,7 +94,7 @@ SELECT
 	fp.type_name,
 
 	er.uid, er.service_name, er.type_name, er.collection_name, er.resource_id,
-	er.labels, er.reported_aliases, er.created_at, er.updated_at,
+	er.labels, er.reported_aliases, er.created_at, er.updated_at, er.revision,
 	erm.current_version, erm.fulfillment_id,
 	ri.spec, ri.created_at,
 	%s,

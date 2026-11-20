@@ -477,8 +477,7 @@ type extensionResourceTypeJSON struct {
 // ---------------------------------------------------------------------------
 
 // ManagedState holds the managed lifecycle state for an extension
-// resource instance. It tracks the current intent version and the
-// linked fulfillment.
+// resource instance. It tracks the current intent version and linked fulfillment.
 //
 // This is not a separate aggregate; it is state on [ExtensionResource].
 // Root timestamps (createdAt, updatedAt) remain on the parent resource.
@@ -497,6 +496,12 @@ func (s ManagedState) FulfillmentID() FulfillmentID { return s.fulfillmentID }
 // ExtensionResource -- the primary extension-owned aggregate
 // ---------------------------------------------------------------------------
 
+// ExtensionResourceRevision fences conditional writes to user labels and managed
+// intent, independently of intent versions and fulfillment generations. Provider
+// inventory is merged independently. Retiring a failed attempt changes no desired
+// intent and needs no historical mutation receipt.
+type ExtensionResourceRevision int64
+
 // ExtensionResource is the primary extension-owned resource instance.
 // It is the single extension-side aggregate for a fully qualified
 // extension resource name such as //kind.open-cluster-management.io/clusters/dev.
@@ -512,6 +517,7 @@ type ExtensionResource struct {
 	resourceType ResourceType
 	name         ResourceName
 	labels       map[string]string
+	revision     ExtensionResourceRevision
 
 	managed   *ManagedState
 	inventory *InventoryResource
@@ -524,7 +530,13 @@ type ExtensionResource struct {
 	createdAt time.Time
 	updatedAt time.Time
 
-	pendingIntents []ResourceIntent
+	// loadedRevision is the baseline for the repository's conditional save.
+	// Mutations advance revision once relative to this value, regardless of
+	// how many fields change before saving.
+	loadedRevision ExtensionResourceRevision
+
+	pendingIntents  []ResourceIntent
+	pendingCreation *ManagedResourceCreation
 }
 
 // ExtensionResourceOption configures optional fields on
@@ -560,20 +572,28 @@ func WithManagedState(fulfillmentID FulfillmentID) ExtensionResourceOption {
 //
 // After construction, call [ExtensionResource.RecordIntent] (if
 // managed) to attach the initial spec version.
+//
+// requestID identifies this logical creation attempt; the constructor captures
+// it automatically so Create saves the nonce's acceptance or rejection.
+// caller binds retries to the original identity, independent of credentials.
 func NewExtensionResource(
 	uid ExtensionResourceUID,
 	rt ResourceType,
 	name ResourceName,
+	requestID string,
+	caller *FederatedIdentity,
 	now time.Time,
 	opts ...ExtensionResourceOption,
 ) *ExtensionResource {
+	creation := newManagedResourceCreation(requestID, rt, name, caller, uid)
 	r := &ExtensionResource{
-		uid:          uid,
-		resourceType: rt,
-		name:         name,
-		labels:       map[string]string{},
-		createdAt:    now,
-		updatedAt:    now,
+		uid:             uid,
+		resourceType:    rt,
+		name:            name,
+		labels:          map[string]string{},
+		createdAt:       now,
+		updatedAt:       now,
+		pendingCreation: &creation,
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -585,6 +605,7 @@ func NewExtensionResource(
 // and collects a pending [ResourceIntent] record for the repository
 // to flush. Returns the recorded intent for use in downstream
 // derivation (e.g. [FulfillmentRelation.DeriveStrategies]).
+// It also advances the resource revision relative to the loaded state.
 //
 // Returns an error if the resource has no managed state because intent
 // versioning requires a managed lifecycle.
@@ -595,6 +616,7 @@ func (r *ExtensionResource) RecordIntent(spec json.RawMessage, now time.Time) (R
 			r.name, ErrInvalidArgument)
 	}
 	r.managed.currentVersion++
+	r.advanceRevision()
 	intent := ResourceIntent{
 		ExtensionResourceUID: r.uid,
 		Version:              r.managed.currentVersion,
@@ -602,13 +624,24 @@ func (r *ExtensionResource) RecordIntent(spec json.RawMessage, now time.Time) (R
 		CreatedAt:            now,
 	}
 	r.pendingIntents = append(r.pendingIntents, intent)
+	r.updatedAt = now
 	return intent, nil
+}
+
+// DrainPendingCreation clears the constructor-captured attempt after Create
+// succeeds. Only repositories should call this, after all aggregate writes
+// succeed. Ordinary updates do not write creation decisions.
+func (r *ExtensionResource) DrainPendingCreation() {
+	r.pendingCreation = nil
 }
 
 // Accessor methods -- read-only getters for private fields.
 
 // UID returns the resource's stable unique identifier.
 func (r *ExtensionResource) UID() ExtensionResourceUID { return r.uid }
+
+// Revision returns the concurrency revision for labels and managed intent.
+func (r *ExtensionResource) Revision() ExtensionResourceRevision { return r.revision }
 
 // ResourceType returns the extension resource type.
 func (r *ExtensionResource) ResourceType() ResourceType { return r.resourceType }
@@ -631,6 +664,7 @@ func (r *ExtensionResource) Labels() map[string]string { return r.labels }
 // SetLabels replaces the extension resource labels and bumps updatedAt.
 // The labels map is copied so later caller mutations do not affect the
 // aggregate. A nil labels argument clears labels to an empty map.
+// It also advances the resource revision, independently of managed intent.
 func (r *ExtensionResource) SetLabels(labels map[string]string, now time.Time) {
 	if labels == nil {
 		labels = map[string]string{}
@@ -641,6 +675,7 @@ func (r *ExtensionResource) SetLabels(labels map[string]string, now time.Time) {
 	}
 	r.labels = labels
 	r.updatedAt = now
+	r.advanceRevision()
 }
 
 // Managed returns the managed lifecycle state, or nil for
@@ -661,6 +696,10 @@ func (r *ExtensionResource) CreatedAt() time.Time { return r.createdAt }
 
 // UpdatedAt returns the last-updated timestamp.
 func (r *ExtensionResource) UpdatedAt() time.Time { return r.updatedAt }
+
+func (r *ExtensionResource) advanceRevision() {
+	r.revision = r.loadedRevision + 1
+}
 
 // ---------------------------------------------------------------------------
 // ExtensionResourceView -- read DTO

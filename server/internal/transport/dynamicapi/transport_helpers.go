@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -19,12 +20,22 @@ import (
 // through errors that are already gRPC status errors.
 func ToStatusError(err error) error {
 	switch {
+	case errors.Is(err, domain.ErrCreationRetired):
+		st, detailErr := status.New(codes.NotFound, err.Error()).WithDetails(&errdetails.ErrorInfo{
+			Reason: "CREATION_RETIRED", Domain: "open-cluster-management.io",
+		})
+		if detailErr != nil {
+			return status.Error(codes.Internal, "encode creation decision")
+		}
+		return st.Err()
 	case errors.Is(err, domain.ErrNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, domain.ErrAlreadyExists):
 		return status.Error(codes.AlreadyExists, err.Error())
 	case errors.Is(err, domain.ErrStaleGeneration):
 		return status.Error(codes.Aborted, err.Error())
+	case errors.Is(err, domain.ErrAlreadyRunning):
+		return status.Error(codes.Unavailable, "request is still running; retry with the same request_id")
 	case errors.Is(err, domain.ErrInvalidArgument):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrUnimplemented):
@@ -67,8 +78,17 @@ func WriteJSON(w http.ResponseWriter, code int, msg *dynamicpb.Message) {
 // HTTPError writes an HTTP error response using a gRPC status code for
 // code mapping.
 func HTTPError(w http.ResponseWriter, code codes.Code, msg string) {
+	writeHTTPStatus(w, status.New(code, msg))
+}
+
+func writeHTTPStatus(w http.ResponseWriter, st *status.Status) {
+	data, err := protojson.Marshal(st.Proto())
+	if err != nil {
+		http.Error(w, "marshal error response", http.StatusInternalServerError)
+		return
+	}
 	httpCode := http.StatusInternalServerError
-	switch code {
+	switch st.Code() {
 	case codes.InvalidArgument:
 		httpCode = http.StatusBadRequest
 	case codes.NotFound:
@@ -77,8 +97,16 @@ func HTTPError(w http.ResponseWriter, code codes.Code, msg string) {
 		httpCode = http.StatusConflict
 	case codes.PermissionDenied:
 		httpCode = http.StatusForbidden
+	case codes.Unauthenticated:
+		httpCode = http.StatusUnauthorized
+	case codes.Unavailable:
+		httpCode = http.StatusServiceUnavailable
+	case codes.DeadlineExceeded:
+		httpCode = http.StatusGatewayTimeout
 	}
-	http.Error(w, msg, httpCode)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpCode)
+	_, _ = w.Write(data)
 }
 
 // GRPCHTTPError extracts a gRPC status from err and writes the
@@ -89,5 +117,5 @@ func GRPCHTTPError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	HTTPError(w, st.Code(), st.Message())
+	writeHTTPStatus(w, st)
 }

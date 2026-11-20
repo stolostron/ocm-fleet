@@ -45,8 +45,8 @@ func seedExtensionResourceType(t *testing.T, tx domain.Tx, service domain.Servic
 func seedExtensionResourceInstance(t *testing.T, tx domain.Tx, rt domain.ResourceType, name domain.ResourceName, now time.Time) domain.ExtensionResourceUID {
 	t.Helper()
 	uid := domain.NewExtensionResourceUID()
-	r := domain.NewExtensionResource(uid, rt, name, now)
-	if err := tx.ExtensionResources().Create(context.Background(), r); err != nil {
+	r := domain.NewExtensionResource(uid, rt, name, "create-"+uid.String(), nil, now)
+	if _, err := tx.ExtensionResources().Create(context.Background(), r); err != nil {
 		t.Fatalf("seed extension resource instance: %v", err)
 	}
 	return uid

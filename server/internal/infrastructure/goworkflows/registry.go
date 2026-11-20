@@ -267,6 +267,9 @@ func (r *Registry) RegisterDeleteDeploymentCleanup(spec *domain.DeleteDeployment
 func (r *Registry) RegisterDeleteManagedResourceCleanup(spec *domain.DeleteManagedResourceCleanupWorkflowSpec) (domain.DeleteManagedResourceCleanupWorkflow, error) {
 	invokers := make(map[string]activityInvoker)
 	opts := r.activityOptions()
+	if err := registerActivity(r.Worker, invokers, spec.CleanupRequired(), opts); err != nil {
+		return nil, err
+	}
 
 	if err := registerActivity(r.Worker, invokers, spec.DeleteManagedResourceAndFulfillment(), opts); err != nil {
 		return nil, err
@@ -435,6 +438,45 @@ func (r *Registry) RegisterDeleteManagedResource(spec *domain.DeleteManagedResou
 	}, nil
 }
 
+func (r *Registry) RegisterUpdateManagedResource(spec *domain.UpdateManagedResourceWorkflowSpec) (domain.UpdateManagedResourceWorkflow, error) {
+	invokers := make(map[string]activityInvoker)
+	opts := r.activityOptions()
+	for _, register := range []func() error{
+		func() error { return registerActivity(r.Worker, invokers, spec.PrepareUpdate(), opts) },
+		func() error { return registerActivity(r.Worker, invokers, spec.MutateSpec(), opts) },
+		func() error { return registerActivity(r.Worker, invokers, spec.FenceAttempt(), opts) },
+		func() error { return registerActivity(r.Worker, invokers, spec.LoadProgress(), opts) },
+		func() error { return registerActivity(r.Worker, invokers, spec.StartOrchestration(), opts) },
+	} {
+		if err := register(); err != nil {
+			return nil, err
+		}
+	}
+	runName := spec.Name() + "-run"
+	run := func(ctx workflow.Context, state domain.UpdateManagedResourceState) (domain.ExtensionResourceView, error) {
+		view, err := spec.Run(newBaseRecord(ctx, invokers), state)
+		var can *domain.ContinueAsNewError
+		if errors.As(err, &can) {
+			return view, workflow.ContinueAsNew(ctx, can.Input.(domain.UpdateManagedResourceState))
+		}
+		return view, encodeDomainError(err)
+	}
+	if err := r.Worker.RegisterWorkflow(run, goregistry.WithName(runName)); err != nil {
+		return nil, err
+	}
+	// GetWorkflowResult treats ContinueAsNew as a completed execution. A
+	// subworkflow future follows the continuation chain instead, so the
+	// public execution finishes only after the update's final handoff and
+	// returns its actual API result. The wrapper's history stays constant.
+	wfFunc := func(ctx workflow.Context, state domain.UpdateManagedResourceState) (domain.ExtensionResourceView, error) {
+		return workflow.CreateSubWorkflowInstance[domain.ExtensionResourceView](ctx, workflow.DefaultSubWorkflowOptions, runName, state).Get(ctx)
+	}
+	if err := r.Worker.RegisterWorkflow(wfFunc, goregistry.WithName(spec.Name())); err != nil {
+		return nil, err
+	}
+	return &updateManagedResourceWorkflow{client: r.Client, wfName: spec.Name(), timeout: r.timeout()}, nil
+}
+
 // registerActivity registers a typed activity with go-workflows and
 // creates a corresponding typed invoker.
 func registerActivity[I, O any](
@@ -447,10 +489,7 @@ func registerActivity[I, O any](
 
 	activityFn := func(ctx context.Context, in I) (O, error) {
 		out, err := activity.Run(ctx, in)
-		if err != nil && (domain.IsTerminal(err) || domain.IsAuthExpired(err)) {
-			return out, workflow.NewPermanentError(err)
-		}
-		return out, err
+		return out, encodeDomainError(err)
 	}
 	if err := w.RegisterActivity(activityFn, goregistry.WithName(name)); err != nil {
 		return fmt.Errorf("register activity %q: %w", name, err)
@@ -507,12 +546,13 @@ func (r *baseRecord) Run(activity domain.Activity[any, any], in any) (any, error
 	}
 	out, err := invoke(r.wfCtx, in)
 	if err != nil && !workflow.CanRetry(err) {
+		err = restoreDomainError(err)
 		if domain.IsAuthExpired(err) {
 			return out, fmt.Errorf("%w: %v", domain.ErrAuthExpired, err)
 		}
 		return out, domain.TerminalError(err)
 	}
-	return out, err
+	return out, restoreDomainError(err)
 }
 
 func (r *baseRecord) Await(signalName string) (any, error) {
@@ -768,7 +808,8 @@ func (e *execution[O]) WorkflowID() string {
 }
 
 func (e *execution[O]) AwaitResult(ctx context.Context) (O, error) {
-	return client.GetWorkflowResult[O](ctx, e.client, e.instance, e.timeout)
+	out, err := client.GetWorkflowResult[O](ctx, e.client, e.instance, e.timeout)
+	return out, restoreDomainError(err)
 }
 
 // --- CreateManagedResourceWorkflow ---
@@ -782,9 +823,15 @@ type createManagedResourceWorkflow struct {
 func (w *createManagedResourceWorkflow) Start(ctx context.Context, input domain.CreateManagedResourceInput) (domain.Execution[domain.ExtensionResourceView], error) {
 	fullName := input.ResourceType.FullName(input.Name)
 	instanceID := domain.CreateManagedResourceWorkflowID(fullName)
+	if input.RequestID != "" {
+		instanceID += "-" + input.RequestID
+	}
 	instance, err := w.client.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{
 		InstanceID: instanceID,
 	}, w.wfName, input)
+	if errors.Is(err, backend.ErrInstanceAlreadyExists) {
+		return nil, domain.ErrAlreadyRunning
+	}
 	if err != nil {
 		return nil, fmt.Errorf("create workflow instance: %w", err)
 	}
@@ -798,6 +845,23 @@ func (w *createManagedResourceWorkflow) Start(ctx context.Context, input domain.
 
 // --- DeleteManagedResourceWorkflow ---
 
+type updateManagedResourceWorkflow struct {
+	client  *client.Client
+	wfName  string
+	timeout time.Duration
+}
+
+func (w *updateManagedResourceWorkflow) Start(ctx context.Context, input domain.UpdateManagedResourceInput) (domain.Execution[domain.ExtensionResourceView], error) {
+	instance, err := w.client.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: "update-mr-" + input.RequestID}, w.wfName, domain.UpdateManagedResourceState{Input: input})
+	if errors.Is(err, backend.ErrInstanceAlreadyExists) {
+		return nil, domain.ErrAlreadyRunning
+	}
+	if err != nil {
+		return nil, fmt.Errorf("create workflow instance: %w", err)
+	}
+	return &execution[domain.ExtensionResourceView]{client: w.client, instance: instance, timeout: w.timeout}, nil
+}
+
 type deleteManagedResourceWorkflow struct {
 	client  *client.Client
 	wfName  string
@@ -807,9 +871,15 @@ type deleteManagedResourceWorkflow struct {
 func (w *deleteManagedResourceWorkflow) Start(ctx context.Context, input domain.DeleteManagedResourceInput) (domain.Execution[domain.ExtensionResourceView], error) {
 	fullName := input.ResourceType.FullName(input.Name)
 	instanceID := domain.DeleteManagedResourceWorkflowID(fullName)
+	if input.RequestID != "" {
+		instanceID += "-" + input.RequestID
+	}
 	instance, err := w.client.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{
 		InstanceID: instanceID,
 	}, w.wfName, input)
+	if errors.Is(err, backend.ErrInstanceAlreadyExists) {
+		return nil, domain.ErrAlreadyRunning
+	}
 	if err != nil {
 		return nil, fmt.Errorf("create workflow instance: %w", err)
 	}

@@ -89,8 +89,8 @@ func TestPlatformResourceService_GetReturnsRepresentations(t *testing.T) {
 		tx.RollbackOnExit()
 		t.Fatalf("CreateType: %v", err)
 	}
-	er := domain.NewExtensionResource(domain.NewExtensionResourceUID(), rt, pr.Name(), now)
-	if err := tx.ExtensionResources().Create(ctx, er); err != nil {
+	er := domain.NewExtensionResource(domain.NewExtensionResourceUID(), rt, pr.Name(), "create-"+domain.NewExtensionResourceUID().String(), nil, now)
+	if _, err := tx.ExtensionResources().Create(ctx, er); err != nil {
 		tx.RollbackOnExit()
 		t.Fatalf("Create extension resource: %v", err)
 	}

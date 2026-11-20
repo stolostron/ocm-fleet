@@ -188,7 +188,7 @@ func TestKindAddon_ManagedResource_EndToEnd(t *testing.T) {
 	}
 
 	typeSvc := application.NewExtensionResourceTypeService(store)
-	resourceSvc := application.NewExtensionResourceService(store, createMRWf, nil, nil, nil)
+	resourceSvc := application.NewExtensionResourceService(store, createMRWf, nil, nil, nil, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

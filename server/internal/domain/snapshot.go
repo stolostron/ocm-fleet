@@ -232,6 +232,16 @@ type ExtensionResourceTypeSnapshot struct {
 	UpdatedAt    time.Time
 }
 
+// ManagedResourceCreationSnapshot is the persistence DTO for a creation
+// decision. It deliberately contains neither intent nor delivery credentials.
+type ManagedResourceCreationSnapshot struct {
+	RequestID    string
+	ResourceType ResourceType
+	Name         ResourceName
+	Caller       *FederatedIdentity
+	UID          ExtensionResourceUID
+}
+
 // ManagedStateSnapshot is the persistence DTO for [ManagedState].
 type ManagedStateSnapshot struct {
 	CurrentVersion IntentVersion
@@ -241,17 +251,22 @@ type ManagedStateSnapshot struct {
 // ExtensionResourceSnapshot is the persistence DTO for
 // [ExtensionResource].
 //
-// It captures persisted state and pending intents. On the read path,
-// [ExtensionResourceFromSnapshot] initializes pending intents as empty.
+// It captures persisted state and pending writes. On the read path,
+// [ExtensionResourceFromSnapshot] initializes pending writes as empty.
 type ExtensionResourceSnapshot struct {
 	UID          ExtensionResourceUID
 	ResourceType ResourceType
 	Name         ResourceName
 	Labels       map[string]string
+	Revision     ExtensionResourceRevision
 	Managed      *ManagedStateSnapshot
 	Inventory    *InventoryResourceSnapshot
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+
+	// LoadedRevision is the write-path compare-and-swap baseline, not a
+	// persisted column. Hydration sets it from the saved Revision.
+	LoadedRevision ExtensionResourceRevision
 
 	// ReportedAliases mirrors [ExtensionResource.ReportedAliases] --
 	// this extension resource's own pending, unreconciled alias
@@ -262,6 +277,11 @@ type ExtensionResourceSnapshot struct {
 	// Populated on Snapshot() for write-path serialization;
 	// empty when constructed by ExtensionResourceFromSnapshot (read path).
 	PendingIntents []ResourceIntent
+
+	// PendingCreation is the one constructor-captured Create attempt. The
+	// repository records its outcome as part of Create, never Update; historical
+	// decisions are queried separately rather than loaded into every aggregate.
+	PendingCreation *ManagedResourceCreationSnapshot
 }
 
 // Alias snapshot helpers.
@@ -493,7 +513,7 @@ func (t ExtensionResourceType) Snapshot() ExtensionResourceTypeSnapshot {
 }
 
 // Snapshot returns an [ExtensionResourceSnapshot] capturing all
-// persisted state and pending intents.
+// persisted state and pending writes.
 func (r *ExtensionResource) Snapshot() ExtensionResourceSnapshot {
 	var managed *ManagedStateSnapshot
 	if r.managed != nil {
@@ -530,17 +550,25 @@ func (r *ExtensionResource) Snapshot() ExtensionResourceSnapshot {
 			UpdatedAt:   r.inventory.updatedAt,
 		}
 	}
+	var creation *ManagedResourceCreationSnapshot
+	if r.pendingCreation != nil {
+		s := r.pendingCreation.Snapshot()
+		creation = &s
+	}
 	return ExtensionResourceSnapshot{
 		UID:             r.uid,
 		ResourceType:    r.resourceType,
 		Name:            r.name,
 		Labels:          labels,
+		Revision:        r.revision,
+		LoadedRevision:  r.loadedRevision,
 		Managed:         managed,
 		Inventory:       inv,
 		CreatedAt:       r.createdAt,
 		UpdatedAt:       r.updatedAt,
 		ReportedAliases: r.reportedAliases.Snapshot(),
 		PendingIntents:  r.pendingIntents,
+		PendingCreation: creation,
 	}
 }
 
@@ -724,9 +752,9 @@ func ExtensionResourceTypeFromSnapshot(s ExtensionResourceTypeSnapshot) Extensio
 }
 
 // ExtensionResourceFromSnapshot constructs an [ExtensionResource] from
-// a snapshot. Pending intents start nil regardless of what the snapshot
-// contains. Labels are shallow-copied to avoid sharing the map with
-// the caller.
+// a snapshot. Pending writes start nil regardless of what the snapshot
+// contains. The loaded revision is initialized from the saved Revision. Labels
+// are shallow-copied to avoid sharing the map with the caller.
 func ExtensionResourceFromSnapshot(s ExtensionResourceSnapshot) *ExtensionResource {
 	labels := make(map[string]string, len(s.Labels))
 	for k, v := range s.Labels {
@@ -768,6 +796,8 @@ func ExtensionResourceFromSnapshot(s ExtensionResourceSnapshot) *ExtensionResour
 		resourceType:    s.ResourceType,
 		name:            s.Name,
 		labels:          labels,
+		revision:        s.Revision,
+		loadedRevision:  s.Revision,
 		managed:         managed,
 		inventory:       inv,
 		reportedAliases: AliasSetFromSnapshot(s.ReportedAliases),
@@ -1026,5 +1056,28 @@ func (r *ExtensionResource) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*r = *ExtensionResourceFromSnapshot(s)
+	return nil
+}
+
+// Snapshot returns the persisted creation decision without resource payloads.
+func (c ManagedResourceCreation) Snapshot() ManagedResourceCreationSnapshot {
+	return ManagedResourceCreationSnapshot{
+		RequestID: c.requestID, ResourceType: c.resourceType, Name: c.name, Caller: c.Caller(), UID: c.uid,
+	}
+}
+
+// ManagedResourceCreationFromSnapshot rehydrates a persisted creation decision.
+func ManagedResourceCreationFromSnapshot(s ManagedResourceCreationSnapshot) ManagedResourceCreation {
+	return newManagedResourceCreation(s.RequestID, s.ResourceType, s.Name, s.Caller, s.UID)
+}
+
+func (c ManagedResourceCreation) MarshalJSON() ([]byte, error) { return json.Marshal(c.Snapshot()) }
+
+func (c *ManagedResourceCreation) UnmarshalJSON(data []byte) error {
+	var s ManagedResourceCreationSnapshot
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	*c = ManagedResourceCreationFromSnapshot(s)
 	return nil
 }

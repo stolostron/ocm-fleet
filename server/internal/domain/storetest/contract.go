@@ -51,6 +51,7 @@ func sampleFulfillment(id domain.FulfillmentID, now time.Time) *domain.Fulfillme
 
 // Run exercises the [domain.Store] contract.
 func Run(t *testing.T, factory Factory) {
+	t.Run("ExtensionResourceCreationAtomicity", func(t *testing.T) { runExtensionResourceCreationTests(t, factory) })
 	t.Run("CancellationRollsBack", func(t *testing.T) {
 		store := factory(t)
 		ctx, cancel := context.WithCancel(context.Background())
