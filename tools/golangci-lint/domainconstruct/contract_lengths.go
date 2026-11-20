@@ -20,15 +20,15 @@ type lengthDefinition struct {
 // Length facts describe only the returned slice header, independently of its
 // contents. Filling its elements or updating a cursor does not change its length.
 type lengthEvaluator struct {
-	builder     *contractBuilder
-	signature   *types.Signature
-	definitions map[*types.Var]lengthDefinition
-	writes      map[*types.Var]int
-	escaped     map[*types.Var]bool
-	initializes map[*types.Var]bool
-	returns     []*ast.ReturnStmt
-	firstReturn token.Pos
-	jumping     bool
+	builder       *contractBuilder
+	signature     *types.Signature
+	definitions   map[*types.Var]lengthDefinition
+	writes        map[*types.Var]int
+	escaped       map[*types.Var]bool
+	initializes   map[*types.Var]bool
+	returns       []*ast.ReturnStmt
+	firstReturn   token.Pos
+	unmodeledExit bool
 }
 
 func (b *contractBuilder) inferLengths(object *types.Func, declaration *ast.FuncDecl) []resultLength {
@@ -138,15 +138,18 @@ func (b *contractBuilder) inferLengths(object *types.Func, declaration *ast.Func
 			}
 		case *ast.BranchStmt:
 			if node.Tok == token.GOTO {
-				e.jumping = true
+				e.unmodeledExit = true
 			}
+		case *ast.DeferStmt:
+			// Recovery can return zero results without an explicit return.
+			e.unmodeledExit = true
 		}
 		return true
 	})
 	var lengths []resultLength
 	for _, result := range results {
 		var common sourceLength
-		known := len(e.returns) != 0 && !e.jumping && !e.escaped[signature.Results().At(result)]
+		known := len(e.returns) != 0 && !e.unmodeledExit && !e.escaped[signature.Results().At(result)]
 		if !known {
 			continue
 		}

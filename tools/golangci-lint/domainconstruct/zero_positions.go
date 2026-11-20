@@ -54,7 +54,7 @@ func (c *zeroChecker) useSite(use zeroUse, operation, path string) zeroUseSite {
 		}
 		return site
 	}
-	if index == 0 && !use.call.IsInvoke() && use.call.Signature().Recv() != nil {
+	if index == 0 && !use.call.IsInvoke() && callArgumentIndex(use.call, -1) == 0 {
 		site.operation = "receiver"
 	}
 	sourceIndex := index

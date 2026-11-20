@@ -13,7 +13,7 @@ const maxOrderedDefers = 8
 
 type cleanupPosition struct {
 	point flowPoint
-	first int // Registrations at or above first have already executed.
+	first int // Only registrations at or above first can precede this read.
 }
 
 type executedCall struct {
@@ -30,6 +30,9 @@ func (c *zeroChecker) checkCleanup(point flowPoint, context flowContext) {
 	}
 	after := flowPoint{point.block, point.index + 1}
 	for index, call := range slices.Backward(calls) {
+		if !deferPrecedesPoint(call, point) {
+			continue
+		}
 		if !c.work.take() {
 			return
 		}
@@ -55,7 +58,7 @@ func (c *zeroChecker) executedCallsAt(instruction ssa.Instruction, point flowPoi
 				if !c.work.take() {
 					return
 				}
-				execution := executedCall{call: call, before: point, context: context, conditional: !ordered}
+				execution := executedCall{call: call, before: point, context: context, conditional: !ordered || !deferPrecedesPoint(call, point)}
 				if ordered {
 					execution.before.index++
 					execution.context.cleanup = cleanupPosition{point, first + index + 1}
@@ -89,10 +92,40 @@ func (c *zeroChecker) defersAt(point flowPoint) ([]*ssa.Defer, bool) {
 	}
 	for _, call := range calls {
 		if call.Block() != point.block || instructionPoint(call).index >= point.index {
+			if len(calls) == 2 {
+				return c.orderedDeferPair(calls, point)
+			}
 			return calls, false
 		}
 	}
 	return calls, true
+}
+
+// A definite registration followed by one possible registration has a fixed
+// cleanup order when neither registration can repeat.
+func (c *zeroChecker) orderedDeferPair(calls []*ssa.Defer, point flowPoint) ([]*ssa.Defer, bool) {
+	first, second := calls[0], calls[1]
+	if deferPrecedesPoint(second, instructionPoint(first)) {
+		first, second = second, first
+	}
+	if !deferPrecedesPoint(first, point) || !deferPrecedesPoint(first, instructionPoint(second)) {
+		return calls, false
+	}
+	if c.blockReachedFromPredecessors(first.Block(), first.Block().Preds) != isZero ||
+		c.blockReachedFromPredecessors(second.Block(), second.Block().Preds) != isZero {
+		return calls, false
+	}
+	if second.Block() != point.block && c.blockReachedFromPredecessors(second.Block(), point.block.Preds) == isZero {
+		return []*ssa.Defer{first}, true
+	}
+	return []*ssa.Defer{first, second}, true
+}
+
+func deferPrecedesPoint(call *ssa.Defer, point flowPoint) bool {
+	if call.Block() == point.block {
+		return instructionPoint(call).index < point.index
+	}
+	return call.Block().Dominates(point.block)
 }
 
 func (c *zeroChecker) blockReachedFromPredecessors(target *ssa.BasicBlock, predecessors []*ssa.BasicBlock) truth {

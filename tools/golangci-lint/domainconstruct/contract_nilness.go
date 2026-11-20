@@ -81,6 +81,9 @@ func (e *nilnessEvaluator) statement(statement ast.Stmt, state nilnessEnv) []nil
 				e.complete = false
 			}
 		}
+		if selector, ok := node.(*ast.SelectorExpr); ok && implicitlyAddressedVariable(e.builder.pass.TypesInfo, selector) != nil {
+			e.complete = false
+		}
 		return true
 	})
 	if !e.complete {
@@ -225,19 +228,33 @@ func (e *nilnessEvaluator) convertedResult(call *ast.CallExpr, index int, actual
 }
 
 func (e *nilnessEvaluator) conversionTruth(actual, target types.Type, value truth) truth {
-	parameter, generic := types.Unalias(actual).(*types.TypeParam)
+	_, generic := types.Unalias(actual).(*types.TypeParam)
 	if !generic || !interfaceValueType(target) || value == notZero {
 		return value
 	}
-	if value == isZero && e.signature != nil {
-		index := parameter.Index()
-		parameters := e.signature.TypeParams()
-		if index >= 0 && index < parameters.Len() && parameters.At(index) == parameter && (e.boxedZeroType == 0 || e.boxedZeroType == index+1) {
-			e.boxedZeroType = index + 1
+	if value == isZero {
+		if index := declaredTypeParameter(actual, e.signature); index != 0 && (e.boxedZeroType == 0 || e.boxedZeroType == index) {
+			e.boxedZeroType = index
 			return boxedTypeZero
 		}
 	}
 	return unknown
+}
+
+func implicitlyAddressedVariable(info *types.Info, selector *ast.SelectorExpr) *types.Var {
+	selection := info.Selections[selector]
+	if selection == nil || selection.Kind() != types.MethodVal || len(selection.Index()) != 1 {
+		return nil
+	}
+	if _, pointer := selection.Recv().Underlying().(*types.Pointer); pointer {
+		return nil
+	}
+	receiver := selection.Obj().Type().(*types.Signature).Recv()
+	if _, pointer := receiver.Type().Underlying().(*types.Pointer); pointer {
+		variable, _ := expressionObject(info, selector.X).(*types.Var)
+		return variable
+	}
+	return nil
 }
 
 func (e *nilnessEvaluator) expression(expression ast.Expr, state nilnessEnv) truth {
@@ -327,13 +344,7 @@ func (e *nilnessEvaluator) call(call *ast.CallExpr, result int, state nilnessEnv
 					value = e.convertedResult(spread, argument.result, argument.actual, argument.formal, state)
 				}
 			}
-			var typeArgument types.Type
-			if rule.BoxedZeroType != 0 {
-				instance := e.builder.pass.TypesInfo.Instances[calledIdentifier(ast.Unparen(call.Fun))]
-				if rule.BoxedZeroType <= instance.TypeArgs.Len() {
-					typeArgument = instance.TypeArgs.At(rule.BoxedZeroType - 1)
-				}
-			}
+			typeArgument := calledTypeArgument(e.builder.pass.TypesInfo, call, rule.BoxedZeroType)
 			if state := rule.resultTruth(value, typeArgument); state != unknown {
 				return state
 			}

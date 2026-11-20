@@ -211,3 +211,34 @@ func channelHandoff(instruction ssa.Instruction) bool {
 	}
 	return false
 }
+
+func storageHandoff(instruction ssa.Instruction) bool {
+	if channelHandoff(instruction) {
+		return true
+	}
+	call, ok := instruction.(*ssa.Call)
+	if !ok {
+		return false
+	}
+	method := callObject(call.Common())
+	if method == nil || method.Pkg() == nil || method.Pkg().Path() != "sync" {
+		return false
+	}
+	receiver := method.Type().(*types.Signature).Recv()
+	if receiver == nil {
+		return false
+	}
+	named := domainType(receiver.Type())
+	if named == nil {
+		return false
+	}
+	switch named.Obj().Name() {
+	case "WaitGroup", "Cond":
+		return method.Name() == "Wait"
+	case "Mutex":
+		return method.Name() == "Lock"
+	case "RWMutex":
+		return method.Name() == "Lock" || method.Name() == "RLock"
+	}
+	return false
+}

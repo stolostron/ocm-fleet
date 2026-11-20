@@ -1,6 +1,7 @@
 package domainconstruct
 
 import (
+	"fmt"
 	"go/token"
 	"go/types"
 	"testing"
@@ -9,6 +10,28 @@ import (
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
+func TestDescribePayloadBoundsFieldsAtMaximumDepth(t *testing.T) {
+	fields := make([]*types.Var, maxInferenceWork+1)
+	for index := range fields {
+		fields[index] = types.NewField(token.NoPos, nil, fmt.Sprintf("Field%d", index), types.Typ[types.String], false)
+	}
+	var shape types.Type = types.NewStruct(fields, nil)
+	for range 8 {
+		shape = types.NewStruct([]*types.Var{types.NewField(token.NoPos, nil, "Nested", shape, false)}, nil)
+	}
+	work := workBudget(maxInferenceWork)
+	payload := describePayload(shape, make(map[types.Type]bool), 0, &work)
+	for range 8 {
+		if len(payload.Fields) != 1 {
+			t.Fatalf("lost the bounded path to the wide field")
+		}
+		payload = payload.Fields[0].Type
+	}
+	if len(payload.Fields) != 0 {
+		t.Errorf("emitted %d fields after reaching the depth limit", len(payload.Fields))
+	}
+}
+
 func TestContractInferenceBounds(t *testing.T) {
 	check := &analysis.Analyzer{
 		Name:     "checkcontractbounds",
@@ -16,7 +39,7 @@ func TestContractInferenceBounds(t *testing.T) {
 		Requires: []*analysis.Analyzer{contractsAnalyzer},
 		Run: func(pass *analysis.Pass) (any, error) {
 			contracts := pass.ResultOf[contractsAnalyzer].(*contractSet)
-			for _, name := range []string{"Nested", "NestedGeneric", "Simple", "LargeComposition", "SmallComposition", "AtSourceDepth", "ChoiceBeyondSourceDepth"} {
+			for _, name := range []string{"Nested", "NestedGeneric", "Simple", "LargeComposition", "SmallComposition", "AtSourceDepth", "ChoiceBeyondSourceDepth", "RecoveredSlice", "PlainSlice"} {
 				function := pass.Pkg.Scope().Lookup(name).(*types.Func)
 				contract := contracts.functions[function]
 				switch name {
@@ -36,6 +59,14 @@ func TestContractInferenceBounds(t *testing.T) {
 					if contract == nil || len(contract.Errors) != 1 || contract.Errors[0].Parameter != -1 {
 						t.Errorf("simple function lost its non-nil error contract: %v", contract)
 					}
+				case "RecoveredSlice":
+					if contract != nil && len(contract.Lengths) != 0 {
+						t.Errorf("recovery can bypass the inferred length: %v", contract.Lengths)
+					}
+				case "PlainSlice":
+					if contract == nil || len(contract.Lengths) != 1 || contract.Lengths[0].Length.Constant != 1 {
+						t.Errorf("plain allocation lost its length fact: %v", contract)
+					}
 				}
 			}
 			return nil, nil
@@ -54,9 +85,15 @@ func TestContractRoundLimitRetainsIndependentFacts(t *testing.T) {
 			for _, name := range []string{"Independent", "AlsoIndependent", "First", "DependencyOnUnfinished"} {
 				function := pass.Pkg.Scope().Lookup(name).(*types.Func)
 				fact := contracts.functions[function]
-				want := name == "Independent" || name == "AlsoIndependent"
-				if hasSource := fact != nil && len(fact.Sources) == 1; hasSource != want {
-					t.Errorf("%s source retained = %v, want %v", name, hasSource, want)
+				want, count := 0, 0
+				if name == "Independent" || name == "AlsoIndependent" {
+					want = 1
+				}
+				if fact != nil {
+					count = len(fact.Sources)
+				}
+				if count != want {
+					t.Errorf("%s retained %d source facts, want %d", name, count, want)
 				}
 			}
 			sentinel := pass.Pkg.Scope().Lookup("IndependentError").(*types.Var)

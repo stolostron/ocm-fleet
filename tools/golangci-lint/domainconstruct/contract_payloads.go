@@ -20,7 +20,10 @@ type payloadRule struct {
 
 type payloadKind uint8
 
-const maxPayloadAlternatives = 16
+const (
+	maxPayloadAlternatives = 16
+	maxPayloadDepth        = 8
+)
 
 const (
 	payloadUnknown payloadKind = iota
@@ -31,10 +34,12 @@ const (
 )
 
 type payloadType struct {
-	Kind    payloadKind
-	Package string
-	Name    string
-	Fields  []payloadField
+	Kind         payloadKind
+	Package      string
+	Name         string
+	Fields       []payloadField
+	SuccessOnly  bool
+	JSONElements bool
 }
 
 type payloadField struct {
@@ -121,8 +126,9 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 				}
 			}
 		case *ast.ReturnStmt:
-			if !mayChangeStatus && b.payloadReturnSucceeds(signature, presence, node) {
-				return true
+			status := unknown
+			if !mayChangeStatus {
+				status = b.payloadReturnStatus(signature, presence, node)
 			}
 			for index, rule := range rules {
 				var values []payloadType
@@ -133,7 +139,13 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 				} else if len(node.Results) == 0 {
 					values = environment[signature.Results().At(rule.Result)]
 				}
-				rules[index].Types = mergePayloads(rule.Types, values)
+				for _, value := range values {
+					if status != unknown {
+						value.SuccessOnly = status == isZero
+					}
+					rule.Types = mergePayloads(rule.Types, []payloadType{value})
+				}
+				rules[index] = rule
 			}
 		}
 		return true
@@ -148,20 +160,36 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 	return result
 }
 
-func (b *contractBuilder) payloadReturnSucceeds(signature *types.Signature, presence bool, statement *ast.ReturnStmt) bool {
+// An explicit failure can make a previously successful boxed result inert.
+// Forwarded statuses keep the producer's existing success and failure facts.
+func (b *contractBuilder) payloadReturnStatus(signature *types.Signature, presence bool, statement *ast.ReturnStmt) truth {
 	if len(statement.Results) != signature.Results().Len() {
-		return false
+		return unknown
 	}
+	status := isZero
+	work := workBudget(maxInferenceWork)
+	nilness := nilnessEvaluator{builder: b, complete: true, work: &work}
 	for index, expression := range statement.Results {
-		value := b.pass.TypesInfo.Types[expression]
-		if isErrorType(signature.Results().At(index).Type()) && !value.IsNil() {
-			return false
+		target := signature.Results().At(index).Type()
+		if isErrorType(target) {
+			switch nilness.converted(expression, target, nil) {
+			case notZero:
+				return notZero
+			case unknown:
+				status = unknown
+			}
 		}
-		if index == 1 && presence && (value.Value == nil || value.Value.Kind() != constant.Bool || !constant.BoolVal(value.Value)) {
-			return false
+		if index == 1 && presence {
+			if value := b.pass.TypesInfo.Types[expression].Value; value != nil && value.Kind() == constant.Bool {
+				if !constant.BoolVal(value) {
+					return notZero
+				}
+			} else {
+				status = unknown
+			}
 		}
 	}
-	return true
+	return status
 }
 
 func (b *contractBuilder) payloadExpression(expression ast.Expr, result int, environment map[*types.Var][]payloadType) []payloadType {
@@ -209,7 +237,7 @@ func (b *contractBuilder) payloadExpression(expression ast.Expr, result int, env
 }
 
 func describePayload(t types.Type, seen map[types.Type]bool, depth int, work *workBudget) payloadType {
-	if seen[t] || depth > 8 || !work.take() || optionalPayload(t) != nil {
+	if !work.take() || seen[t] || depth > maxPayloadDepth || optionalPayload(t) != nil {
 		return payloadType{}
 	}
 	seen[t] = true
@@ -219,7 +247,10 @@ func describePayload(t types.Type, seen map[types.Type]bool, depth int, work *wo
 		object := named.Obj()
 		if object.Pkg() != nil && object.Parent() == object.Pkg().Scope() {
 			underlying := describePayload(named.Underlying(), seen, depth+1, work)
-			return payloadType{Kind: payloadNamed, Package: object.Pkg().Path(), Name: object.Name(), Fields: underlying.Fields}
+			return payloadType{
+				Kind: payloadNamed, Package: object.Pkg().Path(), Name: object.Name(),
+				Fields: underlying.Fields, JSONElements: len(underlying.Fields) != 0 && usesDefaultJSONSlice(named),
+			}
 		}
 	}
 	switch t := t.Underlying().(type) {
@@ -238,6 +269,9 @@ func describePayload(t types.Type, seen map[types.Type]bool, depth int, work *wo
 		}}
 	case *types.Struct:
 		result := payloadType{Kind: payloadStruct}
+		if depth == maxPayloadDepth {
+			return result
+		}
 		for field := range t.Fields() {
 			if work.exhausted() {
 				break
@@ -249,11 +283,20 @@ func describePayload(t types.Type, seen map[types.Type]bool, depth int, work *wo
 	return payloadType{}
 }
 
+func usesDefaultJSONSlice(t types.Type) bool {
+	if _, slice := t.Underlying().(*types.Slice); !slice {
+		return false
+	}
+	for _, hook := range []string{"MarshalJSON", "MarshalText"} {
+		if method := codecMethod(t, hook, true); method != nil && validEncoder(method.Type().(*types.Signature), "json") {
+			return false
+		}
+	}
+	return true
+}
+
 func mergePayloads(existing, added []payloadType) []payloadType {
 	for _, value := range added {
-		if len(existing) >= maxPayloadAlternatives {
-			break
-		}
 		found := false
 		for _, previous := range existing {
 			if reflect.DeepEqual(previous, value) {
@@ -262,7 +305,13 @@ func mergePayloads(existing, added []payloadType) []payloadType {
 			}
 		}
 		if !found {
-			existing = append(existing, value)
+			if len(existing) < maxPayloadAlternatives {
+				existing = append(existing, value)
+			} else if !value.SuccessOnly {
+				if replace := slices.IndexFunc(existing, func(previous payloadType) bool { return previous.SuccessOnly }); replace >= 0 {
+					existing[replace] = value
+				}
+			}
 		}
 	}
 	return existing
@@ -271,6 +320,12 @@ func mergePayloads(existing, added []payloadType) []payloadType {
 func comparePayloads(first, second payloadType) int {
 	if order := cmp.Or(cmp.Compare(first.Kind, second.Kind), cmp.Compare(first.Package, second.Package), cmp.Compare(first.Name, second.Name)); order != 0 {
 		return order
+	}
+	if first.SuccessOnly != second.SuccessOnly {
+		if first.SuccessOnly {
+			return 1
+		}
+		return -1
 	}
 	return slices.CompareFunc(first.Fields, second.Fields, func(a, b payloadField) int {
 		if order := cmp.Compare(a.Name, b.Name); order != 0 {

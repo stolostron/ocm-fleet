@@ -79,6 +79,12 @@ func CanceledFailure(ctx context.Context) (Ref, error) {
 	return Ref{}, ctx.Err()
 }
 
+func CanceledThroughBoundMethod(ctx context.Context) (Ref, error) {
+	done := ctx.Done
+	<-done()
+	return Ref{}, ctx.Err()
+}
+
 func SelectCanceledFailure(ctx context.Context) (Ref, error) {
 	select {
 	case <-ctx.Done():

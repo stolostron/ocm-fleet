@@ -127,13 +127,12 @@ func (c *checker) collectPolicy(spec *ast.TypeSpec, doc *ast.CommentGroup) {
 			c.reportPolicy(spec, "constructor-not-function", fmt.Sprintf("%s is not a function", name))
 			return
 		}
-		p.functions[function] = true
+		p.functions[function.Origin()] = true
 	}
 	// A declared hydration hook owns the same representation writes as a
 	// restoration constructor. Encoding hooks still consume valid values.
 	for _, codec := range fact.Serialization {
-		name := decoderMethod(codec)
-		if method := codecMethod(named, name, true); method != nil && validDecoder(method.Type().(*types.Signature), codec) {
+		if method := nativeDecoder(named, codec); method != nil {
 			p.functions[method.Origin()] = true
 		}
 	}
@@ -231,8 +230,7 @@ func (p *policy) supports(codec string) bool {
 	if p == nil || len(p.fact.Constructors) == 0 || !slices.Contains(p.fact.Serialization, codec) {
 		return false
 	}
-	decoder := codecMethod(p.typ, decoderMethod(codec), true)
-	return decoder != nil && validDecoder(decoder.Type().(*types.Signature), codec)
+	return supportsNativeDecode(p.typ, codec) && supportsNativeEncode(p.typ, codec)
 }
 
 func hasDomainDirective(doc *ast.CommentGroup) bool {

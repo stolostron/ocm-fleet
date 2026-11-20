@@ -11,7 +11,7 @@ func (c *zeroChecker) payloadProblem(boxed payloadType, reason zeroReason, use v
 	}
 	// An opaque boxed aggregate does not establish which fields a JSON hook or
 	// the default encoder reads. Direct enrolled roots were checked above.
-	if use.json() && (boxed.Kind == payloadStruct || boxed.Kind == payloadNamed) {
+	if use.json() && (boxed.Kind == payloadStruct || boxed.Kind == payloadNamed && !boxed.JSONElements) {
 		return nil
 	}
 	for _, field := range boxed.Fields {

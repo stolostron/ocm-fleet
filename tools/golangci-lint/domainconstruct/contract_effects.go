@@ -22,6 +22,8 @@ type parameterEffect struct {
 	Parameter        int
 	Kind             mutationKind
 	LocalStorageOnly bool
+	LastWrite        int
+	Publishes        bool
 }
 
 func (fact *functionContract) effectForParameter(index int) parameterEffect {
@@ -51,16 +53,17 @@ func (b *contractBuilder) inferEffects(object *types.Func, declaration *ast.Func
 		if _, scalar := parameter.Type().Underlying().(*types.Basic); scalar {
 			continue // Scalar arguments cannot expose mutable caller storage.
 		}
-		if kind, localOnly := b.parameterEffect(parameter, declaration.Body); kind != mutationUnknown {
-			effects = append(effects, parameterEffect{index, kind, localOnly})
+		effect := b.parameterEffect(parameter, declaration.Body)
+		if effect.Kind != mutationUnknown || effect.Publishes {
+			effect.Parameter = index
+			effects = append(effects, effect)
 		}
 	}
 	return effects
 }
 
-func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockStmt) (mutationKind, bool) {
-	kind := mutationReadOnly
-	localOnly := false
+func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockStmt) parameterEffect {
+	effect := parameterEffect{Kind: mutationReadOnly}
 	// Record only direct writes in the function's top-level statement list.
 	// Early exits and control flow prevent claiming a definite postcondition.
 	writes := make(map[*ast.StarExpr]mutationKind)
@@ -94,13 +97,18 @@ func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockS
 		}
 		if call, ok := node.(*ast.CallExpr); ok && lastWrite.IsValid() && call.Pos() >= lastWrite &&
 			!b.pass.TypesInfo.Types[call.Fun].IsType() {
-			kind = mutationUnknown
+			effect.Kind = mutationUnknown
 		}
-		if assignment, ok := node.(*ast.AssignStmt); ok && lastWrite.IsValid() && assignment.Pos() >= lastWrite {
-			for _, target := range assignment.Lhs {
+		if assignment, ok := node.(*ast.AssignStmt); ok {
+			for index, target := range assignment.Lhs {
 				if variable, ok := expressionObject(b.pass.TypesInfo, target).(*types.Var); ok &&
 					variable.Pkg() != nil && variable.Parent() == variable.Pkg().Scope() {
-					localOnly = true // A borrowed argument may address the same global.
+					if lastWrite.IsValid() && assignment.Pos() >= lastWrite {
+						effect.LocalStorageOnly = true // A borrowed argument may address the same global.
+					}
+					if len(assignment.Rhs) == len(assignment.Lhs) && expressionObject(b.pass.TypesInfo, assignment.Rhs[index]) == parameter {
+						effect.Publishes = true
+					}
 				}
 			}
 		}
@@ -124,8 +132,8 @@ func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockS
 							for _, target := range enclosing.Lhs {
 								if ast.Unparen(target) == parent {
 									readOnly = false
-									if write, ok := writes[parent]; ok && kind != mutationUnknown {
-										kind, readOnly = write, true
+									if write, ok := writes[parent]; ok && effect.Kind != mutationUnknown {
+										effect.Kind, readOnly = write, true
 									}
 								}
 							}
@@ -152,11 +160,14 @@ func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockS
 				}
 			}
 			if !readOnly {
-				kind = mutationUnknown
+				effect.Kind = mutationUnknown
 			}
 		}
 		ancestors = append(ancestors, node)
 		return true
 	})
-	return kind, localOnly
+	if effect.Kind == mutationZero || effect.Kind == mutationNonzero {
+		effect.LastWrite = int(lastWrite - body.Pos())
+	}
+	return effect
 }

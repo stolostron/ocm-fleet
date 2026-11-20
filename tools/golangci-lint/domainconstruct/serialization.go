@@ -39,6 +39,7 @@ type serializationReport struct {
 type encodingOperand struct {
 	node                   ast.Node
 	codec, operation, path string
+	defaultJSONDecode      bool
 }
 
 type serializationProblem struct {
@@ -115,22 +116,8 @@ func (c *serializationChecker) checkDeclaration(node *ast.TypeSpec, p *policy) {
 			invalid("decoder-required", fmt.Sprintf("%s serialization requires a pointer %s method with the standard decoding signature", codec, decoderMethod(codec)))
 			continue
 		}
-		encoderName := map[string]string{"json": "MarshalJSON", "text": "MarshalText", "sql": "Value"}[codec]
-		encoder := codecMethod(p.typ, encoderName, false)
-		if codec == "json" {
-			// JSON can encode primitive representations without a custom hook.
-			// Composite domain state needs a value hook, including when nested
-			// in a non-addressable interface or map value.
-			if basic, scalar := p.typ.Underlying().(*types.Basic); scalar &&
-				basic.Info()&(types.IsBoolean|types.IsInteger|types.IsFloat|types.IsString) != 0 {
-				continue
-			}
-			if encoder == nil {
-				encoder = codecMethod(p.typ, "MarshalText", false)
-			}
-		}
-		if encoder == nil || !validEncoder(encoder.Type().(*types.Signature), codec) {
-			invalid("encoder-required", fmt.Sprintf("%s serialization requires a value %s method with the standard encoding signature", codec, encoderName))
+		if !supportsNativeEncode(p.typ, codec) {
+			invalid("encoder-required", fmt.Sprintf("%s serialization requires a value %s method with the standard encoding signature", codec, encoderMethod(codec)))
 		}
 	}
 }
@@ -145,6 +132,13 @@ func (c *serializationChecker) checkCall(call *ast.CallExpr) {
 			operation string
 		}{{boundary.Encode, "encode"}, {boundary.Decode, "decode"}} {
 			for _, index := range selection.indices {
+				if index == -1 {
+					receiver := callParameter(c.pass.TypesInfo, call, index)
+					if receiver.expression != nil {
+						c.checkType(encodingOperand{node: receiver.expression, codec: boundary.Codec, operation: selection.operation}, receiver.actual)
+					}
+					continue
+				}
 				for _, argument := range c.arguments(call, function, index) {
 					c.checkExpression(argument, boundary.Codec, selection.operation)
 				}
@@ -184,21 +178,18 @@ func calledIdentifier(expression ast.Expr) *ast.Ident {
 }
 
 func (c *serializationChecker) arguments(call *ast.CallExpr, function *types.Func, index int) []ast.Expr {
+	if index == -1 {
+		if receiver := callParameter(c.pass.TypesInfo, call, index); receiver.expression != nil {
+			return []ast.Expr{receiver.expression}
+		}
+		return nil
+	}
 	signature := function.Type().(*types.Signature)
 	offset := 0
-	if selector, ok := call.Fun.(*ast.SelectorExpr); ok {
+	if selector, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok {
 		if selection := c.pass.TypesInfo.Selections[selector]; selection != nil && selection.Kind() == types.MethodExpr {
 			offset = 1
 		}
-	}
-	if index == -1 {
-		if offset == 1 {
-			return call.Args[:1]
-		}
-		if receiver := selectedReceiver(call); receiver != nil {
-			return []ast.Expr{receiver}
-		}
-		return nil
 	}
 	argument := index + offset
 	if argument >= len(call.Args) {

@@ -7,6 +7,40 @@ import (
 	"encodingvalues"
 )
 
+func AppendingAtCapacityKeepsDecoderDestination(data []byte, more []*encodingvalues.ID) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	slots := []*encodingvalues.ID{&id}
+	_ = append(slots[:1:1], more...)
+	if err := json.Unmarshal(data, slots[0]); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func SuccessfulRawDecodeCanInvalidateElement(valid encodingvalues.ID) []encodingvalues.ID {
+	values := []encodingvalues.ID{valid, valid}
+	if err := json.Unmarshal([]byte(`""`), (*string)(&values[0])); err != nil {
+		return nil
+	}
+	return values // want "return may contain an empty encodingvalues.ID"
+}
+
+func SuccessfulDecodeKeepsDisjointElement(valid encodingvalues.ID) []encodingvalues.ID {
+	values := []encodingvalues.ID{valid, valid}
+	if err := json.Unmarshal([]byte(`""`), (*string)(&values[0])); err != nil {
+		return nil
+	}
+	return values[1:]
+}
+
+func SuccessfulNativeDecodeRestoresElement(data []byte, valid encodingvalues.ID) []encodingvalues.ID {
+	values := []encodingvalues.ID{valid}
+	if err := json.Unmarshal(data, &values[0]); err != nil {
+		return nil
+	}
+	return values
+}
+
 func DecodeSameBoxedDestination(data []byte, choose bool) (encodingvalues.ID, error) {
 	var id encodingvalues.ID
 	var destination any

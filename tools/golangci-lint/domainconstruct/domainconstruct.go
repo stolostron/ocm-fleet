@@ -120,6 +120,8 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 		if node.Tok == token.ASSIGN {
 			c.checkRangeTransfers(node, ancestors)
 		}
+	case *ast.SendStmt:
+		c.checkSend(node, ancestors)
 	case *ast.UnaryExpr:
 		if node.Op == token.AND {
 			if p := c.unapprovedOwner(node.X, ancestors); p != nil {
@@ -194,12 +196,23 @@ func (c *checker) checkConversion(call *ast.CallExpr, ancestors []ast.Node) bool
 		return false
 	}
 	_, boxed := target.Underlying().(*types.Interface)
+	var owner *policy
 	if _, pointer := types.Unalias(source).(*types.Pointer); pointer && !boxed {
 		if p := c.policy(source); p != nil && !c.approved(p, ancestors) {
-			c.reportProtected(call, p, "domainconstruct.mutable-exposure", "conversion", "mutable-representation",
-				fmt.Sprintf("do not expose mutable representation of %s", p.name))
-			return false
+			owner = p
 		}
+	}
+	if pointer, ok := target.Underlying().(*types.Pointer); ok {
+		if array, ok := pointer.Elem().Underlying().(*types.Array); ok && array.Len() != 0 {
+			if _, slice := source.Underlying().(*types.Slice); slice {
+				owner = c.unapprovedOwner(call.Args[0], ancestors)
+			}
+		}
+	}
+	if owner != nil {
+		c.reportProtected(call, owner, "domainconstruct.mutable-exposure", "conversion", "mutable-representation",
+			fmt.Sprintf("do not expose mutable representation of %s", owner.name))
+		return false
 	}
 	return true
 }

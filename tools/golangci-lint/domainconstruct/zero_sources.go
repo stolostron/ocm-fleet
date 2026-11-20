@@ -47,8 +47,12 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 			return c.memoryProblem(address{root: callResultValue(call, result), path: path}, pointer.Elem(), point, context, seen, make(map[memoryVisit]bool))
 		}
 	case sourceSlice:
-		if view, ok := c.collectionOf(callResultValue(call, result)); ok {
-			return c.collectionStorageProblem(view, point, context, seen, nil, make(map[collectionVisit]bool))
+		if value := callResultValue(call, result); value != nil {
+			if slice, ok := value.Type().Underlying().(*types.Slice); ok {
+				if view, ok := c.sliceSourceView(source, call, value, slice); ok {
+					return c.collectionStorageProblem(view, point, context, seen, nil, make(map[collectionVisit]bool))
+				}
+			}
 		}
 	case sourceFields:
 		if len(path) != 0 {
@@ -179,7 +183,12 @@ func (c *zeroChecker) sliceSourceView(source valueSource, call *ssa.Call, value 
 			} else {
 				view.end = max(view.end, child.end)
 			}
-			if !sameLength(view.length, child.length) {
+			if view.capEnd < 0 || child.capEnd < 0 {
+				view.capEnd = -1
+			} else {
+				view.capEnd = max(view.capEnd, child.capEnd)
+			}
+			if !sameLength(view.length, child.length) || view.lengthBase != child.lengthBase {
 				view.length = nil
 			}
 		}

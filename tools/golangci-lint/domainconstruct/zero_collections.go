@@ -378,8 +378,13 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 					return c.copiedCollectionProblem(appended, tail, prefix.size(), before, use, context, values, covered, seen)
 				}
 			}
-			return c.unfilledCollection(view, covered, reasonZeroStorage, context.use).
-				step("source", allocation.Pos(), "collection contains zero-initialized elements")
+			problem := c.unfilledCollection(view, covered, reasonZeroStorage, context.use)
+			if problem != nil && view.end < 0 {
+				if source, _, _, known := c.rootSource(allocation); known && source.Kind == sourceChoice {
+					problem = problem.uncertain()
+				}
+			}
+			return problem.step("source", allocation.Pos(), "collection contains zero-initialized elements")
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
 			if destination, ok := c.collectionAddress(store.Addr); ok && destination.root == view.storage.root {
@@ -498,10 +503,14 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 			} else {
 				for _, remaining := range uncoveredViews(view, covered) {
 					storage := mutationTarget{remaining.storage, &elementRange{remaining.start, remaining.end}}
-					if c.decoderMayInvalidate(call, storage, before, context) {
-						if problem := c.failedResultProblem(view.element, reasonUncheckedError, context.use, make(map[types.Type]valueUse)); problem != nil {
+					if reason := c.decoderInvalidation(call, storage, before, context); reason != "" {
+						if problem := c.failedResultProblem(view.element, reason, context.use, make(map[types.Type]valueUse)); problem != nil {
 							problem.path = fieldPath(elementLabel(remaining.start), problem.path)
-							return problem.step("mutation", mutationPosition(call, before), c.callName(common)+" may leave partially decoded collection elements without checked success")
+							detail := " may leave partially decoded collection elements without checked success"
+							if reason == reasonInputMayBeZero {
+								detail = " decodes into a raw collection slot without establishing domain validity"
+							}
+							return problem.step("mutation", mutationPosition(call, before), c.callName(common)+detail)
 						}
 					}
 					if c.collectionMutation(common, remaining, before) != mutationReadOnly {
@@ -574,6 +583,58 @@ func copyCoversView(destination, source, view collectionView) bool {
 	return ok && builtin.Name() == "len" && (destination.value == view.value || sameLength(destination.length, view.length))
 }
 
+// A scalar load can project one field of a copied element. Read the
+// corresponding source slot at the copy, including overlapping copies.
+func (c *zeroChecker) collectionWriteProblem(execution executedCall, location address, t types.Type,
+	values map[valueVisit]bool, seen map[memoryVisit]bool) (problem *zeroProblem, definite, overlaps bool) {
+	common := execution.call.Common()
+	builtin, ok := common.Value.(*ssa.Builtin)
+	if !ok || builtin.Name() != "clear" && builtin.Name() != "copy" {
+		return nil, false, false
+	}
+	destination, ok := c.collectionOf(common.Args[0])
+	base := len(destination.storage.path)
+	if !ok || destination.storage.root != location.root || len(location.path) <= base || !pathPrefix(location.path, destination.storage.path) {
+		return nil, false, false
+	}
+	context := execution.context
+	destination = boundedView(destination, context)
+	index := int64(location.path[base])
+	end := minEnd(destination.possibleEnd(), destination.capEnd)
+	if destination.size() == 0 || index < destination.start || end >= 0 && index >= end {
+		return nil, false, false
+	}
+	_, asynchronous := execution.call.(*ssa.Go)
+	definite = !execution.conditional && !asynchronous && !destination.dynamicStart && destination.end >= 0
+	if builtin.Name() == "clear" {
+		problem := c.zeroType(t, "", context.use)
+		if problem != nil {
+			problem.reason = reasonCleared
+		}
+		return problem.step("source", execution.call.Pos(), "clear sets collection elements to zero"), definite, true
+	}
+
+	source, ok := c.collectionOf(common.Args[1])
+	if !ok {
+		return nil, false, false
+	}
+	source = boundedView(source, context)
+	if destination.dynamicStart || source.dynamicStart {
+		return nil, false, false
+	}
+	offset := source.start + index - destination.start
+	end = minEnd(source.end, source.capEnd)
+	if end >= 0 && offset >= end {
+		return nil, false, false
+	}
+	sourcePath := append(slices.Clone(source.storage.path), int(offset))
+	source.storage.path = append(sourcePath, location.path[base+1:]...)
+	before := execution.before
+	problem = c.memoryAtProblem(source.storage, t, before, before, context, values, seen).
+		step("assignment", execution.call.Pos(), "copy collection field")
+	return problem, definite && source.end >= 0 && !c.work.exhausted(), true
+}
+
 func (c *zeroChecker) copiedCollectionProblem(source, destination collectionView, start int64, point, use flowPoint, context flowContext,
 	values map[valueVisit]bool, covered []elementRange, seen map[collectionVisit]bool) *zeroProblem {
 	for _, span := range uncoveredViews(destination, covered) {
@@ -622,6 +683,9 @@ func (c *zeroChecker) builtinWriteView(call *ssa.CallCommon) (collectionView, bo
 				destination.end = before.end
 			}
 		} else {
+			if !destination.dynamicStart && destination.end >= 0 {
+				destination.start = destination.end
+			}
 			destination.end = destination.capEnd
 		}
 	}
@@ -688,6 +752,9 @@ func (c *zeroChecker) unfilledCollection(view collectionView, covered []elementR
 }
 
 func (c *zeroChecker) collectionAddress(value ssa.Value) (address, bool) {
+	if change, ok := value.(*ssa.ChangeType); ok {
+		return c.collectionAddress(change.X)
+	}
 	if field, ok := value.(*ssa.FieldAddr); ok {
 		if storage, ok := c.collectionAddress(field.X); ok {
 			storage.path = append(storage.path, field.Field)

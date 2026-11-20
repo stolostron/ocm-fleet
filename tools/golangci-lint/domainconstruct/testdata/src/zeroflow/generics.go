@@ -2,6 +2,34 @@ package zeroflow
 
 import "errors"
 
+func allocatedOrNil[T any](absent bool) []T {
+	if absent {
+		return nil
+	}
+	return make([]T, 1, 2)
+}
+
+func CheckCapacityAfterNilAlternative(absent bool, index int, use func([]ID)) {
+	items := allocatedOrNil[ID](absent)
+	use(items[index:index][:1]) // want "argument may contain an empty zeroflow.ID"
+}
+
+func allocatedFromEitherLength[T any](first, second []T, chooseFirst bool) []T {
+	if chooseFirst {
+		return make([]T, len(first))
+	}
+	return make([]T, len(second))
+}
+
+func CheckAlternativeLengthBases(n int, chooseFirst bool, valid ID, use func([]ID)) {
+	backing := []ID{valid, valid}
+	if n == 1 {
+		use(allocatedFromEitherLength(backing[1:n], backing[:n], chooseFirst)) // want "argument may contain an empty zeroflow.ID"
+		result := allocatedFromEitherLength(backing[1:n], backing[:n], chooseFirst)
+		use(result[:]) // want "argument may contain an empty zeroflow.ID"
+	}
+}
+
 func Zero[T any]() (value T) { return }
 
 func LocalZero[T any]() T {

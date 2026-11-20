@@ -1,0 +1,71 @@
+package zeroflow
+
+import (
+	"errors"
+	"iter"
+	"sync"
+)
+
+func publishFillTarget(values []ID) { published = values }
+
+func FillAfterPublishingCall(valid ID, writes chan<- int, ack <-chan struct{}) []ID {
+	values := []ID{valid}
+	publishFillTarget(values)
+	for index := range values {
+		values[index] = valid
+		writes <- index
+		<-ack
+	}
+	return values // want "return may contain an empty zeroflow.ID"
+}
+
+func WaitedForErrorWrite() (ID, error) {
+	var lock sync.Mutex
+	var worker sync.WaitGroup
+	statuses := make([]error, 1)
+	lock.Lock()
+	worker.Add(1)
+	go func(out []error) {
+		lock.Lock()
+		out[0] = nil
+		lock.Unlock()
+		worker.Done()
+	}(statuses)
+	statuses[0] = errors.New("initial")
+	lock.Unlock()
+	worker.Wait()
+	return "", errors.Join(statuses...) // want "return produces an empty zeroflow.ID"
+}
+
+func WaitWithoutSharedErrors(worker *sync.WaitGroup) (ID, error) {
+	statuses := []error{errors.New("private")}
+	worker.Wait()
+	return "", errors.Join(statuses...)
+}
+
+func IteratorAfterFlagHandoff(values iter.Seq[ID], work chan<- *bool, ack <-chan struct{}, use func(ID)) {
+	var id ID
+	found := false
+	work <- &found
+	<-ack
+	for value := range values {
+		id, found = value, true
+	}
+	if found {
+		use(id) // want "argument may be an empty zeroflow.ID"
+	}
+}
+
+func IteratorAfterHandoffReset(values iter.Seq[ID], work chan<- *bool, ack <-chan struct{}, use func(ID)) {
+	var id ID
+	found := false
+	work <- &found
+	<-ack
+	found = false
+	for value := range values {
+		id, found = value, true
+	}
+	if found {
+		use(id)
+	}
+}

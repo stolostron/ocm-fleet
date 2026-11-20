@@ -17,6 +17,9 @@ func (c *checker) checkCallTransfers(call *ast.CallExpr, ancestors []ast.Node) {
 			c.checkWrite(call.Args[0], ancestors)
 			return
 		case "append":
+			if c.appendMayWrite(call) {
+				c.checkWrite(call.Args[0], ancestors)
+			}
 			if call.Ellipsis.IsValid() {
 				return // A spread already has the destination element type, or appends string bytes.
 			}
@@ -39,6 +42,39 @@ func (c *checker) checkCallTransfers(call *ast.CallExpr, ancestors []ast.Node) {
 		}
 		return parameters.At(index).Type()
 	}, ancestors)
+}
+
+func (c *checker) appendMayWrite(call *ast.CallExpr) bool {
+	if len(call.Args) < 2 {
+		return false // A tuple has no directly selected destination.
+	}
+	info := c.pass.TypesInfo
+	if view, ok := ast.Unparen(call.Args[0]).(*ast.SliceExpr); ok && view.Max != nil {
+		high, max := info.Types[view.High].Value, info.Types[view.Max].Value
+		if high != nil && max != nil && constant.Compare(high, token.EQL, max) {
+			return false
+		}
+		highName, highIdent := ast.Unparen(view.High).(*ast.Ident)
+		maxName, maxIdent := ast.Unparen(view.Max).(*ast.Ident)
+		if highIdent && maxIdent && info.ObjectOf(highName) == info.ObjectOf(maxName) {
+			return false
+		}
+	}
+	if call.Ellipsis.IsValid() {
+		values := ast.Unparen(call.Args[1])
+		if literal, ok := values.(*ast.CompositeLit); ok && len(literal.Elts) == 0 {
+			return false
+		}
+		return !c.isZero(values)
+	}
+	return true
+}
+
+func (c *checker) checkSend(statement *ast.SendStmt, ancestors []ast.Node) {
+	info := c.pass.TypesInfo
+	if channel, ok := operandUnderlying(info.TypeOf(statement.Chan)).(*types.Chan); ok {
+		c.checkTransfer(statement.Value, info.TypeOf(statement.Value), channel.Elem(), ancestors)
+	}
 }
 
 func (c *checker) checkLiteralTransfers(literal *ast.CompositeLit, ancestors []ast.Node) {
@@ -164,7 +200,7 @@ func (c *checker) literalElementType(shape types.Type, element ast.Expr, index i
 }
 
 func rangeTypes(t types.Type) (key, value types.Type) {
-	shape := rangeUnderlying(t)
+	shape := operandUnderlying(t)
 	if pointer, ok := shape.(*types.Pointer); ok {
 		shape = pointer.Elem().Underlying()
 	}
@@ -183,7 +219,7 @@ func rangeTypes(t types.Type) (key, value types.Type) {
 		}
 		return t, nil
 	case *types.Signature:
-		yield, ok := rangeUnderlying(shape.Params().At(0).Type()).(*types.Signature)
+		yield, ok := operandUnderlying(shape.Params().At(0).Type()).(*types.Signature)
 		if !ok {
 			return nil, nil
 		}
@@ -198,13 +234,13 @@ func rangeTypes(t types.Type) (key, value types.Type) {
 	return nil, nil
 }
 
-func rangeUnderlying(t types.Type) types.Type {
+func operandUnderlying(t types.Type) types.Type {
 	if parameter, ok := types.Unalias(t).(*types.TypeParam); ok {
 		terms, err := typeparams.NormalTerms(parameter)
 		if err != nil || len(terms) == 0 {
 			return nil
 		}
-		// The type checker requires a common shape for the range operand and yield.
+		// The type checker requires a common shape for these operations.
 		return terms[0].Type().Underlying()
 	}
 	return t.Underlying()

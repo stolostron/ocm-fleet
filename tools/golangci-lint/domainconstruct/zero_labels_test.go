@@ -87,6 +87,7 @@ func checkUseLabels(t *testing.T, result *analysistest.Result) {
 		"PositionArrayReceiver": {
 			"receiver", "[0]", "receiver contains an empty zeroflow.ID at path [0]; empty values are invalid",
 		},
+		"LabelSavedMethodExpression": receiver,
 		"LabelReturn": {
 			"return", "", "return produces an empty zeroflow.ID; empty values are invalid",
 		},

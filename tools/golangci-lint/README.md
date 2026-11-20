@@ -139,17 +139,22 @@ Reading an existing typed constant, local or imported, is a copy. Deriving a new
 typed constant with an operator is construction. An untyped constant passed as a
 domain value still needs construction.
 Explicit range assignments are checked against the yielded types, including in
-generic code when the constraint fixes those types. Appended values follow the
-same rules as other arguments, including multiple results passed to `append`.
+generic code when the constraint fixes those types. Channel sends and appended
+values follow ordinary transfer checks, including multiple results passed to
+`append`.
 Writing through an embedded field or exposing a pointer to it requires
 permission from its protected owners. Replacing an existing nested value
 requires permission from its enclosing owners. Directly returning a protected
 slice field or a view with accessible backing storage also exposes the
-representation. Read-only slice views are allowed as inputs to `len` and as
-sources of `copy`.
+representation. Converting a protected slice to a nonempty array pointer
+exposes the same storage. Appending into reusable capacity can modify that
+storage. A full slice expression with equal upper and capacity bounds forces
+an append with elements to allocate. Read-only slice views are allowed as
+inputs to `len` and as sources of `copy`.
 Simple generic helpers that convert a raw argument into a protected
 type are checked at their instantiated calls, including imported helpers.
-This includes conversions returned on a known failure or absence path.
+This includes conversions boxed into an interface or returned on a known
+failure or absence path.
 Calls to approved constructors remain ordinary Go calls; the checker does not
 prove their validation logic correct.
 
@@ -245,8 +250,9 @@ field `-`. Types with custom JSON or text encoding hooks retain whole-value
 checks, including when a pointer receiver can supply the hook. A field reached
 through an embedded pointer is addressable even when the outer value is passed
 by value. A visible field promoted from a protected embedded value also requires
-that owner's codec. Default field selection follows the encoder's breadth-first
-embedding and tag rules when the traversal completes within its budget.
+that owner's codec. An explicit promoted method call checks the selected
+receiver. Default field selection follows the encoder's breadth-first embedding
+and tag rules when the traversal completes within its budget.
 
 Decoder destinations accept zero output storage. A parameter selected for both
 encoding and decoding must already be valid. After the error is checked,
@@ -255,9 +261,11 @@ members when it can establish the destination and distinguish it from other
 outputs. Merged destinations can establish that proof when they agree on the
 storage and runtime pointer type. A helper that may overwrite the supplying
 pointer slot invalidates an earlier exact origin. The checker keeps tracking
-required fields in an ordinary envelope.
-Scanning a primitive and converting it to a domain value still requires a
-constructor.
+required fields in an ordinary envelope. Default JSON decoding replaces a
+non-pointer interface payload and can follow a pointer stored in that slot.
+Decoding into a raw representation can invalidate an earlier domain value even
+after the error check. Scanning a primitive and converting it to a domain value
+still requires a constructor.
 
 This is bounded static checking, not whole-program reflection or byte-buffer
 provenance analysis. Opaque interface payloads, indirect function dispatch, and
@@ -448,9 +456,10 @@ Results paired with errors need a successful check of each error status before
 use. Forwarding the result with its matching statuses is also allowed. This includes pointer results:
 `nil` remains valid optional absence, but a failed result may instead contain a
 non-nil pointer to an invalid value. Interface results retain concrete payload
-types visible in the producing function, including across packages. Checking
-the error makes those successful values usable without defensive validation,
-subject to any declared presence guard.
+types visible in the producing function, including across packages. A wrapper
+that returns a new known error can carry a previously successful boxed type
+into its failure result. Checking the error makes successful values usable
+without defensive validation, subject to any declared presence guard.
 
 An API returning `(T, bool)` or `(T, bool, error)` can declare boolean presence:
 
@@ -530,14 +539,17 @@ nilness at instantiation. Boxing the zero of a concrete pointer type produces a
 non-nil error, while the zero of an interface type stays nil. Names such as
 `ErrMissing` or `TerminalError` grant no exemption. Observing a context's
 `Done` receive establishes the failure contract of its later `Err()` or
-`context.Cause`. The checker follows small,
-statically ordered sequences of defers in reverse registration order. A single
-definite registration can also be followed to cleanup across blocks. Values,
-including keys passed to deferred `delete`, are captured at registration.
-Referenced storage is observed during cleanup after earlier cleanup effects.
-A reachable conditional write of a known zero can make a value possibly zero.
-Map lookups, channel receives, and comma-ok type assertions need their
-successful `ok` check when they can otherwise introduce an invalid zero.
+`context.Cause`, including a statically bound `Done` method value. The
+checker follows small, statically ordered sequences of defers in reverse
+registration order. Across blocks it can follow a single nonrepeating
+registration or a definite registration followed by one provably later
+registration. Values, including keys passed to deferred `delete`, are
+captured at registration. Referenced storage is observed during cleanup after
+earlier cleanup effects. A reachable conditional write of a known zero can
+make a value possibly zero. Map lookups, channel receives, and comma-ok type
+assertions need their successful `ok` check when they can otherwise introduce
+an invalid zero. A successful lookup of a raw value proves membership. The
+payload still needs its own domain construction.
 
 A checked or forwarded error can retain its original result guard through local
 branch merges. For example, `if err != nil { err = fmt.Errorf("lookup: %w", err) }`
@@ -557,20 +569,22 @@ interfaces or variadic arguments, and invalid contents after `clear` or a partia
 append-based construction, and complete sequential fills using `range` or an
 index from zero to the length. A fill must assign every element on every back
 edge; a `continue` that skips an assignment or a `break` does not establish that
-contract. A complete fill also requires stable backing storage, including when
-a channel operation can hand control to another owner after a view has been
-published. The same sharing evidence can invalidate pre-handoff
-`errors.Join` contents. Guarded lengths and exact offsets can narrow the part
-of a backing range affected by a copy. Parsing each element and checking its
-error before continuing is supported, including assigning the result to its
-slot before checking the error.
+contract. A complete fill also requires stable backing storage. Channel and
+recognized synchronization operations can hand control to another owner after
+a view has been published, including through a helper that stores it in a
+global. The same sharing evidence can invalidate pre-handoff `errors.Join`
+contents and an iterator flag's earlier initialization. Guarded lengths and
+exact offsets narrow the backing range affected by a copy or clear. A copied
+field is traced to its source at the copy. Parsing each element and checking
+its error before continuing is supported, including assigning the result to
+its slot before checking the error.
 Map writes check both keys and values; missing reads still need `ok` when zero
 is invalid. Element tracking uses ranges rather than expanding large arrays.
 Local and imported helper contracts preserve a returned slice's length when
 its body establishes a stable parameter or constant length. Element writes and
 unrelated cursor updates do not change that contract. Conditional allocation,
-header reassignment, address escapes, and captured headers are not assumed to
-preserve the length.
+header reassignment, address escapes, captured headers, and deferred recovery
+can defeat an exact length proof.
 
 Generic helper summaries retain zero factories, `*new(T)`, fresh `new(T)` and
 `make([]T, n)` results, simple struct construction, and forwarding until the call
@@ -603,6 +617,9 @@ decoding boundaries add the checked native-root initialization contract
 described above. Small body summaries establish read-only use or a definite
 scalar write and are shared across packages. Unsupported bodies remain
 possible mutations; the checker does not recursively analyze a whole call graph.
+When two summarized writes reach the same scalar slot, the last write supplies
+the state. A zero written through another direct scalar pointer parameter can
+invalidate the earlier value when the two parameters may alias.
 Compiler-generated iterator yields have a bounded local summary for paired
 returns and initialization proved by a checked flag. The flag must describe the
 current invocation when the iterator runs in a loop. Ordinary callbacks use
@@ -625,9 +642,9 @@ later paths cannot change the selected finding, its certainty, or its provenance
 Contract inference limits branch work, recursive source paths, and convergence
 rounds. Nested substitutions share a work budget and caps apply to the expanded
 facts before export. Independent facts can settle while unresolved contracts
-continue to converge. SSA queries share a work budget across paths and related
-lookups. A direct scalar zero at a later call argument can still be checked
-after the instruction's budget is exhausted.
+continue to converge. SSA queries share a work budget across paths, field
+traversals, and related lookups. A direct scalar zero in a later call argument
+or map value can still be checked after the instruction's budget is exhausted.
 An incomplete proof leaves unknown state and can miss cases beyond that limit.
 Completed type, reference, and boxed-value traversals can reuse results at the
 same observation point. A query with a different set of facts analyzes that

@@ -8,8 +8,12 @@ func SmallComposition[T any](value T) struct{ A, B any } {
 	return duplicate(duplicate(value))
 }
 
-func LargeComposition[T any](value T) struct{ A, B any } {
-	return duplicate(duplicate(duplicate(duplicate(duplicate(duplicate(duplicate(duplicate(duplicate(duplicate(duplicate(duplicate(value))))))))))))
+func quadruple[T any](value T) struct{ A, B, C, D any } {
+	return struct{ A, B, C, D any }{value, value, value, value}
+}
+
+func LargeComposition[T any](value T) struct{ A, B, C, D any } {
+	return quadruple(quadruple(quadruple(quadruple(quadruple(quadruple(value))))))
 }
 
 func enclose[T any](value T) struct{ Inner any } {

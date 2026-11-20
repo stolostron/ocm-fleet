@@ -76,6 +76,15 @@ func NewPointerValue() PointerValue                { return PointerValue{} }
 func (*PointerValue) Scan(any) Error               { return nil }
 func (PointerValue) Value() (*driver.Value, Error) { return nil, nil }
 
+//domain:constructors NewTextFallback
+//domain:serialization json
+type TextFallback struct{ raw string }
+
+func NewTextFallback(raw string) TextFallback           { return TextFallback{raw: raw} }
+func (*TextFallback) UnmarshalJSON([]byte) error         { return nil }
+func (value TextFallback) MarshalJSON() string           { return value.raw }
+func (value TextFallback) MarshalText() ([]byte, error) { return []byte(value.raw), nil }
+
 //domain:boundary json decode=destination,
 func (*PointerValue) EmptySelector(destination any) error { return nil } // want "nonempty comma-separated list"
 

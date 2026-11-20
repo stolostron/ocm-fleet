@@ -33,12 +33,13 @@ type resultSource struct {
 }
 
 type valueSource struct {
-	Kind      sourceKind
-	Parameter int // -1 is the receiver.
-	Path      []int
-	Values    []valueSource
-	Length    sourceLength
-	ZeroKind  constant.Kind
+	Kind           sourceKind
+	Parameter      int // -1 is the receiver.
+	Path           []int
+	Values         []valueSource
+	Length         sourceLength
+	ZeroKind       constant.Kind
+	ConversionType int // One-based function type parameter of the target.
 }
 
 type sourceLength struct {
@@ -84,7 +85,7 @@ func (b *contractBuilder) inferSources(object *types.Func, declaration *ast.Func
 		state.values[receiver] = valueSource{Kind: sourceParameter, Parameter: -1}
 	}
 	for result := range signature.Results().Variables() {
-		state.values[result] = valueSource{Kind: sourceZero}
+		state.values[result] = implicitZeroSource(result.Type())
 		state.errors[result] = isZero
 	}
 	remaining := e.block(declaration.Body.List, []sourceState{state})
@@ -181,6 +182,9 @@ func (e *sourceEvaluator) statement(statement ast.Stmt, state sourceState) []sou
 				e.complete = false
 			}
 		}
+		if selector, ok := node.(*ast.SelectorExpr); ok && implicitlyAddressedVariable(e.builder.pass.TypesInfo, selector) != nil {
+			e.complete = false
+		}
 		return true
 	})
 	if !e.complete {
@@ -255,13 +259,14 @@ func (e *sourceEvaluator) statement(statement ast.Stmt, state sourceState) []sou
 		for _, spec := range declaration.Specs {
 			spec := spec.(*ast.ValueSpec)
 			for index, name := range spec.Names {
-				value := valueSource{Kind: sourceZero}
+				variable := e.builder.pass.TypesInfo.Defs[name].(*types.Var)
+				value := implicitZeroSource(variable.Type())
 				if len(spec.Values) == len(spec.Names) {
 					value = e.expression(spec.Values[index], state)
 				} else if len(spec.Values) != 0 {
 					e.complete = false
 				}
-				state.values[e.builder.pass.TypesInfo.Defs[name].(*types.Var)] = value
+				state.values[variable] = value
 			}
 		}
 		nilness.statement(statement, state.errors)
@@ -379,7 +384,7 @@ func (e *sourceEvaluator) expression(expression ast.Expr, state sourceState) val
 			e.work -= count
 			fields := make([]valueSource, structure.NumFields())
 			for index := range fields {
-				fields[index].Kind = sourceZero
+				fields[index] = implicitZeroSource(structure.Field(index).Type())
 			}
 			for index, element := range expression.Elts {
 				if keyed, ok := element.(*ast.KeyValueExpr); ok {
@@ -414,15 +419,19 @@ func (e *sourceEvaluator) call(call *ast.CallExpr, result int, state sourceState
 		return valueSource{}
 	}
 	if e.builder.pass.TypesInfo.Types[call.Fun].IsType() && len(call.Args) == 1 {
-		if types.Identical(e.builder.pass.TypesInfo.TypeOf(call), e.builder.pass.TypesInfo.TypeOf(call.Args[0])) {
+		target := e.builder.pass.TypesInfo.TypeOf(call)
+		if interfaceValueType(target) || types.Identical(target, e.builder.pass.TypesInfo.TypeOf(call.Args[0])) {
 			return e.expression(call.Args[0], state)
 		}
-		return valueSource{Kind: sourceConversion, Values: []valueSource{e.expression(call.Args[0], state)}}
+		return valueSource{
+			Kind: sourceConversion, Values: []valueSource{e.expression(call.Args[0], state)},
+			ConversionType: declaredTypeParameter(target, e.signature),
+		}
 	}
 	if builtin, ok := expressionObject(e.builder.pass.TypesInfo, call.Fun).(*types.Builtin); ok {
 		switch builtin.Name() {
 		case "new":
-			pointee := valueSource{Kind: sourceZero}
+			pointee := implicitZeroSource(e.builder.pass.TypesInfo.TypeOf(call.Args[0]))
 			if !e.builder.pass.TypesInfo.Types[call.Args[0]].IsType() {
 				pointee = e.expression(call.Args[0], state)
 			}
@@ -475,6 +484,8 @@ func (e *sourceEvaluator) inferredSource(call *ast.CallExpr, result int, state s
 						}
 						arguments[parameter] = value
 						return value
+					}, func(index int) int {
+						return declaredTypeParameter(calledTypeArgument(e.builder.pass.TypesInfo, call, index), e.signature)
 					}, 0, &e.work)
 					e.complete = e.complete && complete
 					return bound
@@ -508,7 +519,26 @@ func projectSource(source valueSource, path []int) valueSource {
 	return source
 }
 
-func substituteSource(source valueSource, parameter func(int) valueSource, depth int, work *workBudget) (valueSource, bool) {
+func implicitZeroSource(t types.Type) valueSource {
+	source := valueSource{Kind: sourceZero}
+	if basic, ok := t.Underlying().(*types.Basic); ok {
+		switch info := basic.Info(); {
+		case info&types.IsInteger != 0:
+			source.ZeroKind = constant.Int
+		case info&types.IsString != 0:
+			source.ZeroKind = constant.String
+		case info&types.IsBoolean != 0:
+			source.ZeroKind = constant.Bool
+		case info&types.IsFloat != 0:
+			source.ZeroKind = constant.Float
+		case info&types.IsComplex != 0:
+			source.ZeroKind = constant.Complex
+		}
+	}
+	return source
+}
+
+func substituteSource(source valueSource, parameter func(int) valueSource, typeParameter func(int) int, depth int, work *workBudget) (valueSource, bool) {
 	if depth > maxSourceDepth || !work.take() {
 		return valueSource{}, false
 	}
@@ -518,11 +548,14 @@ func substituteSource(source valueSource, parameter func(int) valueSource, depth
 	}
 	source.Values = slices.Clone(source.Values)
 	for index, child := range source.Values {
-		bound, complete := substituteSource(child, parameter, depth+1, work)
+		bound, complete := substituteSource(child, parameter, typeParameter, depth+1, work)
 		if !complete {
 			return valueSource{}, false
 		}
 		source.Values[index] = bound
+	}
+	if source.ConversionType != 0 {
+		source.ConversionType = typeParameter(source.ConversionType)
 	}
 	if source.Kind == sourceSlice && source.Length.Parameter >= 0 {
 		argument := parameter(source.Length.Parameter)

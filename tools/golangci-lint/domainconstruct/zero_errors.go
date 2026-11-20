@@ -109,8 +109,10 @@ func (rule errorRule) typeArgument(call *ssa.CallCommon) types.Type {
 }
 
 func contextReceiver(call *ssa.CallCommon, method string) ssa.Value {
-	if call.IsInvoke() && call.Method.Pkg() != nil && call.Method.Pkg().Path() == "context" && call.Method.Name() == method {
-		return call.Value
+	if object := callObject(call); object != nil && object.Pkg() != nil && object.Pkg().Path() == "context" && object.Name() == method {
+		if receiver := contractArgument(call, -1); receiver != nil && (call.IsInvoke() || exactMethodReceiver(call, receiver)) {
+			return receiver
+		}
 	}
 	return nil
 }

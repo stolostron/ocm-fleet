@@ -70,10 +70,18 @@ func (c *serializationChecker) checkBoxedCalls() {
 							if len(arguments) != 0 {
 								source = arguments[0]
 							}
+							operand := encodingOperand{
+								node: source, codec: boundary.Codec, operation: selection.operation,
+								defaultJSONDecode: boundary.DefaultJSONDecode && selection.operation == "decode",
+							}
+							argument := contractArgument(call.Common(), index)
+							if index == -1 && argument != nil && !call.Common().IsInvoke() && !exactMethodReceiver(call.Common(), argument) {
+								c.checkType(operand, object.Type().(*types.Signature).Recv().Type())
+								continue
+							}
 							storage.resetWork()
-							operand := encodingOperand{node: source, codec: boundary.Codec, operation: selection.operation}
 							walk := boxedWalk{storage: storage, active: make(map[boxedObservation]bool), seen: make(map[boxedVisit]bool)}
-							c.checkBoxedValue(contractArgument(call.Common(), index), operand, flowPoint{block, instructionIndex}, &walk)
+							c.checkBoxedValue(argument, operand, flowPoint{block, instructionIndex}, &walk)
 						}
 					}
 				}
@@ -101,6 +109,11 @@ func (c *serializationChecker) checkBoxedValue(value ssa.Value, operand encoding
 	}
 	switch value := value.(type) {
 	case *ssa.MakeInterface:
+		if operand.defaultJSONDecode {
+			if _, pointer := value.X.Type().Underlying().(*types.Pointer); !pointer {
+				return // Default decoding replaces a non-pointer interface payload.
+			}
+		}
 		c.checkBoxedValue(value.X, operand, point, walk)
 		return
 	case *ssa.ChangeInterface:

@@ -134,19 +134,44 @@ func (c *zeroChecker) decodingSucceeded(instruction ssa.CallInstruction, errorIn
 	return false
 }
 
-func (c *zeroChecker) decoderMayInvalidate(instruction ssa.CallInstruction, storage mutationTarget, before flowPoint, context flowContext) bool {
+func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, storage mutationTarget, before flowPoint, context flowContext) zeroReason {
 	call := instruction.Common()
 	for _, boundary := range c.contracts.boundariesFor(callObject(call), c.policies) {
-		if len(boundary.Decode) == 0 || c.decodingSucceeded(instruction, boundary.ErrorResult, context) {
+		if len(boundary.Decode) == 0 {
 			continue
 		}
+		succeeded := c.decodingSucceeded(instruction, boundary.ErrorResult, context)
 		for _, index := range boundary.Decode {
-			if value := contractArgument(call, index); value != nil && c.mayReferenceStorage(value, storage, before, make(map[ssa.Value]bool)) {
-				return true
+			value := contractArgument(call, index)
+			if value == nil {
+				continue
+			}
+			if !succeeded {
+				if c.mayReferenceStorage(value, storage, before, make(map[ssa.Value]bool)) {
+					return reasonUncheckedError
+				}
+				continue
+			}
+			for _, destination := range c.decodeDestinations(value, before, make(map[ssa.Value]bool)) {
+				target, known := c.collectionAddress(destination.value)
+				if !known || target.root != storage.root || !storage.overlaps(target) || slices.Contains(target.path, -1) {
+					continue
+				}
+				// A raw sibling field of a collection element cannot invalidate
+				// another field's domain contract.
+				if storage.elements == nil && !sameStorage(target, storage.address) ||
+					storage.elements != nil && len(target.path) != len(storage.path)+1 {
+					continue
+				}
+				if pointer, ok := destination.value.Type().Underlying().(*types.Pointer); ok {
+					if _, scalar := pointer.Elem().Underlying().(*types.Basic); scalar && c.policies.lookup(pointer.Elem()) == nil {
+						return reasonInputMayBeZero
+					}
+				}
 			}
 		}
 	}
-	return false
+	return ""
 }
 
 // Recover decode slots from local boxing and variadic storage. An unknown or

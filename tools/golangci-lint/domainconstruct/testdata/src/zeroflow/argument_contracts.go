@@ -147,6 +147,28 @@ func UseDependentErrorConditions(use func(ID)) {
 	}
 }
 
+type sliceStatus []int
+
+func (status *sliceStatus) set() { *status = sliceStatus{1} }
+
+func statusAfterPointerMethod(err error) error {
+	if err != nil {
+		return err
+	}
+	var status sliceStatus
+	status.set()
+	if status == nil {
+		return nil
+	}
+	return errors.New("status assigned")
+}
+
+func UseStatusAfterPointerMethod(use func(ID)) {
+	if statusAfterPointerMethod(nil) != nil {
+		use("") // want "argument is an empty zeroflow.ID"
+	}
+}
+
 func fromRune[T ~string](value rune) T   { return T(value) }
 func fromText[T ~string](value string) T { return T(value) }
 

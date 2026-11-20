@@ -1,5 +1,10 @@
 package zeroflow
 
+func LabelSavedMethodExpression() {
+	key := Ref.Key
+	key(Ref{}) // want "receiver is a zero zeroflow.Ref"
+}
+
 func LabelReturn() ID {
 	var bad ID
 	return bad // want "rule: domainzero[.]invalid-zero"

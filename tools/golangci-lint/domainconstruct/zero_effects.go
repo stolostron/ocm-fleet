@@ -74,6 +74,7 @@ func (c *zeroChecker) findMutation(call *ssa.CallCommon, storage mutationTarget,
 		return mutationUnknown
 	}
 	kind := mutationReadOnly
+	lastWrite := 0
 	fact := c.callContract(call)
 	offset := callArgumentIndex(call, 0)
 	for index, argument := range call.Args {
@@ -89,24 +90,28 @@ func (c *zeroChecker) findMutation(call *ssa.CallCommon, storage mutationTarget,
 			if target, exact := c.collectionAddress(argument); !exact || storage.elements != nil || !sameStorage(target, storage.address) {
 				effect = mutationUnknown
 			}
-			if effect != mutationUnknown && index-offset == -1 && !exactEffectReceiver(call, argument) {
+			if effect != mutationUnknown && index-offset == -1 && !exactMethodReceiver(call, argument) {
 				effect = mutationUnknown
 			}
-			if effect == mutationUnknown || kind != mutationReadOnly && kind != effect {
+			if effect == mutationUnknown {
 				return mutationUnknown
 			}
-			kind = effect
+			// All remaining writes reach this exact slot. Their order matters
+			// when the caller passes the same address to several parameters.
+			if parameter.LastWrite > lastWrite {
+				kind, lastWrite = effect, parameter.LastWrite
+			}
 		}
 	}
 	return kind
 }
 
-func exactEffectReceiver(call *ssa.CallCommon, argument ssa.Value) bool {
+func exactMethodReceiver(call *ssa.CallCommon, argument ssa.Value) bool {
 	if call.Signature().Recv() != nil {
 		return true
 	}
 	// A method expression can pass an outer value to a thunk that then
-	// projects the embedded receiver. Its argument is not the written slot.
+	// projects the embedded receiver.
 	if method := callObject(call); method != nil {
 		if receiver := method.Type().(*types.Signature).Recv(); receiver != nil {
 			return types.Identical(receiver.Type(), argument.Type())
@@ -199,6 +204,9 @@ func (c *zeroChecker) mayReferenceStorage(value ssa.Value, storage mutationTarge
 }
 
 func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage mutationTarget, point flowPoint, seen map[ssa.Value]bool) bool {
+	if !c.work.take() {
+		return true
+	}
 	if array, ok := t.Underlying().(*types.Array); ok {
 		return c.collectionMayReference(collectionView{storage: location, element: array.Elem(), end: array.Len()}, storage, point, seen, make(map[memoryVisit]bool))
 	}
@@ -321,4 +329,32 @@ func borrowedRoot(value ssa.Value) bool {
 		return true
 	}
 	return false
+}
+
+func borrowedScalarMayAlias(location, destination address, context flowContext) bool {
+	if location.root == destination.root || len(location.path)+len(destination.path) != 0 {
+		return false
+	}
+	left, first := location.root.(*ssa.Parameter)
+	right, second := destination.root.(*ssa.Parameter)
+	if !first || !second {
+		return false
+	}
+	pointer, ok := left.Type().Underlying().(*types.Pointer)
+	other, alsoPointer := right.Type().Underlying().(*types.Pointer)
+	if !ok || !alsoPointer {
+		return false
+	}
+	basic, scalar := pointer.Elem().Underlying().(*types.Basic)
+	if !scalar || !types.Identical(basic, other.Elem().Underlying()) {
+		return false
+	}
+	for value, state := range context.facts {
+		if comparison, ok := value.(*ssa.BinOp); ok &&
+			(comparison.Op == token.NEQ && state == notZero || comparison.Op == token.EQL && state == isZero) &&
+			(comparison.X == left && comparison.Y == right || comparison.Y == left && comparison.X == right) {
+			return false
+		}
+	}
+	return true
 }

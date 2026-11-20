@@ -78,7 +78,17 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 		}
 	case *ssa.TypeAssert:
 		return c.assertedProblem(value, path, t, point, context, seen)
-	case *ssa.Slice, *ssa.MakeSlice:
+	case *ssa.Slice:
+		if basic, ok := value.Type().Underlying().(*types.Basic); ok && basic.Info()&types.IsString != 0 {
+			if length, known := stringSliceLength(value); known {
+				if length == 0 {
+					return c.zeroType(t, "", context.use).step("source", value.Pos(), "slice bounds produce an empty string")
+				}
+				return nil
+			}
+		}
+		return c.collectionProblem(value, point, context, seen)
+	case *ssa.MakeSlice:
 		return c.collectionProblem(value, point, context, seen)
 	case *ssa.Call:
 		if problem := c.callResultProblem(value, 0, path, t, point, context, seen); problem != nil {
@@ -154,6 +164,9 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 		}
 		if assertion, ok := value.Tuple.(*ssa.TypeAssert); ok && value.Index == 0 {
 			return c.assertedProblem(assertion, path, t, point, context, seen)
+		}
+		if _, lookup := value.Tuple.(*ssa.Lookup); lookup && value.Index == 0 {
+			return c.rawValueProblem(value, path, t, point, context.use)
 		}
 		if call, ok := value.Tuple.(*ssa.Call); ok {
 			if problem := c.callResultProblem(call, value.Index, path, t, point, context, seen); problem != nil {
@@ -254,6 +267,9 @@ func (c *zeroChecker) rawValueProblem(value ssa.Value, path []int, target types.
 
 func projectedType(source types.Type, path []int) types.Type {
 	for _, index := range path {
+		if pointer, ok := source.Underlying().(*types.Pointer); ok {
+			source = pointer.Elem()
+		}
 		structure, ok := source.Underlying().(*types.Struct)
 		if !ok || index < 0 || index >= structure.NumFields() {
 			return nil
@@ -261,6 +277,21 @@ func projectedType(source types.Type, path []int) types.Type {
 		source = structure.Field(index).Type()
 	}
 	return source
+}
+
+func stringSliceLength(value *ssa.Slice) (int64, bool) {
+	if value.High == nil {
+		return 0, false
+	}
+	if value.High == value.Low {
+		return 0, true
+	}
+	high, known := integerValue(value.High)
+	if !known || value.Low == nil {
+		return high, known
+	}
+	low, known := integerValue(value.Low)
+	return high - low, known
 }
 
 func (c *zeroChecker) tupleProblem(value *ssa.Extract, t types.Type, context flowContext) *zeroProblem {
@@ -334,6 +365,9 @@ func (c *zeroChecker) uncheckedCallResult(call *ssa.Call, result int, t types.Ty
 		for _, rule := range fact.Payloads {
 			if rule.Result == result {
 				for _, boxed := range rule.Types {
+					if boxed.SuccessOnly {
+						continue
+					}
 					if problem := c.payloadProblem(boxed, reason, use); problem != nil {
 						return problem
 					}
@@ -493,8 +527,10 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 			return problem.withValue(reference.expression).
 				step("source", allocation.Pos(), "storage "+reference.describe("unnamed storage")+" starts at zero")
 		}
+		before := flowPoint{point.block, index}
 		if store, ok := instruction.(*ssa.Store); ok {
-			if destination, ok := c.collectionAddress(store.Addr); ok && destination.root == location.root {
+			destination, known := c.collectionAddress(store.Addr)
+			if known && destination.root == location.root {
 				if pathPrefix(location.path, destination.path) {
 					remaining := location.path[len(destination.path):]
 					problem := c.problem(store.Val, remaining, t, use, context, values)
@@ -511,8 +547,15 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 					}
 				}
 			}
+			if known && borrowedScalarMayAlias(location, destination, context) {
+				detail := "write through a pointer parameter that may alias " + c.storageName(location.root, location.path)
+				if problem := c.problem(store.Val, nil, t, before, context, values); problem != nil {
+					return problem.uncertain().step("mutation", store.Pos(), detail)
+				}
+				return c.memoryHistoryProblem(location, t, before, use, context, values, seen).uncertain().
+					step("mutation", store.Pos(), detail)
+			}
 		}
-		before := flowPoint{point.block, index}
 		switch instruction.(type) {
 		case ssa.CallInstruction, *ssa.RunDefers:
 		default:
@@ -526,28 +569,26 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 			if !conditional && c.decoderInitializes(call, location, before, context) {
 				return nil
 			}
-			if c.decoderMayInvalidate(call, mutationTarget{address: location}, before, context) {
-				problem := c.failedResultProblem(t, reasonUncheckedError, context.use, make(map[types.Type]valueUse))
+			if reason := c.decoderInvalidation(call, mutationTarget{address: location}, before, context); reason != "" {
+				problem := c.failedResultProblem(t, reason, context.use, make(map[types.Type]valueUse))
 				if problem == nil {
 					problem = c.memoryHistoryProblem(location, t, before, use, context, values, seen).uncertain()
 				}
-				return problem.withValue(c.valueName(location.root, location.path)).
-					step("mutation", pos, c.callName(call.Common())+" may leave partially decoded state without checked success")
-			}
-			if builtin, ok := call.Common().Value.(*ssa.Builtin); ok && builtin.Name() == "clear" {
-				if destination, ok := c.collectionOf(call.Common().Args[0]); ok && destination.storage.root == location.root &&
-					len(location.path) > len(destination.storage.path) && pathPrefix(location.path, destination.storage.path) {
-					destination = boundedView(destination, context)
-					offset := int64(location.path[len(destination.storage.path)])
-					end := destination.possibleEnd()
-					if destination.size() > 0 && offset >= destination.start && (end < 0 || offset < end) {
-						problem := c.zeroType(t, "", context.use)
-						if destination.dynamicStart || conditional {
-							problem = problem.uncertain()
-						}
-						return problem.step("source", pos, "clear sets collection elements to zero")
-					}
+				detail := " may leave partially decoded state without checked success"
+				if reason == reasonInputMayBeZero {
+					detail = " decodes into raw storage without establishing domain validity"
 				}
+				return problem.withValue(c.valueName(location.root, location.path)).
+					step("mutation", pos, c.callName(call.Common())+detail)
+			}
+			if problem, definite, overlaps := c.collectionWriteProblem(execution, location, t, values, seen); overlaps {
+				if definite {
+					return problem
+				}
+				if problem != nil {
+					return problem.uncertain()
+				}
+				return c.memoryHistoryProblem(location, t, before, use, context, values, seen).uncertain()
 			}
 			effect := c.callMutation(call.Common(), location, before)
 			if conditional && effect != mutationReadOnly {

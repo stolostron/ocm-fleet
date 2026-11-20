@@ -18,12 +18,13 @@ type boundaryFact struct {
 }
 
 type codecBoundary struct {
-	Codec          string
-	Encode         []int
-	Decode         []int
-	Results        []int
-	TypeParameters []int
-	ErrorResult    int
+	Codec             string
+	Encode            []int
+	Decode            []int
+	Results           []int
+	TypeParameters    []int
+	ErrorResult       int
+	DefaultJSONDecode bool
 }
 
 func (*boundaryFact) AFact() {}
@@ -197,6 +198,18 @@ func decoderMethod(codec string) string {
 	return ""
 }
 
+func encoderMethod(codec string) string {
+	switch codec {
+	case "json":
+		return "MarshalJSON"
+	case "text":
+		return "MarshalText"
+	case "sql":
+		return "Value"
+	}
+	return ""
+}
+
 func codecMethod(t types.Type, name string, pointer bool) *types.Func {
 	if name == "" {
 		return nil
@@ -241,15 +254,36 @@ func byteSlice(t types.Type) bool {
 }
 
 func supportsNativeDecode(t types.Type, codec string) bool {
+	return nativeDecoder(t, codec) != nil
+}
+
+func nativeDecoder(t types.Type, codec string) *types.Func {
 	method := codecMethod(t, decoderMethod(codec), true)
 	if method == nil {
-		return false
+		return nil
 	}
 	signature := method.Type().(*types.Signature)
-	if !validDecoder(signature, codec) {
-		return false
+	if validDecoder(signature, codec) && types.Identical(signature.Recv().Type().(*types.Pointer).Elem(), t) {
+		return method
 	}
-	return types.Identical(signature.Recv().Type().(*types.Pointer).Elem(), t)
+	return nil
+}
+
+func supportsNativeEncode(t types.Type, codec string) bool {
+	if method := codecMethod(t, encoderMethod(codec), false); method != nil && validEncoder(method.Type().(*types.Signature), codec) {
+		return true
+	}
+	if codec == "json" {
+		// JSON can encode primitive representations without a custom hook.
+		// Composites need a value hook for use in interfaces and map values.
+		if basic, scalar := t.Underlying().(*types.Basic); scalar &&
+			basic.Info()&(types.IsBoolean|types.IsInteger|types.IsFloat|types.IsString) != 0 {
+			return true
+		}
+		method := codecMethod(t, "MarshalText", false)
+		return method != nil && validEncoder(method.Type().(*types.Signature), "text")
+	}
+	return false
 }
 
 // boundaries resolves by Go object identity, never by a caller's spelling of a
@@ -281,8 +315,10 @@ func (set *contractSet) boundariesFor(function *types.Func, policies policySet) 
 			boundary.Encode = []int{0}
 		case receiver == "" && function.Name() == "Unmarshal":
 			boundary.Decode = []int{1}
+			boundary.DefaultJSONDecode = true
 		case receiver == "Decoder" && function.Name() == "Decode":
 			boundary.Decode = []int{0}
+			boundary.DefaultJSONDecode = true
 		case receiver == "Unmarshaler" && function.Name() == "UnmarshalJSON":
 			boundary.Decode = []int{-1}
 		case receiver == "Marshaler" && function.Name() == "MarshalJSON":
@@ -327,8 +363,7 @@ func (set *contractSet) boundariesFor(function *types.Func, policies policySet) 
 		if function.Name() == decoderMethod(codec) && validDecoder(signature, codec) {
 			return []codecBoundary{{Codec: codec, Decode: []int{-1}, ErrorResult: 0}}
 		}
-		encoder := map[string]string{"json": "MarshalJSON", "text": "MarshalText", "sql": "Value"}[codec]
-		if function.Name() == encoder && validEncoder(signature, codec) {
+		if function.Name() == encoderMethod(codec) && validEncoder(signature, codec) {
 			return []codecBoundary{{Codec: codec, Encode: []int{-1}, ErrorResult: 1}}
 		}
 	}
@@ -352,13 +387,6 @@ func callFunction(info *types.Info, call *ast.CallExpr) *types.Func {
 	}
 	function, _ := object.(*types.Func)
 	return function
-}
-
-func selectedReceiver(call *ast.CallExpr) ast.Expr {
-	if selector, ok := call.Fun.(*ast.SelectorExpr); ok {
-		return selector.X
-	}
-	return nil
 }
 
 func serializationPosition(node ast.Node) token.Pos {

@@ -192,7 +192,7 @@ func (c *zeroChecker) checkInstruction(instruction ssa.Instruction, point flowPo
 		}
 		useContext := context
 		useContext.use = mode
-		if problem := c.problem(value, nil, value.Type(), point, useContext, make(map[valueVisit]bool)); problem != nil {
+		if problem := c.operandProblem(value, point, useContext); problem != nil {
 			use := zeroUse{pos: instructionPosition(instruction, point), argument: argument}
 			if call, ok := instruction.(ssa.CallInstruction); ok {
 				use.call = call.Common()
@@ -280,7 +280,7 @@ func (c *zeroChecker) checkCall(instruction ssa.CallInstruction, point flowPoint
 		}
 		useContext := context
 		useContext.use = use
-		if problem := c.callOperandProblem(value, point, useContext); problem != nil {
+		if problem := c.operandProblem(value, point, useContext); problem != nil {
 			ref := zeroUse{pos: instructionPosition(instruction, point), call: call, argument: index}
 			c.report(ref, problem, operation, value)
 		}
@@ -291,7 +291,7 @@ func (c *zeroChecker) checkCall(instruction ssa.CallInstruction, point flowPoint
 	}
 }
 
-func (c *zeroChecker) callOperandProblem(value ssa.Value, point flowPoint, context flowContext) *zeroProblem {
+func (c *zeroChecker) operandProblem(value ssa.Value, point flowPoint, context flowContext) *zeroProblem {
 	if !c.work.exhausted() {
 		return c.problem(value, nil, value.Type(), point, context, make(map[valueVisit]bool))
 	}

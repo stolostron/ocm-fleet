@@ -31,6 +31,11 @@ func (c *checker) checkGenericConstruction(call *ast.CallExpr, ancestors []ast.N
 
 func (c *checker) checkGenericSource(source valueSource, target types.Type, call *ast.CallExpr, function *types.Func, ancestors []ast.Node) bool {
 	if source.Kind == sourceConversion {
+		if interfaceValueType(target) {
+			if concrete := calledTypeArgument(c.pass.TypesInfo, call, source.ConversionType); concrete != nil {
+				target = concrete
+			}
+		}
 		argument := source.Values[0]
 		if literalZeroConversion(argument, target) || c.genericIdentityConversion(argument, target, call) {
 			return true
@@ -64,11 +69,7 @@ func (c *checker) genericIdentityConversion(source valueSource, target types.Typ
 		return false
 	}
 	if argument := callParameter(c.pass.TypesInfo, call, source.Parameter); argument.expression != nil {
-		actual := argument.actual
-		if source.Parameter == -1 && len(source.Path) != 0 {
-			actual = compositeShape(actual)
-		}
-		t := projectedType(actual, source.Path)
+		t := projectedType(argument.actual, source.Path)
 		return t != nil && types.Identical(t, target)
 	}
 	return false

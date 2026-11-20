@@ -40,8 +40,9 @@ func (c *zeroChecker) joinedViewTruth(view collectionView, point flowPoint, cont
 			return unknown
 		}
 		instruction := point.block.Instrs[index]
-		if !checkedSharing && channelHandoff(instruction) {
-			if c.collectionSharedBefore(view, flowPoint{point.block, index + 1}) {
+		if !checkedSharing && storageHandoff(instruction) {
+			storage := mutationTarget{view.storage, &elementRange{view.start, view.end}}
+			if c.storageSharedBefore(storage, flowPoint{point.block, index + 1}) {
 				return unknown
 			}
 			checkedSharing = true

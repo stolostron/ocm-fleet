@@ -396,6 +396,28 @@ type boundParameter struct {
 	result     int   // -1 for a single-valued expression.
 }
 
+func calledTypeArgument(info *types.Info, call *ast.CallExpr, index int) types.Type {
+	if index > 0 {
+		instance := info.Instances[calledIdentifier(ast.Unparen(call.Fun))]
+		if index <= instance.TypeArgs.Len() {
+			return instance.TypeArgs.At(index - 1)
+		}
+	}
+	return nil
+}
+
+// A zero index means the type is not one of this function's type parameters.
+func declaredTypeParameter(t types.Type, signature *types.Signature) int {
+	if parameter, ok := types.Unalias(t).(*types.TypeParam); ok && signature != nil {
+		index := parameter.Index()
+		parameters := signature.TypeParams()
+		if index >= 0 && index < parameters.Len() && parameters.At(index) == parameter {
+			return index + 1
+		}
+	}
+	return 0
+}
+
 func callParameter(info *types.Info, call *ast.CallExpr, index int) boundParameter {
 	bound := boundParameter{result: -1}
 	expression := ast.Unparen(call.Fun)

@@ -123,6 +123,7 @@ func (c *zeroChecker) zeroBefore(storage *ssa.Alloc, point flowPoint, seen map[f
 	seen[point] = true
 	// A reaching reset or allocation must precede any possible write, even
 	// when the previous execution of the iterator came from a back edge.
+	checkedSharing := false
 	for index := point.index - 1; index >= 0; index-- {
 		if !c.work.take() {
 			return false
@@ -130,6 +131,12 @@ func (c *zeroChecker) zeroBefore(storage *ssa.Alloc, point flowPoint, seen map[f
 		instruction := point.block.Instrs[index]
 		if instruction == storage {
 			return true
+		}
+		if !checkedSharing && storageHandoff(instruction) {
+			if c.storageSharedBefore(mutationTarget{address: address{root: storage}}, flowPoint{point.block, index + 1}) {
+				return false
+			}
+			checkedSharing = true
 		}
 		if store, ok := instruction.(*ssa.Store); ok {
 			if target, known := addressOf(store.Addr); known && target.root == storage {

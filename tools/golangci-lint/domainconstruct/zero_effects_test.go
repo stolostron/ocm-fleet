@@ -2,11 +2,26 @@ package domainconstruct
 
 import (
 	"fmt"
+	"go/token"
+	"go/types"
 	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/ssa"
 )
+
+func TestMutationReachabilityChargesStructDescent(t *testing.T) {
+	shape := types.NewStruct([]*types.Var{types.NewField(token.NoPos, nil, "Field", types.Typ[types.String], false)}, nil)
+	work := workBudget(1)
+	c := &zeroChecker{work: &work}
+	if !c.memoryMayReference(address{}, shape, mutationTarget{}, flowPoint{}, nil) {
+		t.Fatal("descent past the work limit proved storage disjoint")
+	}
+	work = 3
+	if c.memoryMayReference(address{}, shape, mutationTarget{}, flowPoint{}, nil) {
+		t.Fatal("complete scalar field traversal retained a possible alias")
+	}
+}
 
 func TestMutationReachabilityAcrossJoins(t *testing.T) {
 	c, raw, invoke := mutationAcrossJoins(t)

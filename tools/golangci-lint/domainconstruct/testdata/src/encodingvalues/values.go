@@ -72,6 +72,13 @@ func (value Unsupported) MarshalText() ([]byte, error) { return []byte(value), n
 func (value *Unsupported) Scan(any) error { return errors.New("fixture") }
 func (value Unsupported) Value() (driver.Value, error) { return string(value), nil }
 
+//domain:constructors NewScanOnly
+//domain:serialization sql
+type ScanOnly struct{ Raw string }
+
+func NewScanOnly(value string) ScanOnly { return ScanOnly{Raw: value} }
+func (*ScanOnly) Scan(any) error        { return nil }
+
 //domain:constructors NewJSONOnly
 //domain:serialization json
 type JSONOnly string

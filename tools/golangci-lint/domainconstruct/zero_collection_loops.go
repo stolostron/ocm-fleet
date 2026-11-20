@@ -46,7 +46,7 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 			if _, scheduled := instruction.(*ssa.Defer); scheduled {
 				continue
 			}
-			if channelHandoff(instruction) {
+			if storageHandoff(instruction) {
 				handoffs = append(handoffs, flowPoint{block, index})
 			}
 			if call, ok := instruction.(ssa.CallInstruction); ok {
@@ -91,9 +91,10 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 	}
 	// A handoff on a path that leaves the function cannot affect this fill's
 	// normal exit. Sharing must also reach the handoff itself.
+	storage := mutationTarget{view.storage, &elementRange{view.start, view.end}}
 	for _, handoff := range handoffs {
 		if c.blockReachedFromPredecessors(handoff.block, backEdges) == notZero &&
-			c.collectionSharedBefore(view, flowPoint{handoff.block, handoff.index + 1}) {
+			c.storageSharedBefore(storage, flowPoint{handoff.block, handoff.index + 1}) {
 			if !c.work.exhausted() && !borrowedRoot(view.storage.root) {
 				return false, handoff.block.Instrs[handoff.index]
 			}
@@ -103,11 +104,10 @@ func (c *zeroChecker) filledByLoop(view collectionView, header, exit *ssa.BasicB
 	return !c.work.exhausted(), nil
 }
 
-func (c *zeroChecker) collectionSharedBefore(view collectionView, point flowPoint) bool {
-	if borrowedRoot(view.storage.root) {
+func (c *zeroChecker) storageSharedBefore(storage mutationTarget, point flowPoint) bool {
+	if borrowedRoot(storage.root) {
 		return true
 	}
-	storage := mutationTarget{view.storage, &elementRange{view.start, view.end}}
 	pending := []flowPoint{point}
 	seen := make(map[flowPoint]bool)
 	for len(pending) != 0 {
@@ -123,8 +123,20 @@ func (c *zeroChecker) collectionSharedBefore(view collectionView, point flowPoin
 			before := flowPoint{point.block, index}
 			switch instruction := point.block.Instrs[index].(type) {
 			case *ssa.Go:
-				if c.collectionMutation(instruction.Common(), view, before) != mutationReadOnly {
+				if c.mutationIn(instruction.Common(), storage, before) != mutationReadOnly {
 					return true
+				}
+			case *ssa.Call:
+				common := instruction.Common()
+				if fact := c.callContract(common); fact != nil {
+					for _, effect := range fact.Effects {
+						if effect.Publishes {
+							if value := contractArgument(common, effect.Parameter); value != nil &&
+								c.mayReferenceStorage(value, storage, before, make(map[ssa.Value]bool)) {
+								return true
+							}
+						}
+					}
 				}
 			case *ssa.Send:
 				if c.mayReferenceStorage(instruction.X, storage, before, make(map[ssa.Value]bool)) {
