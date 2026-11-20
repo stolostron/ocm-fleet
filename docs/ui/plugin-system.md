@@ -30,6 +30,16 @@ The browser requests:
 
 Sources: [server assembly](../../server/internal/transport/http/uiconfig.go), [browser configuration](../../client/web/src/contexts/AppConfigContext.tsx), [plugin loader](../../client/web/src/components/Root/PluginLoader.tsx).
 
+### Portable shell SDK
+
+The private [`@ocm-fleet/shell`](../../sdk/shell/src/index.ts) SDK provides a separate, UI-framework-neutral bootstrap contract. The existing web app above has not yet migrated to it. `ConsoleProvider` accepts a stable `source` object: `{ type: "static", config }`, `{ type: "url", url }`, or `{ type: "factory", load }`. URL and factory sources may resolve asynchronously. `useConsoleConfig()` exposes `config`, `loading`, and `error` to children even while bootstrap is pending or fails; hosts decide how to present those states. Keep the source object stable across ordinary renders.
+
+Version 1 requires `schemaVersion: 1`, a `catalog.pluginEntries` array containing unique keys and complete plugin manifests, and public `auth` metadata (`{ type: "none" }` or `{ type: "oidc", authority, clientId, scope? }`). Optional `defaultNavLayout` supplies page, group, and section entries. Authentication metadata must not contain secrets or tokens; this provider does not implement login. Unknown versions, missing auth, invalid manifests, duplicate identities, request failures, and plugin load failures are reported as errors rather than silently falling back.
+
+The provider maps the catalog to its internal plugin runtime and loads manifests automatically. For remote manifests, `baseURL` is that plugin's asset directory; relative `loadScripts` paths (including leading slashes) resolve beneath it, while absolute and protocol-relative URLs remain unchanged. The host supplies neither runtime configuration nor a manifest transform. Module Federation's default share scope must already be initialized by the host bootstrap.
+
+The underlying runtime currently uses a shared singleton plugin store. This SDK is intended for one console provider per page and a stable plugin catalog for its lifetime: changing a catalog after bootstrap reports an error requiring a page reload, because prior plugins cannot safely be unloaded or replaced. Source loads are cancelled/ignored on replacement, but live plugin replacement and isolation between providers are not implemented.
+
 ## Pages and extension consumers
 
 The backend derives page identities and default navigation from `ocm-fleet.route` declarations, optionally grouped by `ocm-fleet.route-group`. These route contributions select JavaScript exposed modules; they are not themselves Module Federation modules. Plugins own domain views and can declare extension points, such as cluster creation providers and cluster detail tabs. The shell provides routing and shared infrastructure rather than implementing those domain features itself. See [routes and route groups](route-groups.md) for default link visibility and ordering.

@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,8 +20,61 @@ function sourceFiles(directory: string): string[] {
 }
 
 describe("shell package boundary", () => {
-  it("starts with no runtime exports", () => {
-    expect(Object.keys(shell)).toEqual([]);
+  it("keeps React and React DOM versions compatible in browser workspaces", () => {
+    const workspaceRoot = resolve(packageRoot, "../..");
+    for (const project of [
+      "client/web",
+      "extensions/core/client",
+      "extensions/kind/client",
+      "sdk/shell",
+    ]) {
+      const requireFromProject = createRequire(
+        join(workspaceRoot, project, "package.json"),
+      );
+      const react = requireFromProject("react/package.json") as {
+        version: string;
+      };
+      const reactDom = requireFromProject("react-dom/package.json") as {
+        version: string;
+      };
+      expect(reactDom.version, project).toBe(react.version);
+    }
+  });
+
+  it("emits public declarations without Scalprum types", () => {
+    const configFile = ts.readConfigFile(
+      join(packageRoot, "tsconfig.build.json"),
+      ts.sys.readFile,
+    );
+    const parsed = ts.parseJsonConfigFileContent(
+      configFile.config,
+      ts.sys,
+      packageRoot,
+    );
+    const program = ts.createProgram(parsed.fileNames, {
+      ...parsed.options,
+      emitDeclarationOnly: true,
+    });
+    const declarations = new Map<string, string>();
+    const result = program.emit(undefined, (name, text) => {
+      if (name.endsWith(".d.ts")) declarations.set(name, text);
+    });
+    expect(
+      ts.getPreEmitDiagnostics(program).concat(result.diagnostics),
+    ).toEqual([]);
+    for (const name of ["index.d.ts", "provider.d.ts", "types.d.ts"]) {
+      const declaration = [...declarations].find(([path]) =>
+        path.endsWith(`/${name}`),
+      )?.[1];
+      expect(declaration).toBeDefined();
+      expect(declaration).not.toMatch(/@scalprum|Scalprum/);
+    }
+  });
+  it("exports only the host-facing runtime API", () => {
+    expect(Object.keys(shell).sort()).toEqual([
+      "ConsoleProvider",
+      "useConsoleConfig",
+    ]);
   });
 
   it("declares only its root export and portable peer dependencies", () => {
@@ -36,7 +90,12 @@ describe("shell package boundary", () => {
       import: "./dist/esm/index.js",
       require: "./dist/cjs/index.js",
     });
-    expect(manifest.dependencies ?? {}).toEqual({});
+    expect(Object.keys(manifest.dependencies).sort()).toEqual([
+      "@openshift/dynamic-plugin-sdk",
+      "@scalprum/react-core",
+      "fast-deep-equal",
+      "zod",
+    ]);
     expect(manifest.optionalDependencies ?? {}).toEqual({});
     expect(manifest.peerDependencies).toEqual({
       react: "^19.1.0",
@@ -44,7 +103,7 @@ describe("shell package boundary", () => {
     });
   });
 
-  it("keeps runtime source free of style assets and non-peer imports", () => {
+  it("keeps runtime source free of style assets and undeclared imports", () => {
     for (const file of sourceFiles(sourceRoot)) {
       expect(file).toMatch(/\.tsx?$/);
       const source = ts.createSourceFile(
@@ -76,7 +135,10 @@ describe("shell package boundary", () => {
         if (specifier && ts.isStringLiteral(specifier)) {
           const relative = specifier.text.startsWith(".");
           expect(
-            relative || /^(react|react-router-dom)(\/|$)/.test(specifier.text),
+            relative ||
+              /^(react|react-router-dom|@openshift\/dynamic-plugin-sdk|@scalprum\/react-core|fast-deep-equal|zod)(\/|$)/.test(
+                specifier.text,
+              ),
           ).toBe(true);
           if (relative)
             expect(
