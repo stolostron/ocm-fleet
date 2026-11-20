@@ -184,3 +184,4 @@ Start here when you need a fast map of the system. Then continue with the smalle
 - [docs/design/provider_consumer_model.md](provider_consumer_model.md): provider/consumer/factory topology built on top of the core architecture
 - [docs/design/mcoa_migration.md](mcoa_migration.md): migration notes from the current MCOA architecture to this model
 - [docs/design/security.md](security.md): cross-cutting delivery security and trust model
+- [docs/design/shim/README.md](shim/README.md): design home for introducing OCM Fleet alongside an existing OCM-io installation — requirements, analysis, decisions, baseline hypotheses, enhancements, and coverage
