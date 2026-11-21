@@ -162,7 +162,7 @@ func (c *zeroChecker) decodingSucceeded(instruction ssa.CallInstruction, errorIn
 	return false
 }
 
-func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, storage mutationTarget, t types.Type, before flowPoint, context flowContext) zeroReason {
+func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, storage mutationTarget, t types.Type, before flowPoint, context flowContext) (zeroReason, *zeroProblem) {
 	call := instruction.Common()
 	for _, boundary := range c.contracts.boundariesFor(callObject(call), c.policies) {
 		if len(boundary.Decode) == 0 {
@@ -176,13 +176,13 @@ func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, stora
 			}
 			if !succeeded {
 				if c.mayReferenceStorage(value, storage, before, make(map[ssa.Value]bool)) {
-					return reasonUncheckedError
+					return reasonUncheckedError, nil
 				}
 				continue
 			}
 			for _, destination := range c.decodeDestinations(value, before, boundary.DefaultJSONDecode, make(map[ssa.Value]bool)) {
 				target, known := c.collectionAddress(destination.value)
-				if !known || target.root != storage.root || !storage.overlaps(target) || slices.Contains(target.path, -1) {
+				if !known || target.root != storage.root || !storage.overlaps(target) {
 					continue
 				}
 				if pointer, ok := destination.value.Type().Underlying().(*types.Pointer); ok {
@@ -191,29 +191,73 @@ func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, stora
 						// Default JSON decoding zeroes trailing slots when the
 						// input is short, bypassing their element decoders.
 						if array, ok := decoded.Underlying().(*types.Array); ok && array.Len() != 0 && !hasJSONDecoder(decoded) {
-							return reasonInputMayBeZero
+							return reasonInputMayBeZero, nil
 						}
 					}
-					if storage.elements == nil && !sameStorage(target, storage.address) {
-						if pathPrefix(storage.path, target.path) && !types.Identical(decoded, storageType(target)) {
-							return reasonInputMayBeZero
+					depth := len(target.path) - len(storage.path)
+					if storage.elements == nil && depth != 0 {
+						if depth < 0 && !types.Identical(decoded, storageType(target)) {
+							return reasonInputMayBeZero, nil
 						}
 						continue
 					}
-					// A sibling field of a collection element cannot invalidate
-					// another field's domain contract.
-					if storage.elements != nil && len(target.path) != len(storage.path)+1 {
-						continue
+					if storage.elements != nil {
+						switch {
+						case depth < 1:
+							continue
+						case depth > 1:
+							path := target.path[len(storage.path):]
+							if problem := c.decodedFieldProblem(t, path[1:], decoded, boundary.Codec, context.use); problem != nil {
+								problem.path = fieldPath(elementLabel(int64(path[0])), problem.path)
+								return problem.reason, problem
+							}
+							continue
+						}
 					}
-					if _, scalar := decoded.Underlying().(*types.Basic); (scalar || !types.Identical(decoded, t)) &&
-						!c.decoderEstablishes(decoded, t, boundary.Codec) {
-						return reasonInputMayBeZero
+					if c.decodeInvalidatesValue(decoded, t, boundary.Codec) {
+						return reasonInputMayBeZero, nil
 					}
 				}
 			}
 		}
 	}
-	return ""
+	return "", nil
+}
+
+func (c *zeroChecker) decodeInvalidatesValue(decoded, expected types.Type, codec string) bool {
+	_, scalar := decoded.Underlying().(*types.Basic)
+	return (scalar || !types.Identical(decoded, expected)) && !c.decoderEstablishes(decoded, expected, codec)
+}
+
+// A checked write into an element's field only affects that field's contract.
+// Follow the same field selection as the use of the surrounding value.
+func (c *zeroChecker) decodedFieldProblem(t types.Type, path []int, decoded types.Type, codec string, use valueUse) *zeroProblem {
+	if !c.work.take() {
+		return nil
+	}
+	if len(path) == 0 {
+		if c.decodeInvalidatesValue(decoded, t, codec) {
+			return c.failedResultProblem(t, reasonInputMayBeZero, use, make(map[types.Type]valueUse))
+		}
+		return nil
+	}
+	if _, structure := t.Underlying().(*types.Struct); !structure {
+		return nil
+	}
+	use = c.useForType(t, use)
+	for selected := range c.jsonShape.fields(t, use.json()) {
+		if !c.work.take() {
+			return nil
+		}
+		if pathPrefix(path, selected.indices) {
+			problem := c.decodedFieldProblem(selected.field.Type(), path[len(selected.indices):], decoded, codec, use.forField(selected))
+			if problem != nil {
+				problem.path = fieldPath(selected.path, problem.path)
+			}
+			return problem
+		}
+	}
+	return nil
 }
 
 // Recover decode slots from local boxing and variadic storage. An unknown or
@@ -266,12 +310,14 @@ func (c *zeroChecker) decodeDestinations(value ssa.Value, point flowPoint, defau
 	}
 	if pointer, ok := value.Type().Underlying().(*types.Pointer); ok {
 		destinations := []decodeDestination{{value: value}}
-		if _, boxed := pointer.Elem().Underlying().(*types.Interface); defaultJSON && boxed {
+		_, boxed := pointer.Elem().Underlying().(*types.Interface)
+		_, pointerSlot := pointer.Elem().Underlying().(*types.Pointer)
+		if defaultJSON && (boxed || pointerSlot) {
 			if location, known := c.collectionAddress(value); known {
 				origin, _ := c.referenceAt(location, point)
 				for _, nested := range c.decodeDestinations(origin, point, defaultJSON, seen) {
-					// JSON can follow the stored pointer, or replace the interface
-					// itself, for example when the input is null.
+					// JSON may follow a stored pointer or replace the slot itself,
+					// for example when the input is null.
 					nested.conditional = true
 					destinations = append(destinations, nested)
 				}

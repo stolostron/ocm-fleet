@@ -124,9 +124,18 @@ func TestContractRoundLimitRetainsIndependentFacts(t *testing.T) {
 
 func TestProjectSourceBoundsRecursivePaths(t *testing.T) {
 	source := valueSource{Kind: sourceParameter}
-	for range 100 {
+	for depth := 1; depth <= 8; depth++ {
 		source = projectSource(source, []int{1})
+		if source.Kind != sourceParameter || len(source.Path) != depth {
+			t.Fatalf("projection %d produced kind %d and path %v", depth, source.Kind, source.Path)
+		}
+		for _, field := range source.Path {
+			if field != 1 {
+				t.Fatalf("projection %d changed a field in path %v", depth, source.Path)
+			}
+		}
 	}
+	source = projectSource(source, []int{1})
 	if source.Kind != sourceUnknown {
 		t.Errorf("repeated projection retained %d fields", len(source.Path))
 	}

@@ -66,3 +66,27 @@ func NestedConversions(raw int, fromRaw bool) {
 	_ = projectChosenField[Count](raw, fromRaw) // want "construct protection.Count through NewCount"
 	_ = projectChosenField[int](raw, fromRaw)
 }
+
+type sourceField[T ~int] struct{ Value T }
+type convertedField[T ~int] struct{ Value T }
+
+func projectConvertedField[T ~int](raw int) T {
+	return convertedField[T](sourceField[T]{Value: T(raw)}).Value
+}
+
+func projectCopiedField[T ~int](value T) T {
+	return convertedField[T](sourceField[T]{Value: value}).Value
+}
+
+func UseConvertedField(raw int, value Count) {
+	_ = projectConvertedField[Count](raw) // want "construct protection.Count through NewCount"
+	_ = projectCopiedField(value)
+}
+
+func nilPointer[T ~*Count]() T { return T(nil) }
+func castPointer[T ~*Count](value *int) T { return T(value) }
+
+func UseConvertedPointer(value *int) {
+	_ = nilPointer[*Count]()
+	_ = castPointer[*Count](value) // want "construct protection.Count through NewCount"
+}

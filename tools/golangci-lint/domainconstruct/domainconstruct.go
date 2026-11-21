@@ -94,15 +94,7 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 			return c.pass.TypesInfo.Defs[node.Names[index]].Type()
 		}, ancestors)
 	case *ast.ReturnStmt:
-		if len(node.Results) > 0 {
-			for _, result := range node.Results {
-				c.checkReturnedStorage(result, ancestors)
-			}
-			results := c.enclosingResults(ancestors)
-			c.checkTransfers(node.Results, results.Len(), func(index int) types.Type {
-				return results.At(index).Type()
-			}, ancestors)
-		}
+		c.checkReturn(node, ancestors)
 	case *ast.AssignStmt:
 		for _, target := range node.Lhs {
 			if !c.checkAssignment(target, ancestors) {

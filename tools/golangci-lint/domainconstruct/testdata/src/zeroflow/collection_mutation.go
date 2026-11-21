@@ -176,6 +176,102 @@ func RepairFieldsWithCopy(valid ID, use func(ID)) {
 	use(rows[0].ID)
 }
 
+func ReadFieldAfterDynamicStore(valid ID, index int, use func(ID)) {
+	rows := []struct{ Other, ID ID }{{valid, valid}, {valid, valid}}
+	rows[index].ID = ""
+	use(rows[0].ID) // want "argument may be an empty zeroflow.ID"
+	use(rows[0].Other)
+}
+
+func ReadFieldAfterDynamicElementStore(valid ID, index int, use func(ID)) {
+	rows := []projectedRow{{valid}, {valid}}
+	rows[index] = projectedRow{}
+	use(rows[0].ID) // want "argument may be an empty zeroflow.ID"
+}
+
+func ReadFieldAfterAppend(valid ID, use func(ID)) {
+	rows := []projectedRow{{valid}, {valid}}
+	_ = append(rows[:1], projectedRow{})
+	use(rows[0].ID)
+	use(rows[1].ID) // want "argument is an empty zeroflow.ID"
+}
+
+func ReadFieldAfterAppendAllocates(valid ID, use func(ID)) {
+	rows := []projectedRow{{valid}}
+	_ = append(rows[:0:0], projectedRow{})
+	use(rows[0].ID)
+}
+
+func CopyBranchSource(valid ID, replace bool) []ID {
+	destination, source := []ID{valid}, []ID{valid}
+	if replace {
+		source = make([]ID, 1)
+	}
+	copy(destination, source)
+	return destination // want "return may contain an empty zeroflow.ID"
+}
+
+func CopyValidBranchSources(first, second ID, replace bool) []ID {
+	destination, source := []ID{first}, []ID{first}
+	if replace {
+		source = []ID{second}
+	}
+	copy(destination, source)
+	return destination
+}
+
+func ReadFieldFromCopyOfBranchSource(valid ID, replace bool, use func(ID)) {
+	destination, source := []projectedRow{{valid}}, []projectedRow{{valid}}
+	if replace {
+		source = make([]projectedRow, 1)
+	}
+	copy(destination, source)
+	use(destination[0].ID) // want "argument may be an empty zeroflow.ID"
+}
+
+func CopyBranchSourceKeepsUnwrittenSlot(valid ID, skip bool) []ID {
+	destination, source := make([]ID, 1), []ID{valid}
+	if skip {
+		source = nil
+	}
+	copy(destination, source)
+	return destination // want "return .* an empty zeroflow.ID"
+}
+
+func CopyEmptyBranchSource(valid ID, skip bool) []ID {
+	destination, source := []ID{valid}, []ID{valid}
+	if skip {
+		source = nil
+	}
+	copy(destination, source)
+	return destination
+}
+
+func eraseFirstString(values []*string) { *values[0] = "" }
+
+func CallAfterCopyingPointer(raw *string, use func(ID)) {
+	source := []*string{raw}
+	values := make([]*string, 1)
+	copy(values, source)
+	other := "other"
+	source[0] = &other
+	if *raw != "" {
+		eraseFirstString(values)
+		use(ID(*raw)) // want "argument may be an empty zeroflow.ID"
+	}
+}
+
+func CallWithDisjointCopiedPointer(raw *string, use func(ID)) {
+	values := make([]*string, 2)
+	other := "other"
+	values[0] = &other
+	copy(values[1:], []*string{raw})
+	if *raw != "" {
+		eraseFirstString(values[:1:1])
+		use(ID(*raw))
+	}
+}
+
 func orderedStores(first, second *string) {
 	*first = ""
 	*second = "valid"

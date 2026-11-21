@@ -147,6 +147,17 @@ func FailedArrayOverwrite(data []byte) {
 	}
 }
 
+func FailedDecodeAfterPartialWrite(valid encodingvalues.ID) {
+	id := valid
+	destination := struct {
+		Raw    *string
+		Number int
+	}{Raw: (*string)(&id)}
+	if err := json.Unmarshal([]byte(`{"Raw":"","Number":"invalid number"}`), &destination); err != nil {
+		consume(id) // want "argument may be an empty encodingvalues.ID"
+	}
+}
+
 func PointerFactory(data []byte) {
 	id, err := encodingvalues.NewID("valid")
 	if err != nil { return }

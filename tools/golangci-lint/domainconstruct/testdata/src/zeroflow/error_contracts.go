@@ -44,6 +44,35 @@ func EscapedFailure() (Ref, error) {
 	return Ref{}, escapedError // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]Ref\""
 }
 
+type pendingStatus []byte
+
+func (pendingStatus) Error() string { return "pending" }
+func (status *pendingStatus) reset() { *status = nil }
+
+var pending = pendingStatus("pending")
+var stablePending = pendingStatus("pending")
+
+func pendingError() error {
+	if pending == nil {
+		return nil
+	}
+	return pending
+}
+
+func stablePendingError() error {
+	if stablePending == nil {
+		return nil
+	}
+	return stablePending
+}
+
+func ResetPendingFailure() (ID, error) {
+	pending.reset()
+	return "", pendingError() // want "return produces an empty zeroflow.ID"
+}
+
+func StablePendingFailure() (ID, error) { return "", stablePendingError() }
+
 func WrappedFailure() (Ref, error) { return Ref{}, Terminal(errors.New("failure")) }
 
 func GuardedWrappedFailure(err error) (Ref, error) {

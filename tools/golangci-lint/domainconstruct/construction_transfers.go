@@ -101,6 +101,25 @@ func (c *checker) checkLiteralTransfers(literal *ast.CompositeLit, ancestors []a
 	}
 }
 
+func (c *checker) checkReturn(statement *ast.ReturnStmt, ancestors []ast.Node) {
+	results := c.enclosingResults(ancestors)
+	if len(statement.Results) == 0 {
+		for result := range results.Variables() {
+			if owner := c.storageAliases.owners[result]; owner != nil {
+				c.reportProtected(statement, owner, "domainconstruct.mutable-exposure", "return", "mutable-contents",
+					"do not expose mutable contents of "+owner.name+" through result "+result.Name())
+			}
+		}
+		return
+	}
+	for _, result := range statement.Results {
+		c.checkReturnedStorage(result, ancestors)
+	}
+	c.checkTransfers(statement.Results, results.Len(), func(index int) types.Type {
+		return results.At(index).Type()
+	}, ancestors)
+}
+
 func (c *checker) checkReturnedStorage(value ast.Expr, ancestors []ast.Node) {
 	if base := c.mutableStorageBase(value); base != nil {
 		if p := c.unapprovedOwner(base, ancestors); p != nil {

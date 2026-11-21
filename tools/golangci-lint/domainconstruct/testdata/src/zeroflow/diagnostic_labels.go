@@ -61,5 +61,5 @@ func LabelOperand(valid ID) bool {
 }
 
 func LabelClearNested(values []Request) {
-	clear(values) // want "rule: domainzero[.]invalid-zero"
+	clear(values[:1]) // want "rule: domainzero[.]invalid-zero"
 }

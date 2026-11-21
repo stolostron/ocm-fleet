@@ -160,6 +160,10 @@ func (c *zeroChecker) storageSharedBefore(storage mutationTarget, point flowPoin
 					c.mayReferenceStorage(instruction.Val, storage, before, make(map[ssa.Value]bool)) {
 					return true
 				}
+			case *ssa.MapUpdate:
+				if borrowedMap(instruction.Map) && c.mayReferenceStorage(instruction.Value, storage, before, make(map[ssa.Value]bool)) {
+					return true
+				}
 			}
 		}
 		for _, predecessor := range point.block.Preds {
@@ -167,6 +171,14 @@ func (c *zeroChecker) storageSharedBefore(storage mutationTarget, point flowPoin
 		}
 	}
 	return false
+}
+
+func borrowedMap(value ssa.Value) bool {
+	if load, ok := value.(*ssa.UnOp); ok && load.Op == token.MUL {
+		location, known := addressOf(load.X)
+		return known && borrowedRoot(location.root)
+	}
+	return borrowedRoot(value)
 }
 
 func (c *zeroChecker) filledOnPaths(view collectionView, header, block *ssa.BasicBlock, assignments map[*ssa.Store]bool, use flowPoint, context flowContext, values map[valueVisit]bool, seen map[*ssa.BasicBlock]bool) bool {

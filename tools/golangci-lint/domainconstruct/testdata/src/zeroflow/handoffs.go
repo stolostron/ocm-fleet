@@ -56,6 +56,42 @@ func FillAfterPublishingCall(valid ID, writes chan<- int, ack <-chan struct{}) [
 	return values // want "return may contain an empty zeroflow.ID"
 }
 
+var publishedMap = make(map[int][]ID)
+
+func FillAfterMapPublication(valid ID, writes chan<- int, ack <-chan struct{}) []ID {
+	values := []ID{valid}
+	publishedMap[0] = values
+	for index := range values {
+		values[index] = valid
+		writes <- index
+		<-ack
+	}
+	return values // want "return may contain an empty zeroflow.ID"
+}
+
+func FillAfterBorrowedMapPublication(shared map[int][]ID, valid ID, writes chan<- int, ack <-chan struct{}) []ID {
+	values := []ID{valid}
+	shared[0] = values
+	for index := range values {
+		values[index] = valid
+		writes <- index
+		<-ack
+	}
+	return values // want "return may contain an empty zeroflow.ID"
+}
+
+func FillAfterPrivateMapInsertion(valid ID, writes chan<- int, ack <-chan struct{}) []ID {
+	values := []ID{valid}
+	private := make(map[int][]ID)
+	private[0] = values
+	for index := range values {
+		values[index] = valid
+		writes <- index
+		<-ack
+	}
+	return values
+}
+
 func WaitedForErrorWrite() (ID, error) {
 	var lock sync.Mutex
 	var worker sync.WaitGroup

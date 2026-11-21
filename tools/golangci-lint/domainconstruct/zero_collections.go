@@ -5,6 +5,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"iter"
 	"slices"
 	"strconv"
 
@@ -564,8 +565,9 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 					}
 				case "copy":
 					if destination, ok := c.collectionOf(common.Args[0]); ok && sameStorage(destination.storage, view.storage) {
+						destination = boundedView(destination, context)
 						if source, ok := c.collectionOf(common.Args[1]); ok {
-							destination, source = boundedView(destination, context), boundedView(source, context)
+							source = boundedView(source, context)
 							if destination.dynamicStart || source.dynamicStart {
 								continue
 							}
@@ -584,6 +586,14 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 							if definite && transferred.start < transferred.end {
 								covered = coverRange(covered, transferred.start, transferred.end)
 							}
+						} else {
+							problem, end := c.branchCopyProblem(common.Args[1], destination, view, before, use, context, values, covered, seen)
+							if problem != nil {
+								return problem
+							}
+							if !execution.conditional && end > destination.start {
+								covered = coverRange(covered, destination.start, end)
+							}
 						}
 					}
 				case "append":
@@ -601,9 +611,14 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 			} else {
 				for _, remaining := range uncoveredViews(view, covered) {
 					storage := mutationTarget{remaining.storage, &elementRange{remaining.start, remaining.end}}
-					if reason := c.decoderInvalidation(call, storage, view.element, before, context); reason != "" {
-						if problem := c.failedResultProblem(view.element, reason, context.use, make(map[types.Type]valueUse)); problem != nil {
-							problem.path = fieldPath(elementLabel(remaining.start), problem.path)
+					if reason, problem := c.decoderInvalidation(call, storage, view.element, before, context); reason != "" {
+						if problem == nil {
+							problem = c.failedResultProblem(view.element, reason, context.use, make(map[types.Type]valueUse))
+							if problem != nil {
+								problem.path = fieldPath(elementLabel(remaining.start), problem.path)
+							}
+						}
+						if problem != nil {
 							detail := " may leave partially decoded collection elements without checked success"
 							if reason == reasonInputMayBeZero {
 								detail = " decodes into collection storage without establishing its domain contract"
@@ -699,16 +714,85 @@ func copyCoversView(destination, source, view collectionView) bool {
 	return ok && builtin.Name() == "len" && (destination.value == view.value || sameLength(destination.length, view.length))
 }
 
+// A direct branch merge can select different backing storage and lengths. Only
+// the prefix written by every feasible source replaces the earlier contents.
+func (c *zeroChecker) branchCopyProblem(value ssa.Value, destination, view collectionView, point, use flowPoint, context flowContext,
+	values map[valueVisit]bool, covered []elementRange, seen map[collectionVisit]bool) (*zeroProblem, int64) {
+	if destination.dynamicStart || destination.end < 0 {
+		return nil, destination.start
+	}
+	end, feasible := destination.end, false
+	for source, edge := range c.branchCopySources(value, point, context) {
+		feasible = true
+		if source.dynamicStart || source.end < 0 {
+			end = destination.start
+			continue
+		}
+		writeEnd := destination.start + min(destination.size(), source.size())
+		transferred := intersectView(view, destination.start, writeEnd)
+		if problem := c.copiedCollectionProblem(source, transferred, destination.start, point, use, edge, values, covered, seen); problem != nil {
+			return problem.uncertain(), destination.start
+		}
+		end = min(end, writeEnd)
+	}
+	if !feasible || c.work.exhausted() {
+		return nil, destination.start
+	}
+	return nil, end
+}
+
+func (c *zeroChecker) branchCopySources(value ssa.Value, point flowPoint, context flowContext) iter.Seq2[collectionView, flowContext] {
+	return func(yield func(collectionView, flowContext) bool) {
+		phi, ok := value.(*ssa.Phi)
+		if !ok || phi.Block() != point.block || len(phi.Edges) != 2 || slices.ContainsFunc(phi.Block().Preds, phi.Block().Dominates) {
+			return
+		}
+		for index, incoming := range phi.Edges {
+			if !c.work.take() {
+				return
+			}
+			edge := c.edgeContext(context, phi.Block(), index)
+			if !edge.possible {
+				continue
+			}
+			source, known := c.collectionOf(incoming)
+			if known {
+				source = boundedView(source, edge)
+			} else {
+				source.end = -1
+			}
+			if !yield(source, edge) {
+				return
+			}
+		}
+	}
+}
+
 // Read a copied field in its source slot at the copy. Observe any storage it
-// references at use, when the copied value is consumed.
+// references at use, when the copied or appended value is consumed.
 func (c *zeroChecker) collectionWriteProblem(execution executedCall, location address, t types.Type, use flowPoint,
 	values map[valueVisit]bool, seen map[memoryVisit]bool) (problem *zeroProblem, definite, overlaps bool) {
 	common := execution.call.Common()
 	builtin, ok := common.Value.(*ssa.Builtin)
-	if !ok || builtin.Name() != "clear" && builtin.Name() != "copy" {
+	if !ok {
 		return nil, false, false
 	}
-	destination, ok := c.collectionOf(common.Args[0])
+	var destination, source collectionView
+	switch builtin.Name() {
+	case "clear", "copy":
+		destination, ok = c.collectionOf(common.Args[0])
+	case "append":
+		destination, source, ok = c.appendViews(common)
+		if !ok || destination.end+source.size() > destination.capEnd {
+			return nil, false, false
+		}
+		destination.start = destination.end
+		destination.end += source.size()
+		// The append extent is exact and differs from the original length.
+		destination.length = nil
+	default:
+		return nil, false, false
+	}
 	base := len(destination.storage.path)
 	if !ok || destination.storage.root != location.root || len(location.path) <= base || !pathPrefix(location.path, destination.storage.path) {
 		return nil, false, false
@@ -730,25 +814,59 @@ func (c *zeroChecker) collectionWriteProblem(execution executedCall, location ad
 		return problem.step("source", execution.call.Pos(), "clear sets collection elements to zero"), definite, true
 	}
 
-	source, ok := c.collectionOf(common.Args[1])
-	if !ok {
-		return nil, false, false
+	if builtin.Name() == "copy" {
+		source, ok = c.collectionOf(common.Args[1])
+		if !ok {
+			problem, covered, overlaps := c.branchCopyFieldProblem(common.Args[1], destination, location, t, execution, use, values, seen)
+			return problem, definite && covered, overlaps
+		}
 	}
 	source = boundedView(source, context)
-	if destination.dynamicStart || source.dynamicStart {
+	problem, overlaps = c.copiedFieldProblem(source, destination, location, t, execution, use, values, seen)
+	return problem, definite && source.end >= 0 && overlaps && !c.work.exhausted(), overlaps
+}
+
+func (c *zeroChecker) branchCopyFieldProblem(value ssa.Value, destination collectionView, location address, t types.Type, execution executedCall,
+	use flowPoint, values map[valueVisit]bool, seen map[memoryVisit]bool) (problem *zeroProblem, covered, overlaps bool) {
+	if destination.dynamicStart || destination.end < 0 {
 		return nil, false, false
 	}
+	covered = true
+	for source, edge := range c.branchCopySources(value, execution.before, execution.context) {
+		if source.dynamicStart || source.end < 0 {
+			covered = false
+			continue
+		}
+		branch := execution
+		branch.context = edge
+		problem, written := c.copiedFieldProblem(source, destination, location, t, branch, use, values, seen)
+		if problem != nil {
+			return problem, false, true
+		}
+		covered = covered && written
+		overlaps = overlaps || written
+	}
+	return nil, covered && overlaps && !c.work.exhausted(), overlaps
+}
+
+func (c *zeroChecker) copiedFieldProblem(source, destination collectionView, location address, t types.Type, execution executedCall,
+	use flowPoint, values map[valueVisit]bool, seen map[memoryVisit]bool) (*zeroProblem, bool) {
+	if destination.dynamicStart || source.dynamicStart {
+		return nil, false
+	}
+	base := len(destination.storage.path)
+	index := int64(location.path[base])
 	offset := source.start + index - destination.start
-	end = minEnd(source.end, source.capEnd)
+	end := minEnd(source.end, source.capEnd)
 	if end >= 0 && offset >= end {
-		return nil, false, false
+		return nil, false
 	}
 	sourcePath := append(slices.Clone(source.storage.path), int(offset))
 	source.storage.path = append(sourcePath, location.path[base+1:]...)
-	before := execution.before
-	problem = c.memoryAtProblem(source.storage, t, before, use, context, values, seen).
-		step("assignment", execution.call.Pos(), "copy collection field")
-	return problem, definite && source.end >= 0 && !c.work.exhausted(), true
+	operation := execution.call.Common().Value.(*ssa.Builtin).Name()
+	problem := c.memoryAtProblem(source.storage, t, execution.before, use, execution.context, values, seen).
+		step("assignment", execution.call.Pos(), operation+" collection field")
+	return problem, true
 }
 
 func (c *zeroChecker) copiedCollectionProblem(source, destination collectionView, start int64, point, use flowPoint, context flowContext,

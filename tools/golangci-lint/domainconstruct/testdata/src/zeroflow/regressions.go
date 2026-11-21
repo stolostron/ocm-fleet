@@ -310,7 +310,7 @@ func UnrelatedCallDoesNotInitialize(invoke func(), keep func(*callbackSpec)) {
 	var captured Request
 	spec := &callbackSpec{start: func(request Request) { captured = request }}
 	invoke()
-	Accept(captured.ID) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\""
+	Accept(captured.ID) // want "(?s)rule: domainzero[.]invalid-zero; certainty: known; reason: zero-initialized-storage.*type: \"zeroflow[.]ID\""
 	keep(spec)
 }
 

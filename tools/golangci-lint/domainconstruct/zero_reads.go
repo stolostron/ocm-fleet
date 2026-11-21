@@ -175,7 +175,7 @@ func (c *zeroChecker) storageUnchanged(storage address, start, end flowPoint, se
 					if !known {
 						return false
 					}
-					if c.collectionMayReference(view, mutationTarget{address: storage}, point, make(map[ssa.Value]bool), make(map[memoryVisit]bool)) {
+					if c.collectionMayReference(view, mutationTarget{address: storage}, point, make(map[ssa.Value]bool)) {
 						return false
 					}
 				}

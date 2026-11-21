@@ -137,5 +137,8 @@ func run(keep func(*string), invoke func(...any), mark func(int), flags []bool) 
 	if raw == nil || invoke == nil {
 		t.Fatal("fixture did not retain output storage and its invocation")
 	}
-	return newFlowChecker(function), raw, invoke
+	checker := newFlowChecker(function)
+	work := workBudget(maxFlowWork)
+	checker.work = &work
+	return checker, raw, invoke
 }

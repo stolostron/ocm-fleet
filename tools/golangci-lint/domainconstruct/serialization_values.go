@@ -119,6 +119,9 @@ func (c *serializationChecker) checkBoxedValue(value ssa.Value, operand encoding
 			if _, pointer := value.X.Type().Underlying().(*types.Pointer); !pointer {
 				return // Default decoding replaces a non-pointer interface payload.
 			}
+			if literal, ok := value.X.(*ssa.Const); ok && literal.IsNil() {
+				return // Default decoding also replaces a boxed nil pointer.
+			}
 		}
 		if operand.use.json() {
 			operand.use = jsonFields // The dynamic value inside an interface is unaddressable.
@@ -185,9 +188,6 @@ func (c *serializationChecker) checkBoxedStorage(location address, t types.Type,
 	switch shape := t.Underlying().(type) {
 	case *types.Struct:
 		for selected := range c.jsonShape.fields(t, operand.use.json()) {
-			if operand.codec != "json" && !selected.field.Exported() {
-				continue
-			}
 			if child, read, known := storage.fieldStorage(location, shape, selected, point, use); known {
 				field := operand
 				field.path = fieldPath(operand.path, selected.path)

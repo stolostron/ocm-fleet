@@ -77,6 +77,9 @@ func literalZeroConversion(source valueSource, target types.Type) bool {
 	if source.Kind != sourceZero {
 		return false
 	}
+	if _, pointer := target.Underlying().(*types.Pointer); pointer {
+		return source.ZeroKind == constant.Unknown
+	}
 	if basic, ok := target.Underlying().(*types.Basic); ok {
 		switch source.ZeroKind {
 		case constant.String:

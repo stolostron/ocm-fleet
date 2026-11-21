@@ -171,10 +171,26 @@ func UseStatusAfterPointerMethod(use func(ID)) {
 
 func fromRune[T ~string](value rune) T   { return T(value) }
 func fromText[T ~string](value string) T { return T(value) }
+func fromBytes[T ~string](value []byte) T { return T(value) }
+func fromRunes[T ~string](value []rune) T { return T(value) }
 
 func UseConvertedSource(use func(ID)) {
 	use(fromRune[ID](0))
 	use(fromText[ID]("")) // want "argument is an empty zeroflow.ID"
+	use(fromBytes[ID]([]byte{})) // want "argument is an empty zeroflow.ID"
+	use(fromBytes[ID]([]byte{'x'}))
+	use(fromRunes[ID]([]rune{})) // want "argument is an empty zeroflow.ID"
+	use(fromRunes[ID](nil)) // want "argument is an empty zeroflow.ID"
+	use(fromRunes[ID]([]rune{'x'}))
+}
+
+func makeSlice[T any](length int) []T { return make([]T, length) }
+func newEmptySlice[T any]() []T      { return makeSlice[T](0) }
+func newOneElementSlice[T any]() []T { return makeSlice[T](1) }
+
+func UseForwardedSliceLength(use func([]ID)) {
+	use(newEmptySlice[ID]())
+	use(newOneElementSlice[ID]()) // want "argument contains an empty zeroflow.ID"
 }
 
 func EmptyBoxedString() ID {

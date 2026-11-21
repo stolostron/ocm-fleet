@@ -34,6 +34,22 @@ func ReturnLocalAlias(record Record) []int {
 	return items // want "do not expose mutable contents of protection.Record"
 }
 
+func ReturnNamedSliceAlias(record Record) (items []int) {
+	items = record.items
+	return // want "do not expose mutable contents of protection.Record"
+}
+
+func ReturnNamedMapAlias(record Record) (keys map[int]int) {
+	keys = record.keys
+	return // want "do not expose mutable contents of protection.Record"
+}
+
+func ReturnReboundAlias(record Record) (items []int, keys map[int]int) {
+	items, keys = record.items, record.keys
+	items, keys = slices.Clone(items), maps.Clone(keys)
+	return
+}
+
 func ReturnInaccessibleAlias(record Record) []int {
 	items := record.items[:0:0]
 	return items

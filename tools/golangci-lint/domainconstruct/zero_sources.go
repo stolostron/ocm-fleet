@@ -92,9 +92,13 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 	case sourceConversion:
 		if len(source.Values) != 0 {
 			operand := source.Values[0]
-			if basic, ok := t.Underlying().(*types.Basic); ok && basic.Info()&types.IsString != 0 &&
-				integerSource(operand, &call.Call, path) {
-				return nil // An integer conversion always produces a one-rune string.
+			if basic, ok := t.Underlying().(*types.Basic); ok && basic.Info()&types.IsString != 0 {
+				if integerSource(operand, &call.Call, path) {
+					return nil // An integer conversion always produces a one-rune string.
+				}
+				if len(path) == 0 && c.emptyStringSliceSource(operand, &call.Call, context) {
+					return c.zeroType(t, "", context.use).step("conversion", call.Pos(), "converting an empty slice produces an empty string")
+				}
 			}
 			if problem, handled := c.numericConversionProblem(operand, &call.Call, path, t, context.use); handled {
 				return problem
@@ -120,6 +124,26 @@ func integerSource(source valueSource, call *ssa.CallCommon, path []int) bool {
 		}
 	}
 	return false
+}
+
+func (c *zeroChecker) emptyStringSliceSource(source valueSource, call *ssa.CallCommon, context flowContext) bool {
+	if source.Kind != sourceParameter || len(source.Path) != 0 {
+		return false
+	}
+	argument := contractArgument(call, source.Parameter)
+	if argument == nil {
+		return false
+	}
+	slice, ok := collectionOperandShape(argument.Type()).(*types.Slice)
+	if !ok {
+		return false
+	}
+	element, basic := slice.Elem().Underlying().(*types.Basic)
+	if !basic || element.Kind() != types.Byte && element.Kind() != types.Rune {
+		return false
+	}
+	view, known := c.collectionOf(argument)
+	return known && boundedView(view, context).size() == 0
 }
 
 func (c *zeroChecker) numericConversionProblem(source valueSource, call *ssa.CallCommon, path []int, target types.Type, use valueUse) (*zeroProblem, bool) {
@@ -208,11 +232,27 @@ func (c *zeroChecker) sliceSourceView(source valueSource, call *ssa.Call, value 
 	if source.Kind != sourceSlice {
 		return collectionView{}, false
 	}
+	length := source.Length
+	if length.Constant < 0 && length.Parameter < 0 {
+		// The header fact can still retain the length of a forwarded allocation.
+		if fact := c.callContract(&call.Call); fact != nil {
+			result := 0
+			if extract, ok := value.(*ssa.Extract); ok {
+				result = extract.Index
+			}
+			for _, bound := range fact.Lengths {
+				if bound.Result == result {
+					length = bound.Length
+					break
+				}
+			}
+		}
+	}
 	view.capEnd = -1
-	view.end = source.Length.Constant
-	if source.Length.Parameter >= 0 {
-		argument := contractArgument(&call.Call, source.Length.Parameter)
-		if source.Length.FromLen {
+	view.end = length.Constant
+	if length.Parameter >= 0 {
+		argument := contractArgument(&call.Call, length.Parameter)
+		if length.FromLen {
 			if original, ok := c.collectionOf(argument); ok {
 				view.end, view.length = original.size(), original.length
 				view.lengthBase = original.lengthBase - original.start

@@ -92,6 +92,33 @@ func UseLoopBoxStatus(value ID, use func(any)) {
 	use(payload)
 }
 
+func rangeAssignedBox() (any, error) {
+	var payload any
+	for _, payload = range []ID{""} {
+		return payload, errors.New("failure")
+	}
+	return nil, errors.New("empty input")
+}
+
+func rangePreservesInitialBox(keys []string) (any, error) {
+	var payload any = ID("")
+	for _, payload = range keys {
+	}
+	return payload, errors.New("failure")
+}
+
+func UseRangeAssignedBox(use func(any)) {
+	payload, _ := rangeAssignedBox()
+	use(payload) // want "argument may be an empty zeroflow.ID"
+	payload, _ = rangePreservesInitialBox(nil)
+	use(payload) // want "argument may be an empty zeroflow.ID"
+	payload, err := rangeAssignedBox()
+	if err != nil {
+		return
+	}
+	use(payload)
+}
+
 type boxedIDs []ID
 
 func invalidBoxedIDs() (any, error) { return boxedIDs{""}, errors.New("failure") }

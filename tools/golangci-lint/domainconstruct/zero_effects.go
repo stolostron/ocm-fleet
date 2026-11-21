@@ -160,7 +160,7 @@ func (c *zeroChecker) mayReferenceStorage(value ssa.Value, storage mutationTarge
 	case *ssa.Slice:
 		if view, ok := c.collectionOf(value); ok {
 			view.end = view.capEnd
-			return c.collectionMayReference(view, storage, point, seen, make(map[memoryVisit]bool))
+			return c.collectionMayReference(view, storage, point, seen)
 		}
 		return c.mayReferenceStorage(value.X, storage, point, seen)
 	case *ssa.Field:
@@ -191,7 +191,7 @@ func (c *zeroChecker) mayReferenceStorage(value ssa.Value, storage mutationTarge
 		if _, slice := value.Type().Underlying().(*types.Slice); slice {
 			view.end = view.capEnd
 		}
-		if c.collectionMayReference(view, storage, point, seen, make(map[memoryVisit]bool)) {
+		if c.collectionMayReference(view, storage, point, seen) {
 			return true
 		}
 	}
@@ -209,7 +209,7 @@ func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage
 	}
 	if array, ok := t.Underlying().(*types.Array); ok {
 		view := collectionView{storage: location, element: array.Elem(), end: array.Len()}
-		return c.collectionMayReferenceAt(view, storage, point, use, seen, make(map[memoryVisit]bool))
+		return c.collectionMayReferenceAt(view, storage, point, use, seen, make(map[collectionVisit]bool))
 	}
 	if structure, ok := t.Underlying().(*types.Struct); ok {
 		for index := range structure.NumFields() {
@@ -245,13 +245,13 @@ func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage
 
 // Walk stored elements rather than enumerating an array's declared length.
 // Variadic calls and append commonly package output pointers as []any.
-func (c *zeroChecker) collectionMayReference(view collectionView, storage mutationTarget, point flowPoint, values map[ssa.Value]bool, seen map[memoryVisit]bool) bool {
-	return c.collectionMayReferenceAt(view, storage, point, point, values, seen)
+func (c *zeroChecker) collectionMayReference(view collectionView, storage mutationTarget, point flowPoint, values map[ssa.Value]bool) bool {
+	return c.collectionMayReferenceAt(view, storage, point, point, values, make(map[collectionVisit]bool))
 }
 
 // Walk backwards to find the stored values, then follow their references at
 // the original use. An older slice header can still reach newer contents.
-func (c *zeroChecker) collectionMayReferenceAt(view collectionView, storage mutationTarget, point, use flowPoint, values map[ssa.Value]bool, seen map[memoryVisit]bool) bool {
+func (c *zeroChecker) collectionMayReferenceAt(view collectionView, storage mutationTarget, point, use flowPoint, values map[ssa.Value]bool, seen map[collectionVisit]bool) bool {
 	if view.size() == 0 {
 		return false
 	}
@@ -274,7 +274,7 @@ func (c *zeroChecker) collectionMayReferenceAt(view collectionView, storage muta
 			}
 		}
 	}
-	visit := memoryVisit{point: point, root: view.storage.root, path: pathKey(view.storage.path)}
+	visit := collectionVisit{point: point, root: view.storage.root, path: pathKey(view.storage.path), start: view.start, end: view.end}
 	if seen[visit] {
 		return false
 	}
@@ -283,7 +283,20 @@ func (c *zeroChecker) collectionMayReferenceAt(view collectionView, storage muta
 	// return would revisit every path through a sequence of control-flow joins.
 	written := make(map[string]bool)
 	for index := point.index - 1; index >= 0; index-- {
-		store, ok := point.block.Instrs[index].(*ssa.Store)
+		instruction := point.block.Instrs[index]
+		if call, ok := instruction.(*ssa.Call); ok {
+			common := call.Common()
+			if builtin, ok := common.Value.(*ssa.Builtin); ok && builtin.Name() == "copy" {
+				if !c.work.take() {
+					return true
+				}
+				if source, known := c.copiedReferenceSource(common, view); known &&
+					c.collectionMayReferenceAt(source, storage, flowPoint{point.block, index}, use, values, seen) {
+					return true
+				}
+			}
+		}
+		store, ok := instruction.(*ssa.Store)
 		if !ok {
 			continue
 		}
@@ -314,6 +327,24 @@ func (c *zeroChecker) collectionMayReferenceAt(view collectionView, storage muta
 		}
 	}
 	return false
+}
+
+func (c *zeroChecker) copiedReferenceSource(call *ssa.CallCommon, observed collectionView) (collectionView, bool) {
+	destination, known := c.builtinWriteView(call)
+	if !known || destination.dynamicStart || destination.end < 0 || !sameStorage(destination.storage, observed.storage) {
+		return collectionView{}, false
+	}
+	overlap := intersectView(observed, destination.start, destination.end)
+	if overlap.size() == 0 {
+		return collectionView{}, false
+	}
+	source, known := c.collectionOf(call.Args[1])
+	if !known || source.dynamicStart || source.end < 0 {
+		return collectionView{}, false
+	}
+	source.start += overlap.start - destination.start
+	source.end = source.start + overlap.size()
+	return source, true
 }
 
 func (storage mutationTarget) overlaps(target address) bool {

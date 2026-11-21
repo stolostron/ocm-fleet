@@ -26,6 +26,95 @@ func SuccessfulRawDecodeCanInvalidateElement(valid encodingvalues.ID) []encoding
 	return values // want "return may contain an empty encodingvalues.ID"
 }
 
+func SuccessfulRawDecodeCanInvalidateDynamicElement(valid encodingvalues.ID, index int) []encodingvalues.ID {
+	values := []encodingvalues.ID{valid, valid}
+	if err := json.Unmarshal([]byte(`""`), (*string)(&values[index])); err != nil {
+		return nil
+	}
+	return values[:1] // want "return may contain an empty encodingvalues.ID"
+}
+
+func DynamicNativeDecodeCannotProveInitialization(data []byte, index int) {
+	values := make([]encodingvalues.ID, 2)
+	if err := json.Unmarshal(data, &values[index]); err != nil {
+		return
+	}
+	consume(values[0]) // want "argument .* an empty encodingvalues.ID"
+}
+
+type decodeRow struct {
+	Other encodingvalues.ID
+	ID    encodingvalues.ID
+	Label string
+}
+
+func SuccessfulRawDecodeCanInvalidateElementField(valid encodingvalues.ID) []decodeRow {
+	rows := []decodeRow{{Other: valid, ID: valid}, {Other: valid, ID: valid}}
+	if err := json.Unmarshal([]byte(`""`), (*string)(&rows[1].ID)); err != nil {
+		return nil
+	}
+	consume(rows[1].Other)
+	return rows // want "return may contain an empty encodingvalues.ID at path \\[1\\][.]ID"
+}
+
+func SuccessfulDecodeKeepsUnrelatedElementField(valid encodingvalues.ID, data []byte) []decodeRow {
+	rows := []decodeRow{{Other: valid, ID: valid}}
+	if err := json.Unmarshal(data, &rows[0].Label); err != nil {
+		return nil
+	}
+	if err := json.Unmarshal(data, &rows[0].ID); err != nil {
+		return nil
+	}
+	return rows
+}
+
+func ReadFieldAfterDynamicDecode(valid encodingvalues.ID, index int) {
+	rows := []decodeRow{{Other: valid, ID: valid}, {Other: valid, ID: valid}}
+	if err := json.Unmarshal([]byte(`""`), (*string)(&rows[index].ID)); err != nil { // want "conversion may use an empty encodingvalues.ID"
+		return
+	}
+	consume(rows[0].ID) // want "argument may be an empty encodingvalues.ID"
+	consume(rows[0].Other)
+}
+
+func EncodingKeepsIgnoringOmittedElementField(valid encodingvalues.ID) {
+	rows := []struct {
+		Hidden encodingvalues.ID `json:"-"`
+		Other  encodingvalues.ID
+	}{{Hidden: valid, Other: valid}}
+	if err := json.Unmarshal([]byte(`""`), (*string)(&rows[0].Hidden)); err != nil {
+		return
+	}
+	json.Marshal(rows)
+}
+
+func SuccessfulDecodeThroughPointerSlot(valid encodingvalues.ID) (encodingvalues.ID, error) {
+	id := valid
+	raw := (*string)(&id)
+	if err := json.Unmarshal([]byte(`""`), &raw); err != nil {
+		return "", err
+	}
+	return id, nil // want "return may produce an empty encodingvalues.ID"
+}
+
+func SuccessfulDecodeThroughDisjointPointerSlot(valid encodingvalues.ID) (encodingvalues.ID, error) {
+	id, other := valid, valid
+	raw := (*string)(&other)
+	if err := json.Unmarshal([]byte(`""`), &raw); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func NativePointerSlotDecodeCanLeavePointeeZero(data []byte) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	pointer := &id
+	if err := json.Unmarshal(data, &pointer); err != nil {
+		return "", err
+	}
+	return id, nil // want "return .* an empty encodingvalues.ID"
+}
+
 func SuccessfulDecodeKeepsDisjointElement(valid encodingvalues.ID) []encodingvalues.ID {
 	values := []encodingvalues.ID{valid, valid}
 	if err := json.Unmarshal([]byte(`""`), (*string)(&values[0])); err != nil {

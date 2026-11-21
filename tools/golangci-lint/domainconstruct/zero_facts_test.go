@@ -138,15 +138,37 @@ func BenchmarkBooleanEqualityRefinement(b *testing.B) {
 	}
 	source.WriteString(") bool { if first == second { return first }; return second }")
 	function := buildFlowFunction(b, source.String())
-	c := newFlowChecker(function)
-	context := flowContext{facts: make(map[ssa.Value]truth), possible: true}
-	for _, parameter := range function.Params[2:] {
-		c.assume(&context, parameter, notZero)
-	}
-	b.ReportAllocs()
-	for b.Loop() {
-		c.refineBooleanEqualities(&context, function)
-	}
+	b.Run("unassumed", func(b *testing.B) {
+		c := newFlowChecker(function)
+		context := flowContext{facts: make(map[ssa.Value]truth), possible: true}
+		for _, parameter := range function.Params[2:] {
+			c.assume(&context, parameter, notZero)
+		}
+		b.ReportAllocs()
+		for b.Loop() {
+			c.refineBooleanEqualities(&context, function)
+		}
+	})
+	b.Run("active", func(b *testing.B) {
+		c := newFlowChecker(function)
+		first, second := function.Params[0], function.Params[1]
+		comparisons := c.booleanEqualities(function)
+		if len(comparisons) != 1 {
+			b.Fatalf("fixture has %d boolean comparisons, want one", len(comparisons))
+		}
+		context := flowContext{facts: map[ssa.Value]truth{comparisons[0]: notZero, first: notZero}, possible: true}
+		for _, parameter := range function.Params[2:] {
+			c.assume(&context, parameter, notZero)
+		}
+		b.ReportAllocs()
+		for b.Loop() {
+			delete(context.facts, second)
+			c.refineBooleanEqualities(&context, function)
+			if context.facts[second] != notZero {
+				b.Fatal("active equality did not refine the second operand")
+			}
+		}
+	})
 }
 
 func BenchmarkMemoryAcrossJoins(b *testing.B) {

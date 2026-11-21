@@ -565,7 +565,7 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 		if store, ok := instruction.(*ssa.Store); ok {
 			destination, known := c.collectionAddress(store.Addr)
 			if known && destination.root == location.root {
-				if pathPrefix(location.path, destination.path) {
+				if pathPrefix(location.path, destination.path) && !slices.Contains(destination.path, -1) {
 					remaining := location.path[len(destination.path):]
 					problem := c.problem(store.Val, remaining, t, use, context, values)
 					if len(fields.paths) != 0 {
@@ -582,6 +582,14 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 						return nil
 					}
 					return problem.step("assignment", store.Pos(), "assign to "+c.storageName(location.root, location.path))
+				}
+				if len(destination.path) <= len(location.path) && storagePathsOverlap(location.path, destination.path) {
+					remaining := location.path[len(destination.path):]
+					if problem := c.problem(store.Val, remaining, t, use, context, values); problem != nil {
+						return problem.uncertain().step("assignment", store.Pos(), "assign to a possibly overlapping element")
+					}
+					// A dynamic store can also leave the earlier value intact.
+					return c.memoryHistoryProblem(location, t, before, use, context, values, seen, fields).uncertain()
 				}
 				// A populated field makes the containing protected value nonzero.
 				// Its constructor remains responsible for all other invariants.
@@ -638,7 +646,7 @@ func (c *zeroChecker) memoryHistoryProblem(location address, t types.Type, point
 			if !conditional && c.decoderInitializes(call, location, t, before, context) {
 				return nil
 			}
-			if reason := c.decoderInvalidation(call, mutationTarget{address: location}, t, before, context); reason != "" {
+			if reason, _ := c.decoderInvalidation(call, mutationTarget{address: location}, t, before, context); reason != "" {
 				problem := c.failedResultProblem(t, reason, context.use, make(map[types.Type]valueUse))
 				if problem == nil {
 					problem = c.memoryHistoryProblem(location, t, before, use, context, values, seen, fields).uncertain()

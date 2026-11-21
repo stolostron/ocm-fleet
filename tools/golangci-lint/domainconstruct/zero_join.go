@@ -119,7 +119,7 @@ func (c *zeroChecker) joinedViewTruth(view collectionView, point flowPoint, cont
 					target := mutationTarget{view.storage, &elementRange{view.start, view.end}}
 					before := flowPoint{point.block, index}
 					if destination, known := c.builtinWriteView(call.Common()); known {
-						if c.collectionMayReference(destination, target, before, make(map[ssa.Value]bool), make(map[memoryVisit]bool)) {
+						if c.collectionMayReference(destination, target, before, make(map[ssa.Value]bool)) {
 							return unknown
 						}
 					} else if c.mayReferenceStorage(call.Common().Args[0], target, before, make(map[ssa.Value]bool)) {

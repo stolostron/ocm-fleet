@@ -58,6 +58,13 @@ func (operand encodingOperand) forType(t types.Type) encodingOperand {
 	if operand.operation == "encode" {
 		operand.use = jsonUseForType(t, operand.use)
 	}
+	if operand.defaultJSONDecode && operand.use.json() {
+		_, pointer := t.Underlying().(*types.Pointer)
+		if method := codecMethod(t, "UnmarshalJSON", !pointer); method != nil && validDecoderSignature(method.Type().(*types.Signature), "json") {
+			// The hook owns field selection and can inspect existing payloads.
+			operand.use, operand.defaultJSONDecode = wholeValue, false
+		}
+	}
 	return operand
 }
 
@@ -314,9 +321,6 @@ func (c *serializationChecker) encodingProblem(t types.Type, operand encodingOpe
 			return nil
 		}
 		for selected := range c.jsonShape.fields(t, operand.use.json()) {
-			if codec != "json" && !selected.field.Exported() {
-				continue
-			}
 			if problem := c.promotedCodecProblem(shape, selected, codec); problem != nil {
 				return problem
 			}

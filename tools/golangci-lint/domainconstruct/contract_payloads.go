@@ -185,6 +185,27 @@ func (b *contractBuilder) inferPayloads(object *types.Func, declaration *ast.Fun
 					environment[update.variable] = mergePayloads(slices.Clone(environment[update.variable]), update.values)
 				}
 			}
+		case *ast.RangeStmt:
+			if node.Tok != token.ASSIGN {
+				break
+			}
+			key, value := rangeTypes(b.pass.TypesInfo.TypeOf(node.X))
+			for _, binding := range []struct {
+				target ast.Expr
+				source types.Type
+			}{{node.Key, key}, {node.Value, value}} {
+				identifier, ok := ast.Unparen(binding.target).(*ast.Ident)
+				if !ok || identifier.Name == "_" {
+					continue
+				}
+				variable, _ := b.pass.TypesInfo.ObjectOf(identifier).(*types.Var)
+				if variable == nil || !interfaceValueType(variable.Type()) {
+					continue
+				}
+				delete(bindings, variable)
+				// The loop may be empty, so keep the incoming payloads.
+				environment[variable] = mergePayloads(slices.Clone(environment[variable]), concretePayload(binding.source))
+			}
 		case *ast.ReturnStmt:
 			status := unknown
 			if !mayChangeStatus {
@@ -311,11 +332,8 @@ func (b *contractBuilder) payloadExpression(expression ast.Expr, result int, env
 			return nil // A boxed nil pointer does not contain a pointee.
 		}
 	}
-	if _, boxed := t.Underlying().(*types.Interface); !boxed {
-		work := workBudget(maxInferenceWork)
-		if described := describePayload(t, make(map[types.Type]bool), 0, false, &work); described.Kind != payloadUnknown {
-			return []payloadType{described}
-		}
+	if described := concretePayload(t); len(described) != 0 {
+		return described
 	}
 	if variable, ok := expressionObject(b.pass.TypesInfo, expression).(*types.Var); ok {
 		return environment[variable]
@@ -336,6 +354,20 @@ func (b *contractBuilder) payloadExpression(expression ast.Expr, result int, env
 				}
 			}
 		}
+	}
+	return nil
+}
+
+func concretePayload(t types.Type) []payloadType {
+	if t == nil {
+		return nil
+	}
+	if _, boxed := t.Underlying().(*types.Interface); boxed {
+		return nil
+	}
+	work := workBudget(maxInferenceWork)
+	if described := describePayload(t, make(map[types.Type]bool), 0, false, &work); described.Kind != payloadUnknown {
+		return []payloadType{described}
 	}
 	return nil
 }

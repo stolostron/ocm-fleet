@@ -165,6 +165,8 @@ func runContracts(pass *analysis.Pass) (any, error) {
 				if node.Op == token.AND {
 					b.recordWrite(node.X)
 				}
+			case *ast.SelectorExpr:
+				b.recordVariableWrite(implicitlyAddressedVariable(b.pass.TypesInfo, node), node.Pos())
 			}
 			return true
 		})
@@ -295,9 +297,14 @@ func (b *contractBuilder) inferContracts() {
 }
 
 func (b *contractBuilder) recordWrite(expression ast.Expr) {
-	if object, ok := expressionObject(b.pass.TypesInfo, expression).(*types.Var); ok &&
-		object.Pkg() != nil && object.Parent() == object.Pkg().Scope() && isErrorType(object.Type()) {
-		b.set.writes[object] = append(b.set.writes[object], expression.Pos())
+	if object, ok := expressionObject(b.pass.TypesInfo, expression).(*types.Var); ok {
+		b.recordVariableWrite(object, expression.Pos())
+	}
+}
+
+func (b *contractBuilder) recordVariableWrite(object *types.Var, pos token.Pos) {
+	if object != nil && object.Pkg() != nil && object.Parent() == object.Pkg().Scope() && isErrorType(object.Type()) {
+		b.set.writes[object] = append(b.set.writes[object], pos)
 	}
 }
 

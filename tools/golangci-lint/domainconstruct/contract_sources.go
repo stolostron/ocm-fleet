@@ -33,13 +33,14 @@ type resultSource struct {
 }
 
 type valueSource struct {
-	Kind           sourceKind
-	Parameter      int // -1 is the receiver.
-	Path           []int
-	Values         []valueSource
-	Length         sourceLength
-	ZeroKind       constant.Kind
-	ConversionType int // One-based function type parameter of the target.
+	Kind            sourceKind
+	Parameter       int // -1 is the receiver.
+	Path            []int
+	Values          []valueSource
+	Length          sourceLength
+	ZeroKind        constant.Kind
+	ConversionType  int // One-based function type parameter of the target.
+	PreservesFields bool
 }
 
 type sourceLength struct {
@@ -419,13 +420,16 @@ func (e *sourceEvaluator) call(call *ast.CallExpr, result int, state sourceState
 		return valueSource{}
 	}
 	if e.builder.pass.TypesInfo.Types[call.Fun].IsType() && len(call.Args) == 1 {
-		target := e.builder.pass.TypesInfo.TypeOf(call)
-		if interfaceValueType(target) || types.Identical(target, e.builder.pass.TypesInfo.TypeOf(call.Args[0])) {
+		target, operand := e.builder.pass.TypesInfo.TypeOf(call), e.builder.pass.TypesInfo.TypeOf(call.Args[0])
+		if interfaceValueType(target) || types.Identical(target, operand) {
 			return e.expression(call.Args[0], state)
 		}
+		structure, structTarget := target.Underlying().(*types.Struct)
 		return valueSource{
-			Kind: sourceConversion, Values: []valueSource{e.expression(call.Args[0], state)},
-			ConversionType: declaredTypeParameter(target, e.signature),
+			Kind:            sourceConversion,
+			Values:          []valueSource{e.expression(call.Args[0], state)},
+			ConversionType:  declaredTypeParameter(target, e.signature),
+			PreservesFields: structTarget && types.IdenticalIgnoreTags(structure, operand.Underlying()),
 		}
 	}
 	if builtin, ok := expressionObject(e.builder.pass.TypesInfo, call.Fun).(*types.Builtin); ok {
@@ -515,6 +519,11 @@ func projectSource(source valueSource, path []int) valueSource {
 				return valueSource{}
 			}
 			source = source.Values[field]
+		case sourceConversion:
+			if source.PreservesFields {
+				return projectSource(source.Values[0], path[index:])
+			}
+			return valueSource{}
 		case sourceChoice:
 			projected := make([]valueSource, len(source.Values))
 			for alternative, child := range source.Values {

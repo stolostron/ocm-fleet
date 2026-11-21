@@ -152,18 +152,20 @@ permission from its protected owners. Replacing an existing nested value
 requires permission from its enclosing owners. Directly returning a protected
 map field, slice field, or slice view with accessible backing storage also
 exposes the representation. Straight-line local bindings of a slice or map
-retain that ownership within their block. Rebinding a local to fresh storage
-clears its prior owner. The owner check covers slicing and index writes through
-exact generic pointers to protected arrays. Converting a protected slice to a
-nonempty array pointer exposes the same storage. Appending into reusable
+retain that ownership within their block, including named results at a bare
+return. Rebinding a local to fresh storage clears its prior owner. The owner
+check covers slicing and index writes through exact generic pointers to protected
+arrays. Converting a protected slice to a nonempty array pointer exposes the
+same storage. Appending into reusable
 capacity can modify that storage. A full slice expression forces allocation
 when it leaves less spare capacity than the append needs. Read-only slice
 views are allowed as inputs to `len` and as sources of `copy`.
 Simple generic helpers that convert a raw argument into a protected
 type are checked at their instantiated calls, including imported helpers.
 Retained conversions use their instantiated targets even when the final result
-has another type or is boxed into an interface. The checks include conversions
-returned on a known failure or absence path.
+has another type or is boxed into an interface. Field reads through conversions
+between structs with the same layout retain the original field sources.
+The checks include conversions returned on a known failure or absence path.
 Calls to approved constructors remain ordinary Go calls; the checker does not
 prove their validation logic correct.
 
@@ -255,7 +257,8 @@ still visible. Blank identifiers cannot select a parameter or receiver.
 Encoding inputs are valid-value consumers, so encoding an uninitialized domain
 value still produces a `domainzero` finding. Standard JSON field encoding skips
 an exact `json:"-"` field in a plain envelope. A tag like `json:"-,"` names the
-field `-`. Declared custom boundaries check the whole selected payload.
+field `-`. Declared custom boundaries check the whole selected payload,
+including private fields.
 Types with custom JSON or text encoding hooks retain whole-value checks,
 including when a pointer receiver can supply the hook. A field reached
 through an embedded pointer is addressable even when the outer value is passed
@@ -275,17 +278,22 @@ other destinations cannot overwrite it. Merged destinations can establish that
 proof when they agree on the storage and runtime pointer type. An overlapping
 write through a merged pointer or a helper can invalidate the supplying slot's
 earlier origin. The checker keeps tracking required fields in an ordinary
-envelope. Default JSON decoding replaces a non-pointer interface payload and
-can follow a pointer stored in that slot. The stored pointer is a possible
-write target, since inputs such as `null` can replace the interface instead.
+envelope. A custom `UnmarshalJSON` hook can write fields omitted by default
+JSON decoding, so its destination gets a whole-value codec check. Default
+JSON decoding replaces non-pointer and nil pointer interface payloads. It can
+follow an existing non-nil pointer in an interface or pointer slot. Its pointee
+is a possible write target because inputs such as `null` can replace the slot.
 Default JSON decoding of a base64 string into a slice of protected byte values
 can bypass the element decoder. Use a slice-level decoder that validates the
 decoded values. A short JSON array also zeroes trailing slots in a Go array
 without calling their element decoders. A checked array-level decoder can
 validate that the input supplies every required slot.
 Decoding through a raw representation or a different domain type's codec can
-invalidate an earlier domain value even after the error check. Scanning a
-primitive and converting it to a domain value still requires a constructor.
+invalidate an earlier domain value even after the error check. This includes
+possible overlap at dynamic indices and writes to protected fields of collection
+elements. A dynamic index cannot establish that a specific element was initialized.
+Scanning a primitive and converting it to a domain value still requires a
+constructor.
 
 This is bounded static checking, not whole-program reflection or byte-buffer
 provenance analysis. Opaque interface payloads, indirect function dispatch, and
@@ -551,9 +559,10 @@ Outside a declared absence path, a zero payload requires a provably non-nil erro
 The checker recognizes branch
 conditions, `errors.New`, `fmt.Errorf`, and `errors.Join` when local argument
 contents establish its nilness. It infers non-nil package sentinels from their
-initialization and checks for writes and address escapes; reassigning or exposing
-an imported sentinel's address is a diagnostic. It also infers small error
-wrappers from their bodies, including nil-preserving wrappers, and carries their
+initialization and checks for writes and address escapes, including implicit
+address-taking by pointer methods. Reassigning or exposing an imported sentinel's
+address is a diagnostic. The checker also infers small error wrappers from their
+bodies, including nil-preserving wrappers, and carries their
 contracts across packages. A simple generic error fallback can retain exact
 nilness at instantiation. Boxing the zero of a concrete pointer type produces a
 non-nil error, while the zero of an interface type stays nil. Names such as
@@ -582,6 +591,8 @@ calling a wrapper that might swallow it establishes no such implication.
 An independent error can make a boxed payload subject to the wrapper's
 failure contract. Direct tuple forwarding and unchanged bindings from the
 same call preserve the producer's payload and status relationship.
+Range assignments of concrete values into interface variables retain the
+iteration type and any incoming types that can survive an empty loop.
 Presence checks remain independent. This proof has a bounded path budget and
 does not infer relationships through loop-carried errors or mutable fields;
 an incomplete proof retains the warning.
@@ -597,16 +608,20 @@ edge; a `continue` that skips an assignment or a `break` does not establish that
 contract. A complete fill also requires stable backing storage. Channel and
 recognized synchronization operations can hand control to another owner after
 a view has been published, including through a helper that stores it in a
-global. The same sharing evidence can invalidate earlier writes to collection
-slots, a guarded read, pre-handoff `errors.Join` contents, and an iterator flag's
-earlier initialization. Later writes can reestablish validity in slots they
+global or an insertion into a global or borrowed map. The same sharing evidence
+can invalidate earlier writes to collection slots, a guarded read, pre-handoff
+`errors.Join` contents, and an iterator flag's earlier initialization. Later
+writes can reestablish validity in slots they
 replace. Guarded lengths and exact offsets narrow the backing range affected by
 a copy or clear.
 A slice-to-array pointer exposes the converted prefix. An array value records
 the elements at the copy, including when a later write changes the original
-slice. A copied field is traced to its source at the copy. Storage reached
-through references in copied or loop-filled elements is observed at the use.
-Exact indexed reads check the selected field or converted type. Parsing each
+slice. For a direct branch join with known source lengths, a copy replaces
+earlier values only in the range covered by every feasible source. A field
+written by a copy or by append into spare capacity is traced to its source
+at the write. Storage reached through references in copied or loop-filled
+elements is observed at the use. Exact indexed reads check the selected field
+or converted type, including possible writes from dynamic indices. Parsing each
 element and checking its error before continuing is supported, including
 assigning the result to its slot before checking the error.
 Map writes check both keys and values; missing reads still need `ok` when zero
@@ -622,6 +637,7 @@ Generic helper summaries retain zero factories, `*new(T)`, fresh `new(T)` and
 provides concrete types. Instantiations with valid-zero types remain valid;
 instantiations with required domain values must initialize them before use.
 A known fractional argument can truncate to zero at a generic integer
+conversion. An empty byte or rune slice produces an empty string through a generic
 conversion. Local and imported helpers receive the same checks. A constructor
 may inspect its own representation while building a value. Successful returns
 still require valid results.
