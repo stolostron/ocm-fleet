@@ -15,6 +15,28 @@ func CheckedTypedLookup(values map[string]ID, use func(ID)) {
 	}
 }
 
+func CheckedRawReceive(values <-chan string, use func(ID)) {
+	if raw, ok := <-values; ok {
+		use(ID(raw)) // want "argument may be an empty zeroflow.ID"
+	}
+	if raw, ok := <-values; ok && raw != "" {
+		use(ID(raw))
+	}
+}
+
+func CheckedRawSelect(values <-chan string, use func(ID)) {
+	select {
+	case raw, ok := <-values:
+		if ok {
+			use(ID(raw)) // want "argument may be an empty zeroflow.ID"
+			if raw != "" {
+				use(ID(raw))
+			}
+		}
+	default:
+	}
+}
+
 func StringSliceLengths(raw string, size int, use func(ID)) {
 	use(ID(raw[:0]))        // want "argument is an empty zeroflow.ID"
 	use(ID(raw[size:size])) // want "argument is an empty zeroflow.ID"

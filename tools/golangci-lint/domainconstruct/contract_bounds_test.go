@@ -27,6 +27,9 @@ func TestDescribePayloadBoundsFieldsAtMaximumDepth(t *testing.T) {
 		}
 		payload = payload.Fields[0].Type
 	}
+	if payload.Kind != payloadStruct {
+		t.Fatalf("depth limit discarded the boundary struct: got payload kind %d", payload.Kind)
+	}
 	if len(payload.Fields) != 0 {
 		t.Errorf("emitted %d fields after reaching the depth limit", len(payload.Fields))
 	}

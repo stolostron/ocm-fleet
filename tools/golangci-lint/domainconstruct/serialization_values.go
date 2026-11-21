@@ -153,6 +153,10 @@ func (c *serializationChecker) checkBoxedValue(value ssa.Value, operand encoding
 }
 
 func (c *serializationChecker) checkBoxedCollection(view collectionView, operand encodingOperand, point, use flowPoint, walk *boxedWalk) {
+	if view.size() == 0 {
+		return
+	}
+	end := view.possibleEnd()
 	storage := walk.storage
 	visited := make(map[int]bool)
 	for _, write := range storage.stores[view.storage.root] {
@@ -163,7 +167,7 @@ func (c *serializationChecker) checkBoxedCollection(view collectionView, operand
 			continue
 		}
 		index := write.target.path[len(view.storage.path)]
-		if visited[index] || int64(index) < view.start || view.end >= 0 && int64(index) >= view.end {
+		if visited[index] || int64(index) < view.start || end >= 0 && int64(index) >= end {
 			continue
 		}
 		visited[index] = true

@@ -13,12 +13,12 @@ type storageWrite struct {
 	value  ssa.Value
 }
 
-// Index destinations used by backward storage tracing. Copy destinations
-// also matter because their writes can introduce a new concrete payload.
+// Index destinations used by backward storage tracing. Copy and append can
+// also write a new concrete payload into existing backing storage.
 func (c *zeroChecker) indexStores(functions []*ssa.Function) {
 	c.stores = make(map[ssa.Value][]storageWrite)
 	for _, function := range functions {
-		var copies []*ssa.CallCommon
+		var collectionWrites []*ssa.CallCommon
 		for _, block := range function.Blocks {
 			for _, instruction := range block.Instrs {
 				if value, ok := instruction.(ssa.Value); ok && localStorageRoot(value) {
@@ -27,8 +27,8 @@ func (c *zeroChecker) indexStores(functions []*ssa.Function) {
 					}
 				}
 				if call, ok := instruction.(ssa.CallInstruction); ok {
-					if builtin, ok := call.Common().Value.(*ssa.Builtin); ok && builtin.Name() == "copy" {
-						copies = append(copies, call.Common())
+					if builtin, ok := call.Common().Value.(*ssa.Builtin); ok && (builtin.Name() == "copy" || builtin.Name() == "append") {
+						collectionWrites = append(collectionWrites, call.Common())
 					}
 				}
 				store, ok := instruction.(*ssa.Store)
@@ -43,14 +43,14 @@ func (c *zeroChecker) indexStores(functions []*ssa.Function) {
 				c.stores[target.root] = append(c.stores[target.root], storageWrite{target, store.Val})
 			}
 		}
-		for _, call := range copies {
+		for _, call := range collectionWrites {
 			c.resetWork()
 			if view, known := c.builtinWriteView(call); known && view.size() != 0 && localStorageRoot(view.storage.root) {
-				if c.copies == nil {
-					c.copies = make(map[ssa.Value][]mutationTarget)
+				if c.collectionWrites == nil {
+					c.collectionWrites = make(map[ssa.Value][]mutationTarget)
 				}
 				span := &elementRange{view.start, view.possibleEnd()}
-				c.copies[view.storage.root] = append(c.copies[view.storage.root], mutationTarget{view.storage, span})
+				c.collectionWrites[view.storage.root] = append(c.collectionWrites[view.storage.root], mutationTarget{view.storage, span})
 			}
 		}
 	}
@@ -71,8 +71,8 @@ func localStorageRoot(value ssa.Value) bool {
 // with a stricter zero contract. Opaque factories retain their declared contract,
 // as in backward tracing. Unknown mutations only widen existing problems; they
 // do not reveal new concrete interface payloads.
-// Consider every store and copy, including later writes, so cached answers
-// need no flow point or branch assumptions.
+// Consider every store, copy, and append, including later writes, so cached
+// answers need no flow point or branch assumptions.
 func (c *zeroChecker) validZeroStorage(location address, t types.Type) bool {
 	return c.zeroType(t, "", wholeValue) == nil && c.onlyZeroStores(location, t, make(map[valueVisit]bool))
 }
@@ -102,8 +102,8 @@ func (c *zeroChecker) onlyZeroStores(location address, t types.Type, seen map[va
 			c.zeroStorage[visit] = valid
 		}
 	}()
-	for _, copy := range c.copies[location.root] {
-		if !c.work.take() || copy.overlaps(location) {
+	for _, write := range c.collectionWrites[location.root] {
+		if !c.work.take() || write.overlaps(location) {
 			return false
 		}
 	}

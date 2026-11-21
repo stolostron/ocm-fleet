@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 
+	"golang.org/x/exp/typeparams"
 	"golang.org/x/tools/go/ssa"
 )
 
@@ -252,6 +253,10 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 			return collectionView{storage: address{root: value}, element: array.Elem(), end: array.Len(), capEnd: array.Len(), value: value}, true
 		}
 	case *ssa.MakeSlice:
+		slice, ok := collectionOperandShape(value.Type()).(*types.Slice)
+		if !ok {
+			return collectionView{}, false
+		}
 		length, known := integerValue(value.Len)
 		if !known {
 			length = -1
@@ -260,7 +265,7 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 		if !known {
 			capacity = -1
 		}
-		return collectionView{storage: address{root: value}, element: value.Type().Underlying().(*types.Slice).Elem(), end: length, capEnd: capacity, length: value.Len, value: value}, true
+		return collectionView{storage: address{root: value}, element: slice.Elem(), end: length, capEnd: capacity, length: value.Len, value: value}, true
 	case *ssa.Parameter, *ssa.FreeVar:
 		switch t := value.Type().Underlying().(type) {
 		case *types.Slice:
@@ -273,8 +278,15 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 			}
 		}
 	case *ssa.SliceToArrayPointer:
+		pointer, ok := collectionOperandShape(value.Type()).(*types.Pointer)
+		if !ok {
+			return collectionView{}, false
+		}
+		array, ok := pointer.Elem().Underlying().(*types.Array)
+		if !ok {
+			return collectionView{}, false
+		}
 		if view, ok := c.collectionOf(value.X); ok {
-			array := value.Type().Underlying().(*types.Pointer).Elem().Underlying().(*types.Array)
 			// The conversion exposes exactly the prefix that fits in the array.
 			// The slice's remaining capacity is inaccessible through the pointer.
 			view.end = view.start + array.Len()
@@ -359,6 +371,26 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 		}
 	}
 	return collectionView{}, false
+}
+
+// Collection views need one backing layout. A conversion can be legal for
+// multiple array lengths even though a single view cannot describe them.
+func collectionOperandShape(t types.Type) types.Type {
+	parameter, ok := types.Unalias(t).(*types.TypeParam)
+	if !ok {
+		return t.Underlying()
+	}
+	terms, err := typeparams.NormalTerms(parameter)
+	if err != nil || len(terms) == 0 {
+		return nil
+	}
+	shape := terms[0].Type().Underlying()
+	for _, term := range terms[1:] {
+		if !types.Identical(shape, term.Type().Underlying()) {
+			return nil
+		}
+	}
+	return shape
 }
 
 func (c *zeroChecker) collectionStorageProblem(view collectionView, point flowPoint, context flowContext, values map[valueVisit]bool, covered []elementRange, seen map[collectionVisit]bool) *zeroProblem {
@@ -574,7 +606,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 							problem.path = fieldPath(elementLabel(remaining.start), problem.path)
 							detail := " may leave partially decoded collection elements without checked success"
 							if reason == reasonInputMayBeZero {
-								detail = " decodes into a collection slot without establishing its domain contract"
+								detail = " decodes into collection storage without establishing its domain contract"
 							}
 							return problem.step("mutation", mutationPosition(call, before), c.callName(common)+detail)
 						}

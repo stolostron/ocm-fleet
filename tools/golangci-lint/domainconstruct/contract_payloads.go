@@ -389,7 +389,7 @@ func describePayload(t types.Type, seen map[types.Type]bool, depth int, addressa
 
 func usesDefaultJSONElements(t types.Type, addressable bool) bool {
 	switch t.Underlying().(type) {
-	case *types.Slice, *types.Array:
+	case *types.Slice, *types.Array, *types.Map:
 	default:
 		return false
 	}

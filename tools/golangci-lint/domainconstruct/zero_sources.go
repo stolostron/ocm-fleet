@@ -96,7 +96,7 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 				integerSource(operand, &call.Call, path) {
 				return nil // An integer conversion always produces a one-rune string.
 			}
-			if problem, handled := c.narrowIntegerSource(operand, &call.Call, path, t, context.use); handled {
+			if problem, handled := c.numericConversionProblem(operand, &call.Call, path, t, context.use); handled {
 				return problem
 			}
 			return c.sourceProblem(operand, call, result, path, t, point, context, seen).
@@ -122,7 +122,7 @@ func integerSource(source valueSource, call *ssa.CallCommon, path []int) bool {
 	return false
 }
 
-func (c *zeroChecker) narrowIntegerSource(source valueSource, call *ssa.CallCommon, path []int, target types.Type, use valueUse) (*zeroProblem, bool) {
+func (c *zeroChecker) numericConversionProblem(source valueSource, call *ssa.CallCommon, path []int, target types.Type, use valueUse) (*zeroProblem, bool) {
 	if source.Kind != sourceParameter || len(source.Path)+len(path) != 0 || c.pass.TypesSizes == nil {
 		return nil, false
 	}
@@ -130,9 +130,20 @@ func (c *zeroChecker) narrowIntegerSource(source valueSource, call *ssa.CallComm
 	if argument == nil {
 		return nil, false
 	}
-	from, integerFrom := argument.Type().Underlying().(*types.Basic)
-	to, integerTo := target.Underlying().(*types.Basic)
-	if !integerFrom || !integerTo || from.Info()&types.IsInteger == 0 || to.Info()&types.IsInteger == 0 {
+	from, basicFrom := argument.Type().Underlying().(*types.Basic)
+	to, basicTo := target.Underlying().(*types.Basic)
+	if !basicFrom || !basicTo || to.Info()&types.IsInteger == 0 {
+		return nil, false
+	}
+	if from.Info()&types.IsFloat != 0 {
+		if literal, ok := argument.(*ssa.Const); ok && literal.Value != nil &&
+			constant.Compare(literal.Value, token.GTR, constant.MakeInt64(-1)) &&
+			constant.Compare(literal.Value, token.LSS, constant.MakeInt64(1)) {
+			return c.zeroType(target, "", use), true // Integer conversion discards the fraction.
+		}
+		return nil, false
+	}
+	if from.Info()&types.IsInteger == 0 {
 		return nil, false
 	}
 	sizes := c.pass.TypesSizes

@@ -24,6 +24,7 @@ type codecBoundary struct {
 	Results           []int
 	TypeParameters    []int
 	ErrorResult       int
+	DefaultJSONEncode bool
 	DefaultJSONDecode bool
 }
 
@@ -321,6 +322,7 @@ func (set *contractSet) boundariesFor(function *types.Func, policies policySet) 
 		switch {
 		case receiver == "" && (function.Name() == "Marshal" || function.Name() == "MarshalIndent"), receiver == "Encoder" && function.Name() == "Encode":
 			boundary.Encode = []int{0}
+			boundary.DefaultJSONEncode = true
 		case receiver == "" && function.Name() == "Unmarshal":
 			boundary.Decode = []int{1}
 			boundary.DefaultJSONDecode = true

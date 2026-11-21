@@ -135,6 +135,35 @@ test("verification shows nested check failures without successful check output",
   }
 });
 
+test("verify and fix fail when the required check target is missing", async (t) => {
+  const { root, runNx } = await fixture(t);
+  for (const path of ["project.json", "client/cli/project.json"]) {
+    const project = parseJson(await readFile(join(root, path), "utf8"));
+    delete project.targets.check;
+    await writeJSON(root, path, project);
+  }
+  for (const project of ["ocm-fleet", "cli"]) {
+    for (const target of ["verify", "fix"]) {
+      await assert.rejects(
+        runNx(["run", `${project}:${target}`], {
+          NX_DEFAULT_OUTPUT_STYLE: "static-failures-only",
+        }),
+        (error) => {
+          assert.equal(error.code, 1);
+          assert.ok(
+            (error.stdout + error.stderr).includes(
+              `Target "check" not found for project "${project}"`,
+            ),
+            error.stdout + error.stderr,
+          );
+          return true;
+        },
+        `${project}:${target} succeeded without a check target`,
+      );
+    }
+  }
+});
+
 test("tooling input filesets include required files and exclude unrelated files", async () => {
   const config = await json("nx.json");
   const workspace = await json("project.json");

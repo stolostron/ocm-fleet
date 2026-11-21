@@ -291,7 +291,15 @@ func (e *nilnessEvaluator) call(call *ast.CallExpr, result int, state nilnessEnv
 		return unknown
 	}
 	if e.builder.pass.TypesInfo.Types[call.Fun].IsType() && len(call.Args) == 1 {
-		return e.converted(call.Args[0], e.builder.pass.TypesInfo.TypeOf(call), state)
+		info := e.builder.pass.TypesInfo
+		target := info.TypeOf(call)
+		if _, slice := target.Underlying().(*types.Slice); slice {
+			if basic, ok := info.TypeOf(call.Args[0]).Underlying().(*types.Basic); ok && basic.Info()&types.IsString != 0 {
+				// Converting even an empty string produces a non-nil byte or rune slice.
+				return notZero
+			}
+		}
+		return e.converted(call.Args[0], target, state)
 	}
 	object := expressionObject(e.builder.pass.TypesInfo, call.Fun)
 	if builtin, ok := object.(*types.Builtin); ok && builtin.Name() == "new" {

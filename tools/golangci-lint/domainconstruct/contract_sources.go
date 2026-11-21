@@ -499,6 +499,9 @@ func (e *sourceEvaluator) inferredSource(call *ast.CallExpr, result int, state s
 func projectSource(source valueSource, path []int) valueSource {
 	const maxSourcePath = 8
 	for index, field := range path {
+		if source.Kind == sourcePointer && len(source.Values) == 1 {
+			source = source.Values[0] // A field selection implicitly dereferences the pointer.
+		}
 		switch source.Kind {
 		case sourceZero:
 			return source

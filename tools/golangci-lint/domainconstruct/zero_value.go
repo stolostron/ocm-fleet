@@ -179,14 +179,25 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 		if result := c.tupleProblem(value, t, context); result != nil {
 			return result
 		}
-		if assertion, ok := value.Tuple.(*ssa.TypeAssert); ok && value.Index == 0 {
-			return c.assertedProblem(assertion, path, t, point, context, seen)
-		}
-		if _, lookup := value.Tuple.(*ssa.Lookup); lookup && value.Index == 0 {
-			return c.rawValueProblem(value, path, t, point, context.use)
-		}
-		if call, ok := value.Tuple.(*ssa.Call); ok {
-			if problem := c.callResultProblem(call, value.Index, path, t, point, context, seen); problem != nil {
+		switch tuple := value.Tuple.(type) {
+		case *ssa.TypeAssert:
+			if value.Index == 0 {
+				return c.assertedProblem(tuple, path, t, point, context, seen)
+			}
+		case *ssa.Lookup:
+			if value.Index == 0 {
+				return c.rawValueProblem(value, path, t, point, context.use)
+			}
+		case *ssa.UnOp:
+			if tuple.Op == token.ARROW && value.Index == 0 {
+				return c.rawValueProblem(value, path, t, point, context.use)
+			}
+		case *ssa.Select:
+			if value.Index >= 2 {
+				return c.rawValueProblem(value, path, t, point, context.use)
+			}
+		case *ssa.Call:
+			if problem := c.callResultProblem(tuple, value.Index, path, t, point, context, seen); problem != nil {
 				return problem
 			}
 			if problem := c.rawValueProblem(value, path, t, point, context.use); problem != nil {

@@ -26,7 +26,7 @@ func (c *zeroChecker) argumentUse(call *ssa.CallCommon, index int) valueUse {
 	for _, boundary := range c.contracts.boundariesFor(function, c.policies) {
 		for _, input := range boundary.Encode {
 			if callArgumentIndex(call, input) == index {
-				if boundary.Codec == "json" && input >= 0 && function.Pkg() != nil && function.Pkg().Path() == "encoding/json" {
+				if boundary.DefaultJSONEncode {
 					return jsonFields
 				}
 				return wholeValue
@@ -187,6 +187,13 @@ func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, stora
 				}
 				if pointer, ok := destination.value.Type().Underlying().(*types.Pointer); ok {
 					decoded := pointer.Elem()
+					if boundary.DefaultJSONDecode && storage.elements != nil && sameStorage(target, storage.address) {
+						// Default JSON decoding zeroes trailing slots when the
+						// input is short, bypassing their element decoders.
+						if array, ok := decoded.Underlying().(*types.Array); ok && array.Len() != 0 && !hasJSONDecoder(decoded) {
+							return reasonInputMayBeZero
+						}
+					}
 					if storage.elements == nil && !sameStorage(target, storage.address) {
 						if pathPrefix(storage.path, target.path) && !types.Identical(decoded, storageType(target)) {
 							return reasonInputMayBeZero

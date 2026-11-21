@@ -87,3 +87,40 @@ func EncodeHookFields(value encodingvalues.Unsupported) {
 	json.Marshal(&boxed) // want "Value.*does not declare json serialization"
 	json.Marshal(boxed)
 }
+
+type customEnvelope struct {
+	Hidden encodingvalues.Unsupported `json:"-"`
+}
+
+type customBox struct {
+	Hidden any `json:"-"`
+}
+
+//domain:boundary json encode=value
+func encodeHidden(value customEnvelope) ([]byte, error) {
+	return json.Marshal(string(value.Hidden))
+}
+
+//domain:boundary json encode=value
+func encodeHiddenBox(value customBox) ([]byte, error) {
+	return json.Marshal(value.Hidden)
+}
+
+func EncodeHiddenFields(bad encodingvalues.Unsupported, encoder *json.Encoder) {
+	typed := customEnvelope{Hidden: bad}
+	boxed := customBox{Hidden: bad}
+	encodeHidden(typed)    // want "Hidden.*does not declare json serialization"
+	encodeHiddenBox(boxed) // want "Hidden.*does not declare json serialization"
+	json.Marshal(typed)
+	json.Marshal(boxed)
+	encoder.Encode(typed)
+	encoder.Encode(boxed)
+	json.Unmarshal(nil, &typed)
+}
+
+func EncodeShiftedBoxedSlice(bad encodingvalues.Unsupported, index int) {
+	values := []any{"valid", bad}
+	json.Marshal(values[index:index][:1]) // want "does not declare json serialization"
+	json.Marshal(values[:1])
+	json.Marshal(values[index:index])
+}

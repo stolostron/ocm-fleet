@@ -4,6 +4,26 @@ import "errors"
 
 type projectedRow struct{ ID ID }
 
+func ReturnAppendedBoxedZero() [1]any {
+	var slots [1]any
+	_ = append(slots[:0], ID(""))
+	return slots // want "return contains an empty zeroflow.ID"
+}
+
+func ReturnClearedAppendedPointee(valid ID) [1]any {
+	var slots [1]any
+	_ = append(slots[:0], &valid)
+	valid = ""
+	return slots // want "return contains an empty zeroflow.ID"
+}
+
+func AppendWithoutChangingOriginal(valid ID) [1]any {
+	var slots [1]any
+	_ = append(slots[:0:0], &valid)
+	valid = ""
+	return slots
+}
+
 func FillLoopThenClearPointee(valid ID) []*ID {
 	pointer := new(ID)
 	*pointer = valid

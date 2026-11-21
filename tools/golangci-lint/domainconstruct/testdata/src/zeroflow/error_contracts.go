@@ -74,6 +74,42 @@ func NilJoinedFailure() (Ref, error) {
 	return Ref{}, errors.Join(nil, nil) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]Ref\""
 }
 
+func byteSliceStatus() error {
+	var raw string
+	if []byte(raw) == nil {
+		return errors.New("unexpected nil byte slice")
+	}
+	return nil
+}
+
+func runeSliceStatus() error {
+	var raw string
+	if []rune(raw) == nil {
+		return errors.New("unexpected nil rune slice")
+	}
+	return nil
+}
+
+type namedBytes []byte
+
+func checkedNilSliceStatus() error {
+	var raw []byte
+	if namedBytes(raw) == nil {
+		return errors.New("nil input")
+	}
+	return nil
+}
+
+func ByteSliceSuccess() (ID, error) {
+	return "", byteSliceStatus() // want "return produces an empty zeroflow.ID"
+}
+
+func RuneSliceSuccess() (ID, error) {
+	return "", runeSliceStatus() // want "return produces an empty zeroflow.ID"
+}
+
+func NilSliceFailure() (ID, error) { return "", checkedNilSliceStatus() }
+
 func CanceledFailure(ctx context.Context) (Ref, error) {
 	<-ctx.Done()
 	return Ref{}, ctx.Err()

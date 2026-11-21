@@ -222,6 +222,24 @@ func SharedJoinAfterRepair() (ID, error) {
 
 var sharedRaw string
 
+func clearGlobalOnly(_ *string) { sharedRaw = "" }
+
+func BorrowedAfterGlobalWrite(target *string) (ID, error) {
+	if *target == "" {
+		return "", errors.New("empty")
+	}
+	clearGlobalOnly(target)
+	return ID(*target), nil // want "return may produce an empty zeroflow.ID"
+}
+
+func PrivateAfterGlobalWrite(target string) (ID, error) {
+	if target == "" {
+		return "", errors.New("empty")
+	}
+	clearGlobalOnly(&target)
+	return ID(target), nil
+}
+
 func initializeThenWriteGlobal(target *string) {
 	*target = "valid"
 	sharedRaw = ""

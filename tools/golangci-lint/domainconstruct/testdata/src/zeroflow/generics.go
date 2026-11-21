@@ -2,6 +2,18 @@ package zeroflow
 
 import "errors"
 
+//domain:constructors NewTruncatedCount
+type TruncatedCount int
+
+func NewTruncatedCount(small bool) TruncatedCount {
+	if small {
+		return truncateFloat[TruncatedCount](0.5) // want "return produces a zero zeroflow.TruncatedCount"
+	}
+	return truncateFloat[TruncatedCount](1.5)
+}
+
+func truncateFloat[T ~int](value float64) T { return T(value) }
+
 func allocatedOrNil[T any](absent bool) []T {
 	if absent {
 		return nil

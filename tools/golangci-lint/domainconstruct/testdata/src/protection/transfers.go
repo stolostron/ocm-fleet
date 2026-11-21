@@ -18,6 +18,50 @@ func StoreProtectedMapKey(values map[ID]int, raw [2]byte, valid ID) {
 	values[valid] = 1
 }
 
+func CallConstrained[F ~func(ID)](callback F, valid ID) {
+	callback([2]byte{1}) // want "construct protection.ID through NewID"
+	callback(valid)
+}
+
+func CallConstrainedVariadic[F ~func(...ID)](callback F, valid ID, values []ID) {
+	callback(valid, [2]byte{1}) // want "construct protection.ID through NewID"
+	callback(values...)
+}
+
+func ConstrainedLiterals[S ~[]ID, M ~map[ID]ID](valid ID) {
+	_ = S{[2]byte{1}}        // want "construct protection.ID through NewID"
+	_ = M{[2]byte{1}: valid} // want "construct protection.ID through NewID"
+	_ = M{valid: [2]byte{1}} // want "construct protection.ID through NewID"
+	_ = S{valid}
+	_ = M{valid: valid}
+}
+
+func AdvanceExactCount[T Count](value T) {
+	value++ // want "construct protection.Count through NewCount"
+}
+
+func AdvanceUnderlyingInt[T ~int](value T) { value++ }
+
+func ReturnExactArray[T ID](valid ID, raw bool) T {
+	if raw {
+		return [2]byte{1} // want "construct protection.ID through NewID"
+	}
+	return T(valid)
+}
+
+func countFromPointerField[T ~int](raw int) T {
+	return (&struct{ Value T }{Value: T(raw)}).Value
+}
+
+func countFromValueField[T ~int](raw int) T {
+	return (struct{ Value T }{Value: T(raw)}).Value
+}
+
+func GenericFieldConversion(raw int) {
+	_ = countFromPointerField[Count](raw) // want "construct protection.Count through NewCount"
+	_ = countFromValueField[Count](raw)   // want "construct protection.Count through NewCount"
+}
+
 func IntegerRangeConstruction(limit Count, plain int, values []Count) {
 	for item := range limit { // want "construct protection.Count through NewCount"
 		_ = item
@@ -47,6 +91,8 @@ func AppendIntoOwnedSlice(record Record, rest []int) {
 	_ = append(record.items[:0], rest...) // want "modify protection.Record through NewRecord"
 	_ = append(record.items[:1:1], 1)
 	_ = append(record.items[:1:1], rest...)
+	_ = append(record.items[:0:1], 1, 2)
+	_ = append(record.items[:0:1], 1) // want "modify protection.Record through NewRecord"
 	_ = append(record.items[:0])
 	_ = append(record.items, []int{}...)
 }

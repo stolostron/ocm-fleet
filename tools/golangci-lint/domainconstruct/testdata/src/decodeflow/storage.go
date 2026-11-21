@@ -3,6 +3,7 @@ package decodeflow
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 
 	"encodingvalues"
 )
@@ -39,6 +40,53 @@ func SuccessfulNativeDecodeRestoresElement(data []byte, valid encodingvalues.ID)
 		return nil
 	}
 	return values
+}
+
+func ShortJSONDecodeClearsArray(valid encodingvalues.ID) ([1]encodingvalues.ID, error) {
+	values := [1]encodingvalues.ID{valid}
+	if err := json.Unmarshal([]byte(`[]`), &values); err != nil {
+		return [1]encodingvalues.ID{}, err
+	}
+	return values, nil // want "return may contain an empty encodingvalues.ID"
+}
+
+func ShortJSONDecodeClearsElement(valid encodingvalues.ID, decoder *json.Decoder) (encodingvalues.ID, error) {
+	values := [1]encodingvalues.ID{valid}
+	if err := decoder.Decode(&values); err != nil {
+		return "", err
+	}
+	return values[0], nil // want "return may .* an empty encodingvalues.ID"
+}
+
+func RepairArrayAfterJSONDecode(valid encodingvalues.ID, data []byte) ([1]encodingvalues.ID, error) {
+	values := [1]encodingvalues.ID{valid}
+	if err := json.Unmarshal(data, &values); err != nil {
+		return [1]encodingvalues.ID{}, err
+	}
+	values[0] = valid
+	return values, nil
+}
+
+type checkedIDArray [1]encodingvalues.ID
+
+func (values *checkedIDArray) UnmarshalJSON(data []byte) error {
+	var decoded []encodingvalues.ID
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	if len(decoded) != len(values) {
+		return errors.New("expected one ID")
+	}
+	values[0] = decoded[0]
+	return nil
+}
+
+func JSONDecodeWithArrayHook(valid encodingvalues.ID, data []byte) (checkedIDArray, error) {
+	values := checkedIDArray{valid}
+	if err := json.Unmarshal(data, &values); err != nil {
+		return checkedIDArray{}, err
+	}
+	return values, nil
 }
 
 //domain:constructors newWireID

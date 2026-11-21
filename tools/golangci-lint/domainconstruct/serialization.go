@@ -44,10 +44,12 @@ type encodingOperand struct {
 }
 
 func newEncodingOperand(node ast.Node, boundary codecBoundary, operation string) encodingOperand {
-	operand := encodingOperand{node: node, codec: boundary.Codec, operation: operation}
-	if boundary.Codec == "json" {
+	operand := encodingOperand{
+		node: node, codec: boundary.Codec, operation: operation,
+		defaultJSONDecode: boundary.DefaultJSONDecode && operation == "decode",
+	}
+	if operand.defaultJSONDecode || operation == "encode" && boundary.DefaultJSONEncode {
 		operand.use = jsonFields
-		operand.defaultJSONDecode = boundary.DefaultJSONDecode && operation == "decode"
 	}
 	return operand
 }
@@ -283,7 +285,9 @@ func (c *serializationChecker) encodingProblem(t types.Type, operand encodingOpe
 		return c.encodingProblem(shape.Elem(), operand, seen)
 	case *types.Slice:
 		if operand.defaultJSONDecode && c.policies.lookup(shape.Elem()) != nil {
-			if basic, ok := shape.Elem().Underlying().(*types.Basic); ok && basic.Kind() == types.Uint8 && !hasJSONSliceDecoder(t) {
+			// The default base64 path writes uint8 elements directly without
+			// calling their decoders. A slice-level hook can intercept it.
+			if basic, ok := shape.Elem().Underlying().(*types.Basic); ok && basic.Kind() == types.Uint8 && !hasJSONDecoder(t) {
 				return &serializationProblem{typ: shape.Elem(), codec: codec, reason: "json-byte-slice"}
 			}
 		}
@@ -327,9 +331,7 @@ func (c *serializationChecker) encodingProblem(t types.Type, operand encodingOpe
 	return nil
 }
 
-func hasJSONSliceDecoder(t types.Type) bool {
-	// A slice hook intercepts quoted strings before the default base64 path,
-	// which writes uint8 elements directly without calling element decoders.
+func hasJSONDecoder(t types.Type) bool {
 	for _, name := range []string{"UnmarshalJSON", "UnmarshalText"} {
 		if method := codecMethod(t, name, true); method != nil && validDecoderSignature(method.Type().(*types.Signature), "json") {
 			return true

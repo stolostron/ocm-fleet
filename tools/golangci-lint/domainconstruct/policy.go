@@ -206,6 +206,7 @@ func (c *checker) constructor(name string) types.Object {
 }
 
 func (c *checker) policy(t types.Type) *policy {
+	t = exactOperandType(t)
 	named := domainType(t)
 	if named == nil {
 		return nil

@@ -27,7 +27,7 @@ func (c *checker) checkCallTransfers(call *ast.CallExpr, ancestors []ast.Node) {
 			return
 		}
 	}
-	signature, ok := c.pass.TypesInfo.TypeOf(call.Fun).Underlying().(*types.Signature)
+	signature, ok := operandUnderlying(c.pass.TypesInfo.TypeOf(call.Fun)).(*types.Signature)
 	if !ok || len(call.Args) == 0 {
 		return
 	}
@@ -51,8 +51,17 @@ func (c *checker) appendMayWrite(call *ast.CallExpr) bool {
 	info := c.pass.TypesInfo
 	if view, ok := ast.Unparen(call.Args[0]).(*ast.SliceExpr); ok && view.Max != nil {
 		high, max := info.Types[view.High].Value, info.Types[view.Max].Value
-		if high != nil && max != nil && constant.Compare(high, token.EQL, max) {
-			return false
+		if high != nil && max != nil {
+			if constant.Compare(high, token.EQL, max) {
+				return false
+			}
+			if !call.Ellipsis.IsValid() {
+				added := constant.MakeInt64(int64(len(call.Args) - 1))
+				spare := constant.BinaryOp(max, token.SUB, high)
+				if constant.Compare(added, token.GTR, spare) {
+					return false
+				}
+			}
 		}
 		highName, highIdent := ast.Unparen(view.High).(*ast.Ident)
 		maxName, maxIdent := ast.Unparen(view.Max).(*ast.Ident)
@@ -93,11 +102,20 @@ func (c *checker) checkLiteralTransfers(literal *ast.CompositeLit, ancestors []a
 }
 
 func (c *checker) checkReturnedStorage(value ast.Expr, ancestors []ast.Node) {
+	if base := c.mutableStorageBase(value); base != nil {
+		if p := c.unapprovedOwner(base, ancestors); p != nil {
+			c.reportProtected(value, p, "domainconstruct.mutable-exposure", "return", "mutable-contents",
+				"do not expose mutable contents of "+p.name)
+		}
+	}
+}
+
+func (c *checker) mutableStorageBase(value ast.Expr) ast.Expr {
 	info := c.pass.TypesInfo
 	switch operandUnderlying(info.TypeOf(value)).(type) {
 	case *types.Slice, *types.Map:
 	default:
-		return
+		return nil
 	}
 	base := ast.Unparen(value)
 	for {
@@ -106,7 +124,7 @@ func (c *checker) checkReturnedStorage(value ast.Expr, ancestors []ast.Node) {
 			break
 		}
 		if _, slice := info.TypeOf(view.X).Underlying().(*types.Slice); !slice {
-			return // Slicing a protected array is already checked at the expression.
+			return nil // Slicing a protected array is already checked at the expression.
 		}
 		if view.Max != nil {
 			low := constant.MakeInt64(0)
@@ -114,15 +132,12 @@ func (c *checker) checkReturnedStorage(value ast.Expr, ancestors []ast.Node) {
 				low = info.Types[view.Low].Value
 			}
 			if limit := info.Types[view.Max].Value; low != nil && limit != nil && constant.Compare(low, token.EQL, limit) {
-				return // Nothing in the backing storage is accessible through this view.
+				return nil // Nothing in the backing storage is accessible through this view.
 			}
 		}
 		base = ast.Unparen(view.X)
 	}
-	if p := c.unapprovedOwner(base, ancestors); p != nil {
-		c.reportProtected(value, p, "domainconstruct.mutable-exposure", "return", "mutable-contents",
-			"do not expose mutable contents of "+p.name)
-	}
+	return base
 }
 
 func (c *checker) checkRangeTransfers(statement *ast.RangeStmt, ancestors []ast.Node) {
@@ -132,7 +147,7 @@ func (c *checker) checkRangeTransfers(statement *ast.RangeStmt, ancestors []ast.
 		if bound := info.Types[statement.X].Value; bound != nil && constant.Sign(bound) <= 0 {
 			return
 		}
-		if key := statement.Key; key != nil && (statement.Tok != token.ASSIGN || c.checkWrite(key, ancestors)) {
+		if key := statement.Key; key != nil && (statement.Tok != token.ASSIGN || c.checkAssignment(key, ancestors)) {
 			// Integer ranges synthesize values even when Go gives the binding
 			// the same type as the bound. Other ranges transfer existing values.
 			if p := c.policy(info.TypeOf(key)); p != nil && !c.approved(p, ancestors) {
@@ -149,7 +164,7 @@ func (c *checker) checkRangeTransfers(statement *ast.RangeStmt, ancestors []ast.
 		target ast.Expr
 		source types.Type
 	}{{statement.Key, key}, {statement.Value, value}} {
-		if binding.target != nil && c.checkWrite(binding.target, ancestors) {
+		if binding.target != nil && c.checkAssignment(binding.target, ancestors) {
 			c.checkTransfer(binding.target, binding.source, info.TypeOf(binding.target), ancestors)
 		}
 	}
@@ -170,6 +185,7 @@ func (c *checker) checkTransfers(values []ast.Expr, count int, target func(int) 
 }
 
 func (c *checker) checkTransfer(value ast.Expr, source, target types.Type, ancestors []ast.Node) {
+	source, target = exactOperandType(source), exactOperandType(target)
 	p := c.policy(target)
 	if p == nil || source == nil || types.Identical(source, target) || !types.Identical(source.Underlying(), target.Underlying()) {
 		return
@@ -195,7 +211,7 @@ func (c *checker) enclosingResults(ancestors []ast.Node) *types.Tuple {
 
 // A pointer element's literal can elide its address operator.
 func compositeShape(t types.Type) types.Type {
-	shape := t.Underlying()
+	shape := operandUnderlying(t)
 	if pointer, ok := shape.(*types.Pointer); ok {
 		return pointer.Elem().Underlying()
 	}

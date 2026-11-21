@@ -103,7 +103,7 @@ func (b *contractBuilder) parameterEffect(parameter *types.Var, body *ast.BlockS
 			for index, target := range assignment.Lhs {
 				if variable, ok := expressionObject(b.pass.TypesInfo, target).(*types.Var); ok &&
 					variable.Pkg() != nil && variable.Parent() == variable.Pkg().Scope() {
-					if lastWrite.IsValid() && assignment.Pos() >= lastWrite {
+					if !lastWrite.IsValid() || assignment.Pos() >= lastWrite {
 						effect.LocalStorageOnly = true // A borrowed argument may address the same global.
 					}
 					if len(assignment.Rhs) == len(assignment.Lhs) && expressionObject(b.pass.TypesInfo, assignment.Rhs[index]) == parameter {

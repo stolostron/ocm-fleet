@@ -20,9 +20,21 @@ type createPlatformResourceRequest struct {
 }
 ```
 
-Parse `Name` through `ParseResourceName` and pass `Labels` as the second
-argument to `NewPlatformResource`. See [Constructors](./constructors.md) for
-choosing the signature.
+Validate the name in the adapter before calling the application service.
+
+```go
+name, err := domain.ParseResourceName(request.Name)
+if err != nil {
+    return nil, err
+}
+return service.Create(ctx, application.CreatePlatformResourceInput{
+    Name:   name,
+    Labels: request.Labels,
+})
+```
+
+The service supplies the current time when it calls `NewPlatformResource`.
+See [Constructors](./constructors.md) for choosing constructor signatures.
 
 ## Snapshots and persistence
 

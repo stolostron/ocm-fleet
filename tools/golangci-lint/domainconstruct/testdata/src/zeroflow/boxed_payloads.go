@@ -141,3 +141,24 @@ func EncodeBoxedNamedArrays() {
 	pointer, _ := opaqueBoxedIDArrayPointer()
 	json.Marshal(pointer)
 }
+
+type boxedIDMap map[string]ID
+
+func invalidBoxedIDMap() (any, error) {
+	return boxedIDMap{"id": ""}, errors.New("failure") // want "map value is an empty zeroflow.ID"
+}
+
+type opaqueBoxedIDMap map[string]ID
+
+func (opaqueBoxedIDMap) MarshalJSON() ([]byte, error) { return []byte("null"), nil }
+
+func invalidOpaqueBoxedIDMap() (any, error) {
+	return opaqueBoxedIDMap{"id": ""}, errors.New("failure") // want "map value is an empty zeroflow.ID"
+}
+
+func EncodeBoxedNamedMaps() {
+	payload, _ := invalidBoxedIDMap()
+	json.Marshal(payload) // want "argument may be an empty zeroflow.ID"
+	opaque, _ := invalidOpaqueBoxedIDMap()
+	json.Marshal(opaque)
+}

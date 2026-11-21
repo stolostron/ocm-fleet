@@ -23,27 +23,27 @@ var ZeroAnalyzer = &analysis.Analyzer{
 }
 
 type zeroChecker struct {
-	pass        *analysis.Pass
-	policies    policySet
-	contracts   *contractSet
-	contexts    map[*ssa.BasicBlock]flowContext
-	equalities  map[*ssa.Function][]*ssa.BinOp
-	errorMerges map[*ssa.Function][]*ssa.Phi
-	mutations   map[mutationQuery]mutationKind
-	reads       map[ssa.Value]storageRead
-	stores      map[ssa.Value][]storageWrite
-	copies      map[ssa.Value][]mutationTarget
-	zeroStorage map[valueVisit]bool
-	zeroTypes   map[zeroTypeVisit]*zeroProblem
-	jsonShape   jsonFieldCache
-	reported    map[zeroReport]bool
-	interesting map[types.Type]bool
-	locating    map[ssa.Value]bool
-	returns     map[token.Pos]bool
-	comparisons map[token.Pos]bool
-	expressions map[token.Pos]sourceExpression
-	deferred    map[*ssa.Function][]*ssa.Defer
-	work        *workBudget
+	pass             *analysis.Pass
+	policies         policySet
+	contracts        *contractSet
+	contexts         map[*ssa.BasicBlock]flowContext
+	equalities       map[*ssa.Function][]*ssa.BinOp
+	errorMerges      map[*ssa.Function][]*ssa.Phi
+	mutations        map[mutationQuery]mutationKind
+	reads            map[ssa.Value]storageRead
+	stores           map[ssa.Value][]storageWrite
+	collectionWrites map[ssa.Value][]mutationTarget
+	zeroStorage      map[valueVisit]bool
+	zeroTypes        map[zeroTypeVisit]*zeroProblem
+	jsonShape        jsonFieldCache
+	reported         map[zeroReport]bool
+	interesting      map[types.Type]bool
+	locating         map[ssa.Value]bool
+	returns          map[token.Pos]bool
+	comparisons      map[token.Pos]bool
+	expressions      map[token.Pos]sourceExpression
+	deferred         map[*ssa.Function][]*ssa.Defer
+	work             *workBudget
 }
 
 type zeroTypeVisit struct {

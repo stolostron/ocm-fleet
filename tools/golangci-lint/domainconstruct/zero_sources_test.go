@@ -24,7 +24,14 @@ func run(n int) {
 				{Kind: sourceSlice, Length: sourceLength{Constant: -1, Parameter: 0, FromLen: true}},
 				{Kind: sourceSlice, Length: sourceLength{Constant: -1, Parameter: 1, FromLen: true}},
 			}}
-			view, known := newFlowChecker(function).sliceSourceView(choice, call, call, call.Type().(*types.Slice))
+			checker := newFlowChecker(function)
+			slice := call.Type().(*types.Slice)
+			first, firstKnown := checker.sliceSourceView(choice.Values[0], call, call, slice)
+			second, secondKnown := checker.sliceSourceView(choice.Values[1], call, call, slice)
+			if !firstKnown || !secondKnown || !sameLength(first.length, second.length) || first.lengthBase == second.lengthBase {
+				t.Fatalf("expected the same length expression at different bases, got %+v and %+v", first, second)
+			}
+			view, known := checker.sliceSourceView(choice, call, call, slice)
 			if !known || view.end >= 0 || view.length != nil {
 				t.Errorf("merged view claims an exact length bound: %+v", view)
 			}

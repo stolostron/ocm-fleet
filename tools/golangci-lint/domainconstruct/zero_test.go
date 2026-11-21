@@ -11,6 +11,10 @@ import (
 	"github.com/stolostron/ocm-fleet/tools/golangci-lint/domainconstruct"
 )
 
+func TestGenericCollectionStorage(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), domainconstruct.ZeroAnalyzer, "genericstorage")
+}
+
 func TestLateZeroOperands(t *testing.T) {
 	const fields = 192
 	var declarations strings.Builder

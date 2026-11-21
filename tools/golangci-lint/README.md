@@ -144,17 +144,21 @@ iterate synthesize new values and require construction permission when the
 iteration variable has a protected type. Map writes check implicit construction
 of the key.
 Channel sends and appended values follow ordinary transfer checks, including
-multiple results passed to `append`.
+multiple results passed to `append`. Constrained callbacks and composite
+literals use their common signature or element types. Exact constraints
+retain the construction policy of the constrained type.
 Writing through an embedded field or exposing a pointer to it requires
 permission from its protected owners. Replacing an existing nested value
 requires permission from its enclosing owners. Directly returning a protected
 map field, slice field, or slice view with accessible backing storage also
-exposes the representation. The owner check covers slicing and index writes
-through exact generic pointers to protected arrays. Converting a protected
-slice to a nonempty array pointer exposes the same storage. Appending into
-reusable capacity can modify that storage. A full slice expression with equal
-upper and capacity bounds forces an append with elements to allocate. Read-only
-slice views are allowed as inputs to `len` and as sources of `copy`.
+exposes the representation. Straight-line local bindings of a slice or map
+retain that ownership within their block. Rebinding a local to fresh storage
+clears its prior owner. The owner check covers slicing and index writes through
+exact generic pointers to protected arrays. Converting a protected slice to a
+nonempty array pointer exposes the same storage. Appending into reusable
+capacity can modify that storage. A full slice expression forces allocation
+when it leaves less spare capacity than the append needs. Read-only slice
+views are allowed as inputs to `len` and as sources of `copy`.
 Simple generic helpers that convert a raw argument into a protected
 type are checked at their instantiated calls, including imported helpers.
 Retained conversions use their instantiated targets even when the final result
@@ -251,8 +255,9 @@ still visible. Blank identifiers cannot select a parameter or receiver.
 Encoding inputs are valid-value consumers, so encoding an uninitialized domain
 value still produces a `domainzero` finding. Standard JSON field encoding skips
 an exact `json:"-"` field in a plain envelope. A tag like `json:"-,"` names the
-field `-`. Types with custom JSON or text encoding hooks retain whole-value
-checks, including when a pointer receiver can supply the hook. A field reached
+field `-`. Declared custom boundaries check the whole selected payload.
+Types with custom JSON or text encoding hooks retain whole-value checks,
+including when a pointer receiver can supply the hook. A field reached
 through an embedded pointer is addressable even when the outer value is passed
 by value. A concrete value boxed in an interface is unaddressable. A boxed
 pointer still allows the encoder to use the pointee's pointer hook. A visible
@@ -275,7 +280,9 @@ can follow a pointer stored in that slot. The stored pointer is a possible
 write target, since inputs such as `null` can replace the interface instead.
 Default JSON decoding of a base64 string into a slice of protected byte values
 can bypass the element decoder. Use a slice-level decoder that validates the
-decoded values.
+decoded values. A short JSON array also zeroes trailing slots in a Go array
+without calling their element decoders. A checked array-level decoder can
+validate that the input supplies every required slot.
 Decoding through a raw representation or a different domain type's codec can
 invalidate an earlier domain value even after the error check. Scanning a
 primitive and converting it to a domain value still requires a constructor.
@@ -562,8 +569,8 @@ captured at registration. Referenced storage is observed during cleanup after
 earlier cleanup effects. A reachable conditional write of a known zero can
 make a value possibly zero. Map lookups, channel receives, and comma-ok type
 assertions need their successful `ok` check when they can otherwise introduce
-an invalid zero. A successful lookup of a raw value proves membership. The
-payload still needs its own domain construction.
+an invalid zero. An `ok` check establishes presence for map lookups and open
+channel receives. Raw payloads still need their own domain construction.
 
 A checked or forwarded error can retain its original result guard through local
 branch merges. For example, `if err != nil { err = fmt.Errorf("lookup: %w", err) }`
@@ -581,9 +588,10 @@ an incomplete proof retains the warning.
 
 Arrays and slices retain element initialization state. The checker catches
 omitted array elements, unfilled `make` slots, zero elements passed through
-interfaces or variadic arguments, and invalid contents after `clear` or a partial
-`copy`. It accepts initialized individual slots, slice views, complete copies,
-append-based construction, and complete sequential fills using `range` or an
+interfaces or variadic arguments, and invalid contents after `clear`, a partial
+`copy`, or an append into the same backing array. It accepts initialized
+individual slots, slice views, complete copies, append-based construction,
+and complete sequential fills using `range` or an
 index from zero to the length. A fill must assign every element on every back
 edge; a `continue` that skips an assignment or a `break` does not establish that
 contract. A complete fill also requires stable backing storage. Channel and
@@ -613,9 +621,10 @@ Generic helper summaries retain zero factories, `*new(T)`, fresh `new(T)` and
 `make([]T, n)` results, simple struct construction, and forwarding until the call
 provides concrete types. Instantiations with valid-zero types remain valid;
 instantiations with required domain values must initialize them before use.
-Local and imported helpers receive the same checks. A constructor may inspect
-its own representation while building a value; successful zero results remain
-diagnostics.
+A known fractional argument can truncate to zero at a generic integer
+conversion. Local and imported helpers receive the same checks. A constructor
+may inspect its own representation while building a value. Successful returns
+still require valid results.
 
 The analysis is local, not a proof for every Go program. Domain-typed parameters
 and successful opaque domain results are trusted according to their types;
@@ -691,9 +700,9 @@ text, so position mapping adds no syntax lookups to calls without findings.
 For fields whose zero is valid, a store index can avoid tracing every path when
 all assignments preserve that zero, including field copies. The proof includes
 writes after the read and falls back to normal flow analysis for overlapping
-collection copies, cycles, unresolved origins, generic factory summaries, and
-explicit payloads. Required domain fields and boxed invalid values retain their
-usual checks.
+collection copies or appends, cycles, unresolved origins, generic factory
+summaries, and explicit payloads. Required domain fields and boxed invalid
+values retain their usual checks.
 
 The analyzer tests include real SSA fixtures, allocation regression checks, and
 benchmarks for branch joins, optional fields, boolean refinement, and repeated

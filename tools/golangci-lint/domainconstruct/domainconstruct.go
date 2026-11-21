@@ -24,9 +24,10 @@ var Analyzer = &analysis.Analyzer{
 }
 
 type checker struct {
-	pass      *analysis.Pass
-	policies  policySet
-	contracts *contractSet
+	pass           *analysis.Pass
+	policies       policySet
+	contracts      *contractSet
+	storageAliases storageAliasScope
 }
 
 func run(pass *analysis.Pass) (any, error) {
@@ -43,24 +44,33 @@ func run(pass *analysis.Pass) (any, error) {
 		return c.policies, nil
 	}
 	for _, file := range pass.Files {
-		var ancestors []ast.Node
-		ast.Inspect(file, func(node ast.Node) bool {
-			if node == nil {
-				ancestors = ancestors[:len(ancestors)-1]
-				return true
-			}
-			if !c.check(node, ancestors) {
-				return false
-			}
-			ancestors = append(ancestors, node)
-			return true
-		})
+		c.walk(file, nil)
 	}
 	return c.policies, nil
 }
 
+func (c *checker) walk(root ast.Node, ancestors []ast.Node) {
+	ast.Inspect(root, func(node ast.Node) bool {
+		if node == nil {
+			ancestors = ancestors[:len(ancestors)-1]
+			return true
+		}
+		if !c.check(node, ancestors) {
+			return false
+		}
+		ancestors = append(ancestors, node)
+		return true
+	})
+}
+
 func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 	switch node := node.(type) {
+	case *ast.BlockStmt:
+		c.checkBlock(node, ancestors)
+		return false
+	case *ast.FuncLit:
+		// A closure can retain and reassign a local slice or map descriptor.
+		c.storageAliases.stop()
 	case *ast.CallExpr:
 		if c.pass.TypesInfo.Types[node.Fun].IsType() {
 			if !c.checkConversion(node, ancestors) {
@@ -95,7 +105,7 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 		}
 	case *ast.AssignStmt:
 		for _, target := range node.Lhs {
-			if !c.checkWrite(target, ancestors) {
+			if !c.checkAssignment(target, ancestors) {
 				return false
 			}
 			if node.Tok != token.ASSIGN && node.Tok != token.DEFINE {
@@ -122,7 +132,12 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 		c.checkSend(node, ancestors)
 	case *ast.UnaryExpr:
 		if node.Op == token.AND {
-			if p := c.unapprovedOwner(node.X, ancestors); p != nil {
+			p := c.unapprovedOwner(node.X, ancestors)
+			if id, ok := ast.Unparen(node.X).(*ast.Ident); ok && c.localStorageVariable(id) != nil {
+				// The descriptor can now be reassigned through its address.
+				c.storageAliases.stop()
+			}
+			if p != nil {
 				c.reportProtected(node, p, "domainconstruct.mutable-exposure", "address", "mutable-contents",
 					fmt.Sprintf("do not expose mutable contents of %s", p.name))
 				return false
@@ -181,7 +196,8 @@ func (c *checker) checkConversion(call *ast.CallExpr, ancestors []ast.Node) bool
 	if len(call.Args) != 1 {
 		return true
 	}
-	target, source := c.pass.TypesInfo.TypeOf(call), c.pass.TypesInfo.TypeOf(call.Args[0])
+	target := exactOperandType(c.pass.TypesInfo.TypeOf(call))
+	source := exactOperandType(c.pass.TypesInfo.TypeOf(call.Args[0]))
 	if types.Identical(target, source) {
 		return true
 	}
@@ -215,6 +231,13 @@ func (c *checker) checkConversion(call *ast.CallExpr, ancestors []ast.Node) bool
 	return true
 }
 
+func (c *checker) checkAssignment(target ast.Expr, ancestors []ast.Node) bool {
+	if _, identifier := ast.Unparen(target).(*ast.Ident); identifier {
+		return true // Rebinding a slice or map does not write its backing storage.
+	}
+	return c.checkWrite(target, ancestors)
+}
+
 func (c *checker) checkWrite(target ast.Expr, ancestors []ast.Node) bool {
 	if p := c.unapprovedOwner(target, ancestors); p != nil {
 		c.reportProtected(target, p, "domainconstruct.field-write", "assignment", "protected-field",
@@ -232,6 +255,11 @@ func (c *checker) checkWrite(target ast.Expr, ancestors []ast.Node) bool {
 
 func (c *checker) unapprovedOwner(expr ast.Expr, ancestors []ast.Node) *policy {
 	switch expr := ast.Unparen(expr).(type) {
+	case *ast.Ident:
+		if len(c.storageAliases.owners) != 0 {
+			variable, _ := c.pass.TypesInfo.Uses[expr].(*types.Var)
+			return c.storageAliases.owners[variable]
+		}
 	case *ast.SelectorExpr:
 		if selection := c.pass.TypesInfo.Selections[expr]; selection != nil && selection.Kind() == types.FieldVal {
 			owner := selection.Recv()
@@ -247,7 +275,7 @@ func (c *checker) unapprovedOwner(expr ast.Expr, ancestors []ast.Node) *policy {
 			return c.unapprovedOwner(expr.X, ancestors)
 		}
 	case *ast.IndexExpr:
-		if p := c.policy(exactOperandType(c.pass.TypesInfo.TypeOf(expr.X))); p != nil && !c.approved(p, ancestors) {
+		if p := c.policy(c.pass.TypesInfo.TypeOf(expr.X)); p != nil && !c.approved(p, ancestors) {
 			return p
 		}
 		return c.unapprovedOwner(expr.X, ancestors)
