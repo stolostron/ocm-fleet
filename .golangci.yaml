@@ -103,10 +103,21 @@ linters:
         - testingcontext
         # WaitGroup.Go changes when the counter is decremented on abrupt exit.
         - waitgroupgo
+    # Module plugins run with the standard linters. Enroll domain types
+    # incrementally through their declarations.
     custom:
       mapcopy:
         type: module
         description: Replace loops that copy between map identifiers with maps.Copy.
+      domainconstruct:
+        type: module
+        description: Require approved construction of annotated domain values.
+      domainzero:
+        type: module
+        description: Report invalid zero domain values reaching operations.
+      domainserialization:
+        type: module
+        description: Require declared domain codecs and recursively plain snapshots.
     errcheck:
       # Keep the defaults for assertions and explicit blank-identifier discards.
       check-type-assertions: false
@@ -126,6 +137,8 @@ issues:
   # Keep the full report by disabling per-linter and repeated-message limits.
   max-issues-per-linter: 0
   max-same-issues: 0
+  # Construction and zero-flow findings can explain different problems on one line.
+  uniq-by-line: false
 
 output:
   # Keep diagnostics unambiguous when Nx runs tasks from different modules.

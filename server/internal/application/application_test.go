@@ -626,8 +626,8 @@ func pauseFulfillment(t *testing.T, store domain.Store, fID domain.FulfillmentID
 
 // advanceFulfillmentToGeneration performs read/write cycles using
 // [domain.Fulfillment.Touch] until the fulfillment's generation reaches
-// targetGen, mirroring the "N-1 read, modify, write cycles" guidance in
-// docs/domain.md.
+// targetGen, following the read, modify, and write fixture guidance in
+// docs/testing.md ("Domain fixtures").
 func advanceFulfillmentToGeneration(t *testing.T, store domain.Store, fID domain.FulfillmentID, targetGen domain.Generation) {
 	t.Helper()
 	ctx := context.Background()

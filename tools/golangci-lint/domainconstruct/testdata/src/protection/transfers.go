@@ -1,0 +1,154 @@
+package protection
+
+import "maps"
+
+func SendProtected(out chan<- Record, raw struct {
+	number int
+	array  [1]int
+	items  []int
+	keys   map[int]int
+}, value Record) {
+	out <- raw // want "construct protection.Record through NewRecord"
+	out <- value
+}
+
+func StoreProtectedMapKey(values map[ID]int, raw [2]byte, valid ID) {
+	values[raw] = 1 // want "construct protection.ID through NewID"
+	values[raw]++   // want "construct protection.ID through NewID"
+	values[valid] = 1
+}
+
+func CallConstrained[F ~func(ID)](callback F, valid ID) {
+	callback([2]byte{1}) // want "construct protection.ID through NewID"
+	callback(valid)
+}
+
+func CallConstrainedVariadic[F ~func(...ID)](callback F, valid ID, values []ID) {
+	callback(valid, [2]byte{1}) // want "construct protection.ID through NewID"
+	callback(values...)
+}
+
+func ConstrainedLiterals[S ~[]ID, M ~map[ID]ID](valid ID) {
+	_ = S{[2]byte{1}}        // want "construct protection.ID through NewID"
+	_ = M{[2]byte{1}: valid} // want "construct protection.ID through NewID"
+	_ = M{valid: [2]byte{1}} // want "construct protection.ID through NewID"
+	_ = S{valid}
+	_ = M{valid: valid}
+}
+
+func AdvanceExactCount[T Count](value T) {
+	value++ // want "construct protection.Count through NewCount"
+}
+
+func AdvanceUnderlyingInt[T ~int](value T) { value++ }
+
+func ReturnExactArray[T ID](valid ID, raw bool) T {
+	if raw {
+		return [2]byte{1} // want "construct protection.ID through NewID"
+	}
+	return T(valid)
+}
+
+func countFromPointerField[T ~int](raw int) T {
+	return (&struct{ Value T }{Value: T(raw)}).Value
+}
+
+func countFromValueField[T ~int](raw int) T {
+	return (struct{ Value T }{Value: T(raw)}).Value
+}
+
+func GenericFieldConversion(raw int) {
+	_ = countFromPointerField[Count](raw) // want "construct protection.Count through NewCount"
+	_ = countFromValueField[Count](raw)   // want "construct protection.Count through NewCount"
+}
+
+func IntegerRangeConstruction(limit Count, plain int, values []Count) {
+	for item := range limit { // want "construct protection.Count through NewCount"
+		_ = item
+	}
+	var item Count
+	for item = range limit { // want "construct protection.Count through NewCount"
+		_ = item
+	}
+	for index := range plain {
+		_ = index
+	}
+	for _, item = range values {
+		_ = item
+	}
+	for range limit {
+	}
+	for item = range 0 {
+		_ = item
+	}
+	for item = range -1 { // want "construct protection.Count through NewCount"
+		_ = item
+	}
+}
+
+func AppendIntoOwnedSlice(record Record, rest []int) {
+	_ = append(record.items[:0], 1)       // want "modify protection.Record through NewRecord"
+	_ = append(record.items[:0], rest...) // want "modify protection.Record through NewRecord"
+	_ = append(record.items[:1:1], 1)
+	_ = append(record.items[:1:1], rest...)
+	_ = append(record.items[:0:1], 1, 2)
+	_ = append(record.items[:0:1], 1) // want "modify protection.Record through NewRecord"
+	_ = append(record.items[:0])
+	_ = append(record.items, []int{}...)
+}
+
+func ConvertOwnedSlice(record Record) {
+	_ = (*[1]int)(record.items) // want "do not expose mutable representation of protection.Record"
+	_ = (*[0]int)(record.items)
+	_ = [1]int(record.items)
+}
+
+func ReturnOwnedMap(record Record) map[int]int {
+	return record.keys // want "do not expose mutable contents of protection.Record"
+}
+
+func ReturnClonedMap(record Record) map[int]int { return maps.Clone(record.keys) }
+
+func ReturnMapEntry(record Record) int { return record.keys[0] }
+
+func SliceProtectedArray[P interface{ *ID }](value P) []byte {
+	return value[:] // want "do not expose mutable contents of protection.ID"
+}
+
+func UpdateProtectedArray[P interface{ *ID }](value P) {
+	value[0] = 0 // want "modify protection.ID through NewID"
+}
+
+type ordinaryArray [2]byte
+
+func SliceOrdinaryArray[P interface{ *ordinaryArray }](value P) []byte {
+	value[0] = 0
+	return value[:]
+}
+
+type hydrationChild struct{}
+
+func (*hydrationChild) UnmarshalJSON([]byte) error {
+	_ = HydrationParent{Number: 1} // want "construct protection.HydrationParent through NewHydrationParent"
+	return nil
+}
+
+//domain:constructors NewHydrationParent
+//domain:serialization json
+type HydrationParent struct { // want HydrationParent:"requires constructors"
+	hydrationChild
+	Number int
+}
+
+func NewHydrationParent() HydrationParent { return HydrationParent{Number: 1} }
+
+type originBuilder[T any] struct{}
+
+func (originBuilder[T]) Build() FromPromotedConstructor {
+	return FromPromotedConstructor{Number: 1}
+}
+
+type ConstructionHost struct{ originBuilder[int] }
+
+//domain:constructors ConstructionHost.Build
+type FromPromotedConstructor struct{ Number int } // want FromPromotedConstructor:"requires constructors"

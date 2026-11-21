@@ -10,6 +10,21 @@ Prefer to write tests first, then passing code. This is especially true when the
 
 Tests should not only exercise "happy paths." Edge cases, like odd sequences of requests (repeat failures, double requests, etc), should be tested.
 
+## Domain fixtures
+
+Build ordinary domain fixtures through constructors and valid transitions.
+To reach a later persisted generation, perform the corresponding read,
+modify, and write cycles.
+
+For a round trip, take the snapshot of a valid object or encode it with the
+native codec under test. Restore it through the matching
+[serialization contract](./serialization.md) and check the result.
+Keep aggregate snapshot round trips in [snapshot_test.go](../internal/domain/snapshot_test.go).
+Exercise rejection using raw inputs, including missing or null required data
+where applicable. Use explicit stored fixtures for supported historical
+formats. If a test needs state that ordinary construction and transitions
+cannot produce, explain the reason at the fixture.
+
 ## No I/O
 
 By default, there is NO external I/O in tests. This often includes syscalls (e.g. time, randomization). This means you often need to design main code to support testability:
