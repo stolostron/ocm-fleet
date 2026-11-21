@@ -11,6 +11,38 @@ func EmptyStringSuffix(value ID) ID {
 
 func FullStringSuffix(value ID) ID { return value[0:] }
 
+func DynamicStringPrefix(value ID, end int) ID {
+	return value[:end] // want "return may produce an empty zeroflow.ID"
+}
+
+func DynamicStringSuffix(value ID, start int) ID {
+	return value[start:] // want "return may produce an empty zeroflow.ID"
+}
+
+func GuardedStringPrefix(value ID, end int) ID {
+	if end <= 0 {
+		return value
+	}
+	return value[:end]
+}
+
+func GuardedStringSubslice(value ID, start, end int) ID {
+	if start == end {
+		return value
+	}
+	return value[start:end]
+}
+
+func FixedStringPrefix(value ID) ID { return value[:1] }
+func FullStringPrefix(value ID) ID  { return value[:len(value)] }
+
+func ZeroStringPrefix(value ID, end int) ID {
+	if end == 0 {
+		return value[:end] // want "return produces an empty zeroflow.ID"
+	}
+	return value
+}
+
 func ZeroLookupKey(values map[ID]int) int {
 	var id ID
 	return values[id] // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\""

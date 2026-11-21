@@ -62,3 +62,69 @@ func ReadLocalAliases(record Record, independent []int) {
 	keys := record.keys
 	_ = keys[0]
 }
+
+func TrackAliasAfterClosure(record Record) {
+	_ = func() {}
+	items := record.items
+	items[0] = 7 // want "modify protection.Record through NewRecord"
+}
+
+func ForgetAliasesThatAClosureCanRebind(record Record) {
+	items := record.items
+	detach := func() { items = []int{1} }
+	detach()
+	items[0] = 7
+}
+
+func TrackAliasAfterAddressTaking(record Record) {
+	items := record.items
+	unrelated := []int{1}
+	_ = &unrelated
+	items[0] = 7 // want "modify protection.Record through NewRecord"
+	view := record.items
+	view[0] = 7 // want "modify protection.Record through NewRecord"
+}
+
+func CheckEachVariableInitializer(record Record) {
+	var (
+		items = record.items
+		_     = copy(items, []int{7}) // want "modify protection.Record through NewRecord"
+	)
+}
+
+type itemView []int
+type keyView map[int]int
+
+func ModifyThroughStorageConversions(record Record) {
+	itemView(record.items)[0] = 7   // want "modify protection.Record through NewRecord"
+	delete(keyView(record.keys), 0) // want "modify protection.Record through NewRecord"
+	alias := itemView(record.items)
+	alias[0] = 7 // want "modify protection.Record through NewRecord"
+}
+
+func ReturnConvertedSlice(record Record) []int {
+	return itemView(record.items) // want "do not expose mutable contents of protection.Record"
+}
+
+func ReturnConvertedMap(record Record) map[int]int {
+	return keyView(record.keys) // want "do not expose mutable contents of protection.Record"
+}
+
+func ReturnInaccessibleConvertedSlice(record Record) []int {
+	return itemView(record.items[:0:0])
+}
+
+func ReturnConstrainedSliceView[S ~[]int](record Record) S {
+	var items S = record.items
+	return items[:] // want "do not expose mutable contents of protection.Record"
+}
+
+func ReturnInaccessibleConstrainedSliceView[S ~[]int](record Record) S {
+	var items S = record.items
+	return items[:0:0]
+}
+
+func ConvertConstrainedSliceToArray[S ~[]int](record Record) (*[1]int, [1]int, *[0]int) {
+	var items S = record.items
+	return (*[1]int)(items), [1]int(items), (*[0]int)(items) // want "do not expose mutable representation of protection.Record"
+}

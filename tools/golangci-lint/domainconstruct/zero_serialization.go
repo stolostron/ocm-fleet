@@ -229,7 +229,7 @@ func (c *zeroChecker) decodeInvalidatesValue(decoded, expected types.Type, codec
 	return (scalar || !types.Identical(decoded, expected)) && !c.decoderEstablishes(decoded, expected, codec)
 }
 
-// A checked write into an element's field only affects that field's contract.
+// A checked write to a member of an element only affects that member's contract.
 // Follow the same field selection as the use of the surrounding value.
 func (c *zeroChecker) decodedFieldProblem(t types.Type, path []int, decoded types.Type, codec string, use valueUse) *zeroProblem {
 	if !c.work.take() {
@@ -241,10 +241,21 @@ func (c *zeroChecker) decodedFieldProblem(t types.Type, path []int, decoded type
 		}
 		return nil
 	}
+	use = c.useForType(t, use)
+	if array, ok := t.Underlying().(*types.Array); ok {
+		index := int64(path[0])
+		if array.Len() == 0 || index >= array.Len() {
+			return nil
+		}
+		problem := c.decodedFieldProblem(array.Elem(), path[1:], decoded, codec, use)
+		if problem != nil {
+			problem.path = fieldPath(elementLabel(index), problem.path)
+		}
+		return problem
+	}
 	if _, structure := t.Underlying().(*types.Struct); !structure {
 		return nil
 	}
-	use = c.useForType(t, use)
 	for selected := range c.jsonShape.fields(t, use.json()) {
 		if !c.work.take() {
 			return nil

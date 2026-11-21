@@ -89,12 +89,18 @@ func (c *zeroChecker) problem(value ssa.Value, path []int, t types.Type, point f
 		return c.assertedProblem(value, path, t, point, context, seen)
 	case *ssa.Slice:
 		if basic, ok := value.Type().Underlying().(*types.Basic); ok && basic.Info()&types.IsString != 0 {
-			if length, known := stringSliceLength(value); known {
-				if length == 0 {
-					return c.zeroType(t, "", context.use).step("source", value.Pos(), "slice bounds produce an empty string")
-				}
+			start, known := stringSliceBound(value.Low, context)
+			if known && start == 0 && (value.High == nil || stringLengthOf(value.High, value.X)) {
+				return c.problem(value.X, path, t, point, context, seen)
+			}
+			switch stringSliceTruth(value, start, known, context) {
+			case isZero:
+				return c.zeroType(t, "", context.use).step("source", value.Pos(), "slice bounds produce an empty string")
+			case notZero:
 				return nil
 			}
+			return c.conditionalProblem(t, reasonConversion, context.use).
+				step("source", value.Pos(), "slice bounds may produce an empty string")
 		}
 		return c.collectionProblem(value, point, context, seen)
 	case *ssa.MakeSlice:
@@ -307,24 +313,70 @@ func projectedType(source types.Type, path []int) types.Type {
 	return source
 }
 
-func stringSliceLength(value *ssa.Slice) (int64, bool) {
+func stringSliceTruth(value *ssa.Slice, start int64, startKnown bool, context flowContext) truth {
+	if value.High != nil && value.Low == value.High || value.High == nil && stringLengthOf(value.Low, value.X) {
+		return isZero
+	}
 	if value.High == nil {
-		if low, ok := value.Low.(*ssa.Call); ok {
-			if builtin, ok := low.Call.Value.(*ssa.Builtin); ok && builtin.Name() == "len" && low.Call.Args[0] == value.X {
-				return 0, true
+		return unknown
+	}
+	if end, endKnown := stringSliceBound(value.High, context); startKnown && endKnown {
+		if start == end {
+			return isZero
+		}
+		return notZero
+	}
+	for condition, state := range context.facts {
+		comparison, ok := condition.(*ssa.BinOp)
+		if !ok || state == unknown || ((!matchesStringBound(comparison.X, value.Low) || !matchesStringBound(comparison.Y, value.High)) && (!matchesStringBound(comparison.Y, value.Low) || !matchesStringBound(comparison.X, value.High))) {
+			continue
+		}
+		switch comparison.Op {
+		case token.EQL:
+			return opposite(state)
+		case token.NEQ:
+			return state
+		case token.LSS, token.GTR:
+			if state == notZero {
+				return notZero
+			}
+		case token.LEQ, token.GEQ:
+			if state == isZero {
+				return notZero
 			}
 		}
-		return 0, false
 	}
-	if value.High == value.Low {
-		return 0, true
+	return unknown
+}
+
+func stringSliceBound(value ssa.Value, context flowContext) (int64, bool) {
+	if value == nil {
+		return 0, true // An omitted lower bound is zero.
 	}
-	high, known := integerValue(value.High)
-	if !known || value.Low == nil {
-		return high, known
+	if bound, known := integerValue(value); known {
+		return bound, true
 	}
-	low, known := integerValue(value.Low)
-	return high - low, known
+	return guardedInteger(value, context)
+}
+
+func matchesStringBound(candidate, bound ssa.Value) bool {
+	if candidate == bound {
+		return true
+	}
+	actual, known := integerValue(candidate)
+	if bound == nil {
+		return known && actual == 0
+	}
+	expected, fixed := integerValue(bound)
+	return known && fixed && actual == expected
+}
+
+func stringLengthOf(length, value ssa.Value) bool {
+	if call, ok := length.(*ssa.Call); ok {
+		builtin, ok := call.Call.Value.(*ssa.Builtin)
+		return ok && builtin.Name() == "len" && call.Call.Args[0] == value
+	}
+	return false
 }
 
 func (c *zeroChecker) tupleProblem(value *ssa.Extract, t types.Type, context flowContext) *zeroProblem {

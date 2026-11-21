@@ -116,7 +116,7 @@ func PositionCopyArgument(destination []ID, valid ID) {
 }
 
 func PositionClearArgument(bad []ID) {
-	clear( /* position */ bad) // want "rule: domainzero[.]invalid-zero"
+	clear( /* position */ bad[:1]) // want "rule: domainzero[.]invalid-zero"
 }
 
 func PositionPackageArgument() {

@@ -68,6 +68,22 @@ func SuccessfulDecodeKeepsUnrelatedElementField(valid encodingvalues.ID, data []
 	return rows
 }
 
+func SuccessfulRawDecodeCanInvalidateNestedArray(valid encodingvalues.ID) [1][1]encodingvalues.ID {
+	rows := [1][1]encodingvalues.ID{{valid}}
+	if err := json.Unmarshal([]byte(`""`), (*string)(&rows[0][0])); err != nil {
+		return [1][1]encodingvalues.ID{{valid}}
+	}
+	return rows // want "return may contain an empty encodingvalues.ID at path \\[0\\]\\[0\\]"
+}
+
+func SuccessfulRawDecodeKeepsDisjointNestedArray(valid encodingvalues.ID) [1][1]encodingvalues.ID {
+	rows := [2][1]encodingvalues.ID{{valid}, {valid}}
+	if err := json.Unmarshal([]byte(`""`), (*string)(&rows[1][0])); err != nil {
+		return [1][1]encodingvalues.ID{{valid}}
+	}
+	return [1][1]encodingvalues.ID(rows[:1])
+}
+
 func ReadFieldAfterDynamicDecode(valid encodingvalues.ID, index int) {
 	rows := []decodeRow{{Other: valid, ID: valid}, {Other: valid, ID: valid}}
 	if err := json.Unmarshal([]byte(`""`), (*string)(&rows[index].ID)); err != nil { // want "conversion may use an empty encodingvalues.ID"
@@ -113,6 +129,66 @@ func NativePointerSlotDecodeCanLeavePointeeZero(data []byte) (encodingvalues.ID,
 		return "", err
 	}
 	return id, nil // want "return .* an empty encodingvalues.ID"
+}
+
+type decoderSlot struct{ ID *encodingvalues.ID }
+
+func DecodeCannotProveDynamicOrigin(data []byte, write, read int) (encodingvalues.ID, error) {
+	var id, other encodingvalues.ID
+	parents := [2]decoderSlot{{ID: &other}, {ID: &other}}
+	parents[write] = decoderSlot{ID: &id}
+	slots := [1]decoderSlot{parents[read]}
+	if err := json.Unmarshal(data, slots[0].ID); err != nil {
+		return "", err
+	}
+	return id, nil // want "return produces an empty encodingvalues.ID"
+}
+
+func DecodeProvesFixedOrigin(data []byte) (encodingvalues.ID, error) {
+	var id, other encodingvalues.ID
+	parents := [2]decoderSlot{{ID: &other}, {ID: &other}}
+	parents[0] = decoderSlot{ID: &id}
+	slots := [1]decoderSlot{parents[0]}
+	if err := json.Unmarshal(data, slots[0].ID); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func DecodeAfterCaptureChangesSlot(data []byte) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	var slot *encodingvalues.ID
+	start, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		<-start
+		if other, err := encodingvalues.NewID("replacement"); err == nil {
+			slot = &other
+		}
+		close(done)
+	}()
+	slot = &id
+	close(start)
+	<-done
+	if err := json.Unmarshal(data, slot); err != nil {
+		return "", err
+	}
+	return id, nil // want "return produces an empty encodingvalues.ID"
+}
+
+func keepLocalSlot(**encodingvalues.ID) {}
+
+func DecodeAfterPrivateSlotHandoff(data []byte) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	var slot *encodingvalues.ID
+	keepLocalSlot(&slot)
+	slot = &id
+	done := make(chan struct{})
+	go close(done)
+	<-done
+	if err := json.Unmarshal(data, slot); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func SuccessfulDecodeKeepsDisjointElement(valid encodingvalues.ID) []encodingvalues.ID {

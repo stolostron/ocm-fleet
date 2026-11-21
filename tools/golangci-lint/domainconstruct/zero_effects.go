@@ -221,7 +221,7 @@ func (c *zeroChecker) memoryMayReference(location address, t types.Type, storage
 		return false
 	}
 	switch t.Underlying().(type) {
-	case *types.Pointer, *types.Interface, *types.Signature, *types.Slice:
+	case *types.Pointer, *types.Interface, *types.Signature, *types.Slice, *types.Map:
 		if origin, _ := c.referenceAt(location, point); origin != nil {
 			return c.mayReferenceStorage(origin, storage, use, seen)
 		}
@@ -286,11 +286,11 @@ func (c *zeroChecker) collectionMayReferenceAt(view collectionView, storage muta
 		instruction := point.block.Instrs[index]
 		if call, ok := instruction.(*ssa.Call); ok {
 			common := call.Common()
-			if builtin, ok := common.Value.(*ssa.Builtin); ok && builtin.Name() == "copy" {
+			if builtin, ok := common.Value.(*ssa.Builtin); ok && (builtin.Name() == "copy" || builtin.Name() == "append") {
 				if !c.work.take() {
 					return true
 				}
-				if source, known := c.copiedReferenceSource(common, view); known &&
+				if source, known := c.writtenReferenceSource(common, view); known &&
 					c.collectionMayReferenceAt(source, storage, flowPoint{point.block, index}, use, values, seen) {
 					return true
 				}
@@ -329,17 +329,20 @@ func (c *zeroChecker) collectionMayReferenceAt(view collectionView, storage muta
 	return false
 }
 
-func (c *zeroChecker) copiedReferenceSource(call *ssa.CallCommon, observed collectionView) (collectionView, bool) {
-	destination, known := c.builtinWriteView(call)
-	if !known || destination.dynamicStart || destination.end < 0 || !sameStorage(destination.storage, observed.storage) {
+func (c *zeroChecker) writtenReferenceSource(call *ssa.CallCommon, observed collectionView) (collectionView, bool) {
+	var destination, source collectionView
+	var known bool
+	if call.Value.(*ssa.Builtin).Name() == "append" {
+		destination, source, known = c.appendWriteViews(call)
+	} else if destination, known = c.builtinWriteView(call); known {
+		source, known = c.collectionOf(call.Args[1])
+	}
+	if !known || destination.dynamicStart || destination.end < 0 || source.dynamicStart || source.end < 0 ||
+		!sameStorage(destination.storage, observed.storage) {
 		return collectionView{}, false
 	}
 	overlap := intersectView(observed, destination.start, destination.end)
 	if overlap.size() == 0 {
-		return collectionView{}, false
-	}
-	source, known := c.collectionOf(call.Args[1])
-	if !known || source.dynamicStart || source.end < 0 {
 		return collectionView{}, false
 	}
 	source.start += overlap.start - destination.start

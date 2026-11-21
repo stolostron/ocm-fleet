@@ -564,6 +564,10 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 						}
 					}
 				case "copy":
+					// A destination selected by a branch can overlap this view
+					// even when collectionOf cannot resolve it. An extension can
+					// reuse the source's branch handling and preserve prior values
+					// on edges that leave the slots untouched.
 					if destination, ok := c.collectionOf(common.Args[0]); ok && sameStorage(destination.storage, view.storage) {
 						destination = boundedView(destination, context)
 						if source, ok := c.collectionOf(common.Args[1]); ok {
@@ -597,10 +601,10 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 						}
 					}
 				case "append":
-					if destination, source, known := c.appendViews(common); known &&
-						sameStorage(destination.storage, view.storage) && destination.end+source.size() <= destination.capEnd {
-						transferred := intersectView(view, destination.end, destination.end+source.size())
-						if problem := c.copiedCollectionProblem(source, transferred, destination.end, before, use, context, values, covered, seen); problem != nil {
+					if destination, source, known := c.appendWriteViews(common); known &&
+						sameStorage(destination.storage, view.storage) && destination.size() != 0 {
+						transferred := intersectView(view, destination.start, destination.end)
+						if problem := c.copiedCollectionProblem(source, transferred, destination.start, before, use, context, values, covered, seen); problem != nil {
 							return problem
 						}
 						if transferred.start < transferred.end {
@@ -782,14 +786,7 @@ func (c *zeroChecker) collectionWriteProblem(execution executedCall, location ad
 	case "clear", "copy":
 		destination, ok = c.collectionOf(common.Args[0])
 	case "append":
-		destination, source, ok = c.appendViews(common)
-		if !ok || destination.end+source.size() > destination.capEnd {
-			return nil, false, false
-		}
-		destination.start = destination.end
-		destination.end += source.size()
-		// The append extent is exact and differs from the original length.
-		destination.length = nil
+		destination, source, ok = c.appendWriteViews(common)
 	default:
 		return nil, false, false
 	}
@@ -897,31 +894,41 @@ func (c *zeroChecker) appendViews(call *ssa.CallCommon) (collectionView, collect
 	return before, added, known
 }
 
-// Only the transferred slots can change. An append that must allocate has
-// an empty write range on the old backing storage.
+// An append that must allocate has an empty write range on the old backing storage.
+func (c *zeroChecker) appendWriteViews(call *ssa.CallCommon) (destination, source collectionView, known bool) {
+	destination, source, known = c.appendViews(call)
+	if known {
+		destination.start = destination.end
+		if added := source.size(); added <= destination.capEnd-destination.start {
+			destination.end += added
+		}
+		destination.length = nil
+	}
+	return destination, source, known
+}
+
+// Only the transferred slots can change.
 func (c *zeroChecker) builtinWriteView(call *ssa.CallCommon) (collectionView, bool) {
+	name := call.Value.(*ssa.Builtin).Name()
+	if name == "append" {
+		if destination, _, known := c.appendWriteViews(call); known {
+			return destination, true
+		}
+	}
 	destination, known := c.collectionOf(call.Args[0])
 	if !known {
 		return collectionView{}, false
 	}
-	switch call.Value.(*ssa.Builtin).Name() {
+	switch name {
 	case "copy":
 		if source, known := c.collectionOf(call.Args[1]); known {
 			destination.end = endFromCount(destination.start, minEnd(destination.size(), source.size()))
 		}
 	case "append":
-		if before, source, known := c.appendViews(call); known {
-			destination.start = before.end
-			destination.end = before.end + source.size()
-			if destination.end > before.capEnd {
-				destination.end = before.end
-			}
-		} else {
-			if !destination.dynamicStart && destination.end >= 0 {
-				destination.start = destination.end
-			}
-			destination.end = destination.capEnd
+		if !destination.dynamicStart && destination.end >= 0 {
+			destination.start = destination.end
 		}
+		destination.end = destination.capEnd
 	}
 	return destination, true
 }

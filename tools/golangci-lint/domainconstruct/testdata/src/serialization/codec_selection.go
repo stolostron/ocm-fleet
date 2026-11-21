@@ -3,6 +3,7 @@ package serialization
 import (
 	"database/sql"
 	"encoding/json"
+	"strconv"
 
 	"encodingvalues"
 )
@@ -155,6 +156,85 @@ func DecodeHookFields(data []byte, bad encodingvalues.Unsupported, decoder *json
 	decoder.Decode(&boxed) // want "Hidden.*does not declare json serialization"
 	plain := customBox{Hidden: bad}
 	decoder.Decode(&plain)
+}
+
+type textRestore struct {
+	Hidden encodingvalues.Unsupported `json:"-"`
+}
+
+func (value *textRestore) UnmarshalText(data []byte) error {
+	value.Hidden = encodingvalues.NewUnsupported(string(data))
+	return nil
+}
+
+type boxedTextRestore struct {
+	Hidden any `json:"-"`
+}
+
+func (value *boxedTextRestore) UnmarshalText(data []byte) error {
+	if _, ok := value.Hidden.(encodingvalues.Unsupported); ok {
+		value.Hidden = encodingvalues.NewUnsupported(string(data))
+	}
+	return nil
+}
+
+func DecodeThroughTextHooks(bad encodingvalues.Unsupported, decoder *json.Decoder) {
+	var typed textRestore
+	json.Unmarshal([]byte(`"restored"`), &typed) // want "Hidden.*does not declare json serialization"
+	boxed := boxedTextRestore{Hidden: bad}
+	decoder.Decode(&boxed) // want "Hidden.*does not declare json serialization"
+	var plain customEnvelope
+	json.Unmarshal([]byte(`{}`), &plain)
+}
+
+//domain:constructors newJSONFirstKey
+//domain:serialization text
+type jsonFirstKey int
+
+func newJSONFirstKey(n int) jsonFirstKey { return jsonFirstKey(n) }
+
+func (key jsonFirstKey) MarshalText() ([]byte, error) { return []byte(strconv.Itoa(int(key))), nil }
+
+func (key *jsonFirstKey) UnmarshalText(data []byte) error {
+	n, err := strconv.Atoi(string(data))
+	if err != nil {
+		return err
+	}
+	*key = newJSONFirstKey(n)
+	return nil
+}
+
+func (*jsonFirstKey) UnmarshalJSON([]byte) error { return nil }
+
+//domain:constructors newTextMapKey
+//domain:serialization text
+type textMapKey int
+
+func newTextMapKey(n int) textMapKey { return textMapKey(n) }
+
+func (key textMapKey) MarshalText() ([]byte, error) { return []byte(strconv.Itoa(int(key))), nil }
+
+func (key *textMapKey) UnmarshalText(data []byte) error {
+	n, err := strconv.Atoi(string(data))
+	if err != nil {
+		return err
+	}
+	*key = newTextMapKey(n)
+	return nil
+}
+
+func DecodeJSONMapKeys() {
+	data := []byte(`{"1":true}`)
+	var jsonFirst map[jsonFirstKey]bool
+	json.Unmarshal(data, &jsonFirst) // want "at path \\[key\\]: .*does not declare json serialization"
+	json.Marshal(jsonFirst)
+	var textOnly map[textMapKey]bool
+	json.Unmarshal(data, &textOnly)
+}
+
+func EncodeBoxedFieldSelector(bad encodingvalues.Unsupported) {
+	json.Marshal((struct{ Payload any }{Payload: bad}).Payload) // want "does not declare json serialization"
+	json.Marshal((struct{ Payload any }{Payload: "ok"}).Payload)
 }
 
 type privateValue struct{ hidden encodingvalues.Unsupported }

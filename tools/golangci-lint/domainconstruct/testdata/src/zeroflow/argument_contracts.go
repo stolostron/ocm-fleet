@@ -22,6 +22,13 @@ func FirstStatusOnly(lookup func() (ID, error, error), use func(ID)) {
 	}
 }
 
+func SecondStatusOnly(lookup func() (ID, error, error), use func(ID)) {
+	id, _, second := lookup()
+	if second == nil {
+		use(id) // want "argument may be an empty zeroflow.ID"
+	}
+}
+
 func BothStatuses(lookup func() (ID, error, error), use func(ID)) {
 	id, first, second := lookup()
 	if first == nil && second == nil {

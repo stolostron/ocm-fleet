@@ -58,12 +58,9 @@ func (operand encodingOperand) forType(t types.Type) encodingOperand {
 	if operand.operation == "encode" {
 		operand.use = jsonUseForType(t, operand.use)
 	}
-	if operand.defaultJSONDecode && operand.use.json() {
-		_, pointer := t.Underlying().(*types.Pointer)
-		if method := codecMethod(t, "UnmarshalJSON", !pointer); method != nil && validDecoderSignature(method.Type().(*types.Signature), "json") {
-			// The hook owns field selection and can inspect existing payloads.
-			operand.use, operand.defaultJSONDecode = wholeValue, false
-		}
+	if operand.defaultJSONDecode && operand.use.json() && hasJSONDecoder(t) {
+		// The hook owns field selection and can inspect existing payloads.
+		operand.use, operand.defaultJSONDecode = wholeValue, false
 	}
 	return operand
 }
@@ -294,7 +291,7 @@ func (c *serializationChecker) encodingProblem(t types.Type, operand encodingOpe
 		if operand.defaultJSONDecode && c.policies.lookup(shape.Elem()) != nil {
 			// The default base64 path writes uint8 elements directly without
 			// calling their decoders. A slice-level hook can intercept it.
-			if basic, ok := shape.Elem().Underlying().(*types.Basic); ok && basic.Kind() == types.Uint8 && !hasJSONDecoder(t) {
+			if basic, ok := shape.Elem().Underlying().(*types.Basic); ok && basic.Kind() == types.Uint8 {
 				return &serializationProblem{typ: shape.Elem(), codec: codec, reason: "json-byte-slice"}
 			}
 		}
@@ -305,6 +302,17 @@ func (c *serializationChecker) encodingProblem(t types.Type, operand encodingOpe
 		key := operand
 		if codec == "json" {
 			key.codec, key.use = "text", wholeValue
+			if operand.defaultJSONDecode {
+				keyPointer := types.NewPointer(shape.Key())
+				// Text unmarshaling admits the key to hook dispatch. Once in
+				// that path, JSON unmarshaling takes precedence.
+				if hasJSONDecodeMethod(keyPointer, "UnmarshalText") {
+					key.defaultJSONDecode = false
+					if hasJSONDecodeMethod(keyPointer, "UnmarshalJSON") {
+						key.codec = "json"
+					}
+				}
+			}
 		}
 		if problem := c.encodingProblem(shape.Key(), key, seen); problem != nil {
 			problem.path = fieldPath("[key]", problem.path)
@@ -336,12 +344,15 @@ func (c *serializationChecker) encodingProblem(t types.Type, operand encodingOpe
 }
 
 func hasJSONDecoder(t types.Type) bool {
-	for _, name := range []string{"UnmarshalJSON", "UnmarshalText"} {
-		if method := codecMethod(t, name, true); method != nil && validDecoderSignature(method.Type().(*types.Signature), "json") {
-			return true
-		}
+	if _, pointer := t.Underlying().(*types.Pointer); !pointer {
+		t = types.NewPointer(t)
 	}
-	return false
+	return hasJSONDecodeMethod(t, "UnmarshalJSON") || hasJSONDecodeMethod(t, "UnmarshalText")
+}
+
+func hasJSONDecodeMethod(t types.Type, name string) bool {
+	method := codecMethod(t, name, false)
+	return method != nil && validDecoderSignature(method.Type().(*types.Signature), "json")
 }
 
 func (c *serializationChecker) promotedCodecProblem(shape *types.Struct, selected structField, codec string) *serializationProblem {

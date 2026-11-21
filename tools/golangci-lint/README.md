@@ -153,12 +153,16 @@ requires permission from its enclosing owners. Directly returning a protected
 map field, slice field, or slice view with accessible backing storage also
 exposes the representation. Straight-line local bindings of a slice or map
 retain that ownership within their block, including named results at a bare
-return. Rebinding a local to fresh storage clears its prior owner. The owner
-check covers slicing and index writes through exact generic pointers to protected
+return. Each specification in a local `var` group is bound before the next
+initializer is checked. A closure or address-taking can invalidate earlier
+bindings, and later assignments can establish new ones. Slice and map
+conversions preserve the owner when they share the original storage. The owner
+check covers constrained slice views and exact generic pointers to protected
 arrays. Converting a protected slice to a nonempty array pointer exposes the
-same storage. Appending into reusable
-capacity can modify that storage. A full slice expression forces allocation
-when it leaves less spare capacity than the append needs. Read-only slice
+same storage. Rebinding a local to fresh storage clears its prior owner.
+Appending into reusable capacity can modify protected storage. A full slice
+expression forces allocation when it leaves less spare capacity than the
+append needs. Read-only slice
 views are allowed as inputs to `len` and as sources of `copy`.
 Simple generic helpers that convert a raw argument into a protected
 type are checked at their instantiated calls, including imported helpers.
@@ -211,8 +215,10 @@ construction or restoration paths.
 
 JSON requires pointer `UnmarshalJSON`. Composites also need a value encoding
 hook (`MarshalJSON` or `MarshalText`). Text requires value `MarshalText` and
-pointer `UnmarshalText`. SQL requires value `Value` and pointer `Scan`. The
-checker uses the text contract for JSON map keys.
+pointer `UnmarshalText`. SQL requires value `Value` and pointer `Scan`.
+JSON map keys use the text contract by default. During default decoding, an
+`UnmarshalText` hook enables decoder dispatch on the key, and
+`UnmarshalJSON` takes precedence if both hooks are present.
 
 `domain:snapshot` opts a declaration into recursive shape checks using the
 [plain-data snapshot rules](../../server/docs/serialization.md#snapshots-and-persistence).
@@ -268,7 +274,8 @@ field promoted from a protected embedded value also requires that owner's codec.
 An explicit promoted method call checks the selected receiver. Default field
 selection follows the encoder's breadth-first embedding and tag rules when the
 traversal completes within its budget. Boxed payloads in package initializers
-and their closures are checked alongside function bodies.
+and their closures are checked alongside function bodies. A field selector can
+retain its boxed payload when the stored value is known.
 
 Decoder destinations accept zero output storage. A parameter selected for both
 encoding and decoding must already be valid. After the error is checked,
@@ -277,10 +284,12 @@ members when the runtime destination establishes the tracked type's policy and
 other destinations cannot overwrite it. Merged destinations can establish that
 proof when they agree on the storage and runtime pointer type. An overlapping
 write through a merged pointer or a helper can invalidate the supplying slot's
-earlier origin. The checker keeps tracking required fields in an ordinary
-envelope. A custom `UnmarshalJSON` hook can write fields omitted by default
-JSON decoding, so its destination gets a whole-value codec check. Default
-JSON decoding replaces non-pointer and nil pointer interface payloads. It can
+earlier origin. This includes a handoff that can reassign a captured pointer
+slot. The checker keeps tracking required fields in an ordinary envelope.
+A custom `UnmarshalJSON` hook or a text decoder for quoted input can write
+fields omitted by default JSON decoding, so its destination gets a whole-value
+codec check. Default JSON decoding replaces non-pointer and nil pointer
+interface payloads. It can
 follow an existing non-nil pointer in an interface or pointer slot. Its pointee
 is a possible write target because inputs such as `null` can replace the slot.
 Default JSON decoding of a base64 string into a slice of protected byte values
@@ -290,8 +299,8 @@ without calling their element decoders. A checked array-level decoder can
 validate that the input supplies every required slot.
 Decoding through a raw representation or a different domain type's codec can
 invalidate an earlier domain value even after the error check. This includes
-possible overlap at dynamic indices and writes to protected fields of collection
-elements. A dynamic index cannot establish that a specific element was initialized.
+possible overlap at dynamic indices and writes to protected fields or nested
+array slots. An initialization proof requires an exact path to the destination.
 Scanning a primitive and converting it to a domain value still requires a
 constructor.
 
@@ -619,9 +628,10 @@ the elements at the copy, including when a later write changes the original
 slice. For a direct branch join with known source lengths, a copy replaces
 earlier values only in the range covered by every feasible source. A field
 written by a copy or by append into spare capacity is traced to its source
-at the write. Storage reached through references in copied or loop-filled
-elements is observed at the use. Exact indexed reads check the selected field
-or converted type, including possible writes from dynamic indices. Parsing each
+at the write. Storage reached through references in copied, appended, or
+loop-filled elements is observed at the use. Exact indexed reads check the
+selected field or converted type, including possible writes from dynamic
+indices. Parsing each
 element and checking its error before continuing is supported, including
 assigning the result to its slot before checking the error.
 Map writes check both keys and values; missing reads still need `ok` when zero
@@ -649,6 +659,8 @@ A source domain type that permits zero does not establish a nonzero contract
 when converted to a different type.
 Checking a primitive for nonzero can remove that particular zero uncertainty,
 but the construction rule still requires its other invariants to be established.
+A substring can be empty even when its input is nonempty. The checker uses
+fixed bounds and comparisons on the current path to check the result length.
 Supported helper summaries retain the known origins described above. Taking a
 value's address can invalidate its inferred origin, including when calling a
 promoted pointer method implicitly takes the address. The checker does not
@@ -658,7 +670,7 @@ or reflection and unsafe writes. Dynamic slice offsets can require checking a
 broader backing range than the program uses. Unknown interface payloads and
 unsupported helper bodies can lose provenance; absence of a finding is not a
 validity proof. A call that can reach a local through an output pointer, boxed
-interface, stored callback, or pointers packaged in array/slice arguments changes
+interface, stored callback, or references in a collection changes
 a previous known zero into a possible zero, retaining its source reason and
 provenance. This is general mutation tracking, including unrecognized output
 APIs; it does not prove a callback ran or initialized the value. Recognized

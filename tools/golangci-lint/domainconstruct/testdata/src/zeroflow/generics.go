@@ -80,7 +80,7 @@ func GenericZeros(valid ID, empty bool) {
 	Accept(LocalZero[ID]())          // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\""
 	Accept(IndirectZero[ID]())       // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\""
 	Accept(ForwardZero[ID]())        // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\""
-	Accept(ChooseZero(valid, empty)) // want "(?s)rule: domainzero[.]invalid-zero.*type: \"zeroflow[.]ID\""
+	Accept(ChooseZero(valid, empty)) // want "(?s)rule: domainzero[.]invalid-zero; certainty: possible;.*type: \"zeroflow[.]ID\""
 	AcceptTotal(Zero[Total]())
 	AcceptPointer(Zero[*ID]())
 }

@@ -68,14 +68,14 @@ func (c *zeroChecker) storedReference(location address, point flowPoint) ssa.Val
 // A possible origin only supplies reachability. It cannot prove where a later
 // successful output write lands.
 func (c *zeroChecker) referenceAt(location address, point flowPoint) (ssa.Value, bool) {
-	if slices.Contains(location.path, -1) {
-		return nil, false
-	}
 	search := &referenceSearch{active: make(map[memoryVisit]bool)}
 	return c.referenceOrigin(location, point, search)
 }
 
 func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search *referenceSearch) (origin ssa.Value, known bool) {
+	if slices.Contains(location.path, -1) {
+		return nil, false
+	}
 	visit := memoryVisit{point: point, root: location.root, path: pathKey(location.path)}
 	if result, found := search.completed[visit]; found {
 		return result.value, result.known
@@ -132,7 +132,8 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 		if _, scheduled := instruction.(*ssa.Defer); scheduled {
 			continue
 		}
-		if borrowedRoot(location.root) && channelHandoff(instruction) {
+		if storageHandoff(instruction) && sharedStorage(location.root) &&
+			c.storageSharedBefore(mutationTarget{address: location}, flowPoint{point.block, index + 1}) {
 			return nil, false
 		}
 		if call, ok := instruction.(ssa.CallInstruction); ok {

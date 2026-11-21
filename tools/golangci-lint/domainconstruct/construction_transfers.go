@@ -105,7 +105,7 @@ func (c *checker) checkReturn(statement *ast.ReturnStmt, ancestors []ast.Node) {
 	results := c.enclosingResults(ancestors)
 	if len(statement.Results) == 0 {
 		for result := range results.Variables() {
-			if owner := c.storageAliases.owners[result]; owner != nil {
+			if owner := c.storageAliases[result]; owner != nil {
 				c.reportProtected(statement, owner, "domainconstruct.mutable-exposure", "return", "mutable-contents",
 					"do not expose mutable contents of "+owner.name+" through result "+result.Name())
 			}
@@ -136,27 +136,32 @@ func (c *checker) mutableStorageBase(value ast.Expr) ast.Expr {
 	default:
 		return nil
 	}
-	base := ast.Unparen(value)
 	for {
-		view, ok := base.(*ast.SliceExpr)
-		if !ok {
-			break
-		}
-		if _, slice := info.TypeOf(view.X).Underlying().(*types.Slice); !slice {
-			return nil // Slicing a protected array is already checked at the expression.
-		}
-		if view.Max != nil {
-			low := constant.MakeInt64(0)
-			if view.Low != nil {
-				low = info.Types[view.Low].Value
+		switch base := ast.Unparen(value).(type) {
+		case *ast.SliceExpr:
+			if _, slice := operandUnderlying(info.TypeOf(base.X)).(*types.Slice); !slice {
+				return nil // Slicing a protected array is already checked at the expression.
 			}
-			if limit := info.Types[view.Max].Value; low != nil && limit != nil && constant.Compare(low, token.EQL, limit) {
-				return nil // Nothing in the backing storage is accessible through this view.
+			if base.Max != nil {
+				low := constant.MakeInt64(0)
+				if base.Low != nil {
+					low = info.Types[base.Low].Value
+				}
+				if limit := info.Types[base.Max].Value; low != nil && limit != nil && constant.Compare(low, token.EQL, limit) {
+					return nil // Nothing in the backing storage is accessible through this view.
+				}
 			}
+			value = base.X
+		case *ast.CallExpr:
+			if source := c.storageConversionSource(base); source != nil {
+				value = source
+				continue
+			}
+			return base
+		default:
+			return base
 		}
-		base = ast.Unparen(view.X)
 	}
-	return base
 }
 
 func (c *checker) checkRangeTransfers(statement *ast.RangeStmt, ancestors []ast.Node) {

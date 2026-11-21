@@ -27,7 +27,7 @@ type checker struct {
 	pass           *analysis.Pass
 	policies       policySet
 	contracts      *contractSet
-	storageAliases storageAliasScope
+	storageAliases map[*types.Var]*policy
 }
 
 func run(pass *analysis.Pass) (any, error) {
@@ -70,7 +70,7 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 		return false
 	case *ast.FuncLit:
 		// A closure can retain and reassign a local slice or map descriptor.
-		c.storageAliases.stop()
+		clear(c.storageAliases)
 	case *ast.CallExpr:
 		if c.pass.TypesInfo.Types[node.Fun].IsType() {
 			if !c.checkConversion(node, ancestors) {
@@ -125,9 +125,9 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 	case *ast.UnaryExpr:
 		if node.Op == token.AND {
 			p := c.unapprovedOwner(node.X, ancestors)
-			if id, ok := ast.Unparen(node.X).(*ast.Ident); ok && c.localStorageVariable(id) != nil {
+			if id, ok := ast.Unparen(node.X).(*ast.Ident); ok {
 				// The descriptor can now be reassigned through its address.
-				c.storageAliases.stop()
+				delete(c.storageAliases, c.localStorageVariable(id))
 			}
 			if p != nil {
 				c.reportProtected(node, p, "domainconstruct.mutable-exposure", "address", "mutable-contents",
@@ -210,7 +210,7 @@ func (c *checker) checkConversion(call *ast.CallExpr, ancestors []ast.Node) bool
 	}
 	if pointer, ok := target.Underlying().(*types.Pointer); ok {
 		if array, ok := pointer.Elem().Underlying().(*types.Array); ok && array.Len() != 0 {
-			if _, slice := source.Underlying().(*types.Slice); slice {
+			if _, slice := operandUnderlying(source).(*types.Slice); slice {
 				owner = c.unapprovedOwner(call.Args[0], ancestors)
 			}
 		}
@@ -248,9 +248,13 @@ func (c *checker) checkWrite(target ast.Expr, ancestors []ast.Node) bool {
 func (c *checker) unapprovedOwner(expr ast.Expr, ancestors []ast.Node) *policy {
 	switch expr := ast.Unparen(expr).(type) {
 	case *ast.Ident:
-		if len(c.storageAliases.owners) != 0 {
+		if len(c.storageAliases) != 0 {
 			variable, _ := c.pass.TypesInfo.Uses[expr].(*types.Var)
-			return c.storageAliases.owners[variable]
+			return c.storageAliases[variable]
+		}
+	case *ast.CallExpr:
+		if source := c.storageConversionSource(expr); source != nil {
+			return c.unapprovedOwner(source, ancestors)
 		}
 	case *ast.SelectorExpr:
 		if selection := c.pass.TypesInfo.Selections[expr]; selection != nil && selection.Kind() == types.FieldVal {
