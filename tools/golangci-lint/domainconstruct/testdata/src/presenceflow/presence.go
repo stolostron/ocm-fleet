@@ -123,6 +123,14 @@ func BoxedPresent() (any, bool) {
 }
 
 //domain:presence
+func BoxedLookup(value ID, found bool) (any, bool) {
+	if found {
+		return value, true
+	}
+	return nil, false
+}
+
+//domain:presence
 func SliceMissing() ([]ID, bool) { return make([]ID, 1), false }
 
 func UnmarkedMissing() (ID, bool) {

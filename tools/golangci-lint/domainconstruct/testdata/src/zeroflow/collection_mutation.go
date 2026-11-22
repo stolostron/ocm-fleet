@@ -183,6 +183,25 @@ func ReadFieldAfterDynamicStore(valid ID, index int, use func(ID)) {
 	use(rows[0].Other)
 }
 
+func ReturnCollectionAfterDynamicFieldStore(valid ID, index int) []projectedRow {
+	rows := []projectedRow{{ID: valid}, {ID: valid}}
+	rows[index].ID = ""
+	return rows // want "return may contain an empty zeroflow.ID at path .*ID"
+}
+
+func ReturnCollectionAfterRepairingDynamicField(valid ID, index int) []projectedRow {
+	rows := []projectedRow{{ID: valid}, {ID: valid}}
+	rows[index].ID = ""
+	rows[0].ID = valid
+	return rows[:1]
+}
+
+func ReturnCollectionAfterDisjointFieldStore(valid ID) []projectedRow {
+	rows := []projectedRow{{ID: valid}, {ID: valid}}
+	rows[1].ID = ""
+	return rows[:1]
+}
+
 func ReadFieldAfterDynamicElementStore(valid ID, index int, use func(ID)) {
 	rows := []projectedRow{{valid}, {valid}}
 	rows[index] = projectedRow{}

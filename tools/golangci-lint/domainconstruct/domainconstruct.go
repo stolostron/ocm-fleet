@@ -68,6 +68,9 @@ func (c *checker) check(node ast.Node, ancestors []ast.Node) bool {
 	case *ast.BlockStmt:
 		c.checkBlock(node, ancestors)
 		return false
+	case *ast.IfStmt:
+		c.checkIf(node, ancestors)
+		return false
 	case *ast.FuncLit:
 		// A closure can retain and reassign a local slice or map descriptor.
 		clear(c.storageAliases)

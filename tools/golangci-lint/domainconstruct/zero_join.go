@@ -104,12 +104,12 @@ func (c *zeroChecker) joinedViewTruth(view collectionView, point flowPoint, cont
 					if target.dynamicStart {
 						return unknown
 					}
-					if target.start <= view.start && (target.end >= 0 && view.end >= 0 && target.end >= view.end ||
+					if target.start <= view.start && (view.end >= 0 && target.guaranteedEnd() >= view.end ||
 						target.value == view.value || target.lengthBase == view.lengthBase && sameLength(target.length, view.length)) {
 						return state
 					}
-					if target.end >= 0 {
-						covered = coverRange(covered, target.start, target.end)
+					if end := target.guaranteedEnd(); end >= 0 {
+						covered = coverRange(covered, target.start, end)
 						continue
 					}
 				}

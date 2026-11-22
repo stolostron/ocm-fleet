@@ -22,6 +22,44 @@ func WriteLocalMapAlias(record Record) {
 	keys[0] = 2
 }
 
+func WriteAliasesInsideBlocks(record Record, enabled bool) {
+	items := record.items
+	{
+		items[0] = 7 // want "modify protection.Record through NewRecord"
+	}
+	items = record.items
+	if enabled {
+		items[0] = 8 // want "modify protection.Record through NewRecord"
+	}
+	if keys := record.keys; enabled {
+		delete(keys, 0) // want "modify protection.Record through NewRecord"
+	}
+}
+
+func RebindAliasesInsideIf(record Record, enabled bool) {
+	items := record.items
+	if enabled {
+		items = []int{1}
+		items[0] = 7
+	} else {
+		items[0] = 8 // want "modify protection.Record through NewRecord"
+	}
+	items = record.items
+	if items = []int{1}; enabled {
+		items[0] = 9
+	}
+}
+
+func ShadowAliasesInsideIf(record Record, enabled bool) {
+	items := record.items
+	if enabled {
+		items := []int{1}
+		items[0] = 7
+	} else if enabled = !enabled; enabled {
+		items[0] = 8 // want "modify protection.Record through NewRecord"
+	}
+}
+
 func SwapLocalAliases(record Record) {
 	protected, independent := record.items, make([]int, 1)
 	protected, independent = independent, protected

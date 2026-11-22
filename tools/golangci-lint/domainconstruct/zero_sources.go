@@ -213,11 +213,11 @@ func (c *zeroChecker) sliceSourceView(source valueSource, call *ssa.Call, value 
 				view = child
 				continue
 			}
-			if view.end < 0 || child.end < 0 {
-				view.end = -1
-			} else {
-				view.end = max(view.end, child.end)
+			longest := int64(-1)
+			if view.end >= 0 && child.end >= 0 {
+				longest = max(view.size(), child.size())
 			}
+			view.setLengthBounds(min(view.guaranteedSize(), child.guaranteedSize()), longest)
 			if view.capEnd < 0 || child.capEnd < 0 {
 				view.capEnd = -1
 			} else {
@@ -254,7 +254,8 @@ func (c *zeroChecker) sliceSourceView(source valueSource, call *ssa.Call, value 
 		argument := contractArgument(&call.Call, length.Parameter)
 		if length.FromLen {
 			if original, ok := c.collectionOf(argument); ok {
-				view.end, view.length = original.size(), original.length
+				view.setLengthBounds(original.guaranteedSize(), original.size())
+				view.length = original.length
 				view.lengthBase = original.lengthBase - original.start
 			}
 		} else if length, known := integerValue(argument); known {

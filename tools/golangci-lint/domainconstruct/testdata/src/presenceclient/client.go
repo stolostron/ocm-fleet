@@ -54,6 +54,18 @@ func ImportedBoxed() {
 	presenceflow.UseAny(value) // want "reason: unchecked-presence"
 }
 
+//domain:presence
+func ForwardBoxedLookup(value presenceflow.ID, found bool) (any, bool) {
+	return presenceflow.BoxedLookup(value, found)
+}
+
+func DiscardBoxedLookupPresence(value presenceflow.ID, found bool) {
+	direct, _ := presenceflow.BoxedLookup(value, found)
+	presenceflow.UseAny(direct)
+	forwarded, _ := ForwardBoxedLookup(value, found)
+	presenceflow.UseAny(forwarded)
+}
+
 func ImportedGeneric(found bool) {
 	id, ok := presenceflow.GenericLookup(presenceflow.NewID("present"), found)
 	if ok {

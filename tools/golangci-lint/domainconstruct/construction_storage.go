@@ -4,17 +4,23 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"maps"
 )
 
-// Alias facts describe straight-line bindings within one block. Start new
-// facts at nested blocks and discard prior bindings at control flow statements.
+// Check straight-line alias bindings and retain them on entry to a bare block
+// or if branch. Rebinding affects only that path. Drop the outer bindings at
+// the join rather than infer which assignments ran.
 func (c *checker) checkBlock(block *ast.BlockStmt, ancestors []ast.Node) {
 	outer := c.storageAliases
-	c.storageAliases = nil
+	c.storageAliases = maps.Clone(outer)
 	defer func() { c.storageAliases = outer }()
 	ancestors = append(ancestors, block)
 	for _, statement := range block.List {
 		switch statement := statement.(type) {
+		case *ast.BlockStmt, *ast.IfStmt:
+			c.walk(statement, ancestors)
+			clear(c.storageAliases)
+			continue
 		case *ast.DeclStmt:
 			if declaration, ok := statement.Decl.(*ast.GenDecl); ok && declaration.Tok == token.VAR {
 				declarationAncestors := append(ancestors, statement, declaration)
@@ -30,10 +36,29 @@ func (c *checker) checkBlock(block *ast.BlockStmt, ancestors []ast.Node) {
 		default:
 			clear(c.storageAliases)
 		}
-		c.walk(statement, ancestors)
-		if assignment, ok := statement.(*ast.AssignStmt); ok && (assignment.Tok == token.ASSIGN || assignment.Tok == token.DEFINE) {
-			c.bindLocalStorage(len(assignment.Lhs), func(index int) ast.Expr { return assignment.Lhs[index] }, assignment.Rhs, ancestors)
-		}
+		c.walkStorageStatement(statement, ancestors)
+	}
+}
+
+func (c *checker) checkIf(statement *ast.IfStmt, ancestors []ast.Node) {
+	outer := c.storageAliases
+	c.storageAliases = maps.Clone(outer)
+	defer func() { c.storageAliases = outer }()
+	ancestors = append(ancestors, statement)
+	if statement.Init != nil {
+		c.walkStorageStatement(statement.Init, ancestors)
+	}
+	c.walk(statement.Cond, ancestors)
+	c.walk(statement.Body, ancestors)
+	if statement.Else != nil {
+		c.walk(statement.Else, ancestors)
+	}
+}
+
+func (c *checker) walkStorageStatement(statement ast.Stmt, ancestors []ast.Node) {
+	c.walk(statement, ancestors)
+	if assignment, ok := statement.(*ast.AssignStmt); ok && (assignment.Tok == token.ASSIGN || assignment.Tok == token.DEFINE) {
+		c.bindLocalStorage(len(assignment.Lhs), func(index int) ast.Expr { return assignment.Lhs[index] }, assignment.Rhs, ancestors)
 	}
 }
 

@@ -259,6 +259,12 @@ func (c *serializationChecker) checkType(operand encodingOperand, t types.Type) 
 				problem.typ, problem.path)
 			return
 		}
+		if problem.reason == "json-defined-pointer" {
+			c.report(operand.node, "unsupported-codec", operand.operation, problem.reason,
+				fmt.Sprintf("%sdefault JSON decoding can bypass %s validation through a defined pointer; pass a pointer to the domain value directly", path, typeName(problem.typ)),
+				problem.typ, problem.path)
+			return
+		}
 		c.report(operand.node, "unsupported-codec", operand.operation, "codec-not-declared",
 			fmt.Sprintf("%s%s does not declare %s serialization; use a snapshot or declare a checked native round trip", path, typeName(problem.typ), problem.codec),
 			problem.typ, problem.path)
@@ -286,6 +292,9 @@ func (c *serializationChecker) encodingProblem(t types.Type, operand encodingOpe
 	}
 	switch shape := t.Underlying().(type) {
 	case *types.Pointer:
+		if operand.defaultJSONDecode && isDefinedPointer(t) && c.policies.lookup(shape.Elem()).supports(codec) {
+			return &serializationProblem{typ: shape.Elem(), codec: codec, reason: "json-defined-pointer"}
+		}
 		return c.encodingProblem(shape.Elem(), operand, seen)
 	case *types.Slice:
 		if operand.defaultJSONDecode && c.policies.lookup(shape.Elem()) != nil {
@@ -353,6 +362,14 @@ func hasJSONDecoder(t types.Type) bool {
 func hasJSONDecodeMethod(t types.Type, name string) bool {
 	method := codecMethod(t, name, false)
 	return method != nil && validDecoderSignature(method.Type().(*types.Signature), "json")
+}
+
+// A defined pointer type does not inherit the methods of its underlying
+// pointer. An alias for an ordinary pointer retains that pointer's methods.
+func isDefinedPointer(t types.Type) bool {
+	_, pointer := t.Underlying().(*types.Pointer)
+	_, ordinary := types.Unalias(t).(*types.Pointer)
+	return pointer && !ordinary
 }
 
 func (c *serializationChecker) promotedCodecProblem(shape *types.Struct, selected structField, codec string) *serializationProblem {

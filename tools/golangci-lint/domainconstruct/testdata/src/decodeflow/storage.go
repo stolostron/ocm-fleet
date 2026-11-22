@@ -34,6 +34,62 @@ func SuccessfulRawDecodeCanInvalidateDynamicElement(valid encodingvalues.ID, ind
 	return values[:1] // want "return may contain an empty encodingvalues.ID"
 }
 
+func DecodeThroughDefinedPointerDoesNotInitialize() (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	if err := json.Unmarshal([]byte(`""`), encodingvalues.IDPointer(&id)); err != nil { // want "conversion uses an empty encodingvalues.ID"
+		return "", err
+	}
+	return id, nil // want "return .* an empty encodingvalues.ID"
+}
+
+func DecodeThroughDefinedPointerOverwrites(valid encodingvalues.ID) (encodingvalues.ID, error) {
+	id := valid
+	if err := json.Unmarshal([]byte(`""`), encodingvalues.IDPointer(&id)); err != nil {
+		return "", err
+	}
+	return id, nil // want "return may produce an empty encodingvalues.ID"
+}
+
+func DecodeThroughDefinedPointerOverwritesElement(valid encodingvalues.ID) []encodingvalues.ID {
+	values := []encodingvalues.ID{valid}
+	if err := json.Unmarshal([]byte(`""`), encodingvalues.IDPointer(&values[0])); err != nil {
+		return nil
+	}
+	return values // want "return may contain an empty encodingvalues.ID"
+}
+
+func DecodeThroughPointerAliasInitializes(data []byte) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	if err := json.Unmarshal(data, encodingvalues.IDPointerAlias(&id)); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func DecodeShortArrayElement(valid encodingvalues.ID) [][1]encodingvalues.ID {
+	values := [2][1]encodingvalues.ID{{valid}, {valid}}
+	if err := json.Unmarshal([]byte(`[]`), &values[1]); err != nil {
+		return nil
+	}
+	return values[:] // want "return may contain an empty encodingvalues.ID at path \\[1\\]\\[0\\]"
+}
+
+func DecodeShortDisjointArrayElement(valid encodingvalues.ID) [][1]encodingvalues.ID {
+	values := [2][1]encodingvalues.ID{{valid}, {valid}}
+	if err := json.Unmarshal([]byte(`[]`), &values[1]); err != nil {
+		return nil
+	}
+	return values[:1]
+}
+
+func DecodeArrayElementWithNativeHook(valid encodingvalues.ArrayID) []encodingvalues.ArrayID {
+	values := [1]encodingvalues.ArrayID{valid}
+	if err := json.Unmarshal([]byte(`[]`), &values[0]); err != nil {
+		return nil
+	}
+	return values[:]
+}
+
 func DynamicNativeDecodeCannotProveInitialization(data []byte, index int) {
 	values := make([]encodingvalues.ID, 2)
 	if err := json.Unmarshal(data, &values[index]); err != nil {

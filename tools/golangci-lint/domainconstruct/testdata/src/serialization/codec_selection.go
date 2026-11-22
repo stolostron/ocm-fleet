@@ -53,6 +53,23 @@ func DecodeBoxedValue(value encodingvalues.Unsupported) {
 	json.Marshal(&replaced)        // want "does not declare json serialization"
 }
 
+func DecodeDefinedPointer(data []byte, id encodingvalues.ID, decoder *json.Decoder) {
+	type plainPointer *string
+	var plain string
+	json.Unmarshal(data, plainPointer(&plain))
+	json.Unmarshal(data, &id)
+	json.Unmarshal(data, encodingvalues.IDPointerAlias(&id))
+	json.Unmarshal(data, encodingvalues.IDPointer(&id)) // want "default JSON decoding can bypass encodingvalues.ID validation through a defined pointer"
+	boxed := any(encodingvalues.IDPointer(&id))
+	decoder.Decode(boxed) // want "default JSON decoding can bypass encodingvalues.ID validation through a defined pointer"
+	json.Marshal(encodingvalues.IDPointer(&id))
+}
+
+func EncodeBoxedArrayElement(bad encodingvalues.Unsupported) {
+	json.Marshal(([1]any{bad})[0]) // want "does not declare json serialization"
+	json.Marshal(([2]any{bad, "plain"})[1])
+}
+
 func EncodeWithoutSQLValue(db *sql.DB, value encodingvalues.ScanOnly) {
 	db.Exec("SELECT ?", value) // want "does not declare sql serialization"
 }

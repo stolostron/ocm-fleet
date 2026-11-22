@@ -3,6 +3,7 @@ package domainconstruct_test
 import (
 	"fmt"
 	"go/ast"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -101,6 +102,19 @@ func TestZeroFlow(t *testing.T) {
 		"RawReceiverFieldMayBeZero":     {source: "s.Name", steps: []string{"source", "conversion", "use"}},
 	}
 	for _, result := range results {
+		if result.Pass.Pkg.Path() == "zeroflow" {
+			missing := map[string]bool{
+				"diagnostic_positions.go": true,
+				"diagnostic_labels.go":    true,
+				"diagnostic_names.go":     true,
+			}
+			for _, file := range result.Pass.Files {
+				delete(missing, filepath.Base(result.Pass.Fset.Position(file.Pos()).Filename))
+			}
+			for filename := range missing {
+				t.Errorf("zeroflow is missing fixture %s", filename)
+			}
+		}
 		checkUsePositions(t, result)
 		checkUseLabels(t, result)
 		checkValueNames(t, result)

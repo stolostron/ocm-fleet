@@ -519,7 +519,7 @@ func (c *zeroChecker) memoryProblem(location address, t types.Type, point flowPo
 // A copied value is read at point. Its referenced storage is observed at use,
 // so copying a struct or slice header does not freeze its backing contents.
 func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use flowPoint, context flowContext, values map[valueVisit]bool, seen map[memoryVisit]bool) *zeroProblem {
-	if !context.possible || !c.interestingType(t) {
+	if !context.possible || c.work.exhausted() || !c.interestingType(t) {
 		return nil
 	}
 	if c.storageReadFact(location, t, point, context) == notZero {
@@ -541,6 +541,11 @@ func (c *zeroChecker) memoryAtProblem(location address, t types.Type, point, use
 	if p := c.policies.lookup(t); p == nil || p.fact.ZeroValid {
 		if structure, ok := t.Underlying().(*types.Struct); ok {
 			for selected := range c.jsonShape.fields(t, context.use.json()) {
+				// History already charges for following leaf writes. Charge
+				// for each expansion too, including branches with no history.
+				if !c.work.take() {
+					break
+				}
 				if child, read, known := c.fieldStorage(location, structure, selected, point, use); known {
 					childContext := context
 					childContext.use = context.use.forField(selected)
@@ -577,6 +582,43 @@ func (c *zeroChecker) fieldStorage(location address, shape *types.Struct, field 
 	}
 	location.path = append(location.path, field.indices[len(field.indices)-1])
 	return location, point, true
+}
+
+// A write to a member only affects the surrounding use if it observes that
+// member. Use the same field selection as the aggregate read.
+func (c *zeroChecker) projectedStorageProblem(t types.Type, path []int, use valueUse, check func(types.Type, valueUse) *zeroProblem) *zeroProblem {
+	if !c.work.take() {
+		return nil
+	}
+	if len(path) == 0 {
+		return check(t, use)
+	}
+	use = c.useForType(t, use)
+	switch shape := t.Underlying().(type) {
+	case *types.Array:
+		index := int64(path[0])
+		if shape.Len() != 0 && index < shape.Len() {
+			problem := c.projectedStorageProblem(shape.Elem(), path[1:], use, check)
+			if problem != nil {
+				problem.path = fieldPath(elementLabel(index), problem.path)
+			}
+			return problem
+		}
+	case *types.Struct:
+		for selected := range c.jsonShape.fields(t, use.json()) {
+			if !c.work.take() {
+				break
+			}
+			if pathPrefix(path, selected.indices) {
+				problem := c.projectedStorageProblem(selected.field.Type(), path[len(selected.indices):], use.forField(selected), check)
+				if problem != nil {
+					problem.path = fieldPath(selected.path, problem.path)
+				}
+				return problem
+			}
+		}
+	}
+	return nil
 }
 
 // Guard facts describe the observation above. Once an intervening effect rules

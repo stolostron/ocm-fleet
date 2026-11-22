@@ -208,3 +208,14 @@ func EncodeBoxedAddressability() {
 	json.Marshal([]any{pointerMarshaler{}})
 	json.Marshal([]any{&pointerMarshaler{}}) // want "at path .*ID"
 }
+
+func EncodeCollectionAfterDynamicFieldStore(valid encodingvalues.ID, index int) {
+	rows := []struct {
+		Hidden encodingvalues.ID `json:"-"`
+		ID     encodingvalues.ID
+	}{{Hidden: valid, ID: valid}, {Hidden: valid, ID: valid}}
+	rows[index].Hidden = ""
+	json.Marshal(rows)
+	rows[index].ID = ""
+	json.Marshal(rows) // want "at path .*ID"
+}

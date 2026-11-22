@@ -1,5 +1,7 @@
 package badpolicy
 
+import "values"
+
 //domain:constructors Missing
 type MissingConstructor string // want "unknown constructor Missing"
 
@@ -7,6 +9,11 @@ type MissingConstructor string // want "unknown constructor Missing"
 type NotAFunction string // want "Value is not a function"
 
 var Value = 1
+
+type ForeignAlias struct{ values.Alias }
+
+//domain:constructors ForeignAlias.Ref
+type ForeignConstructor string // want "ForeignAlias.Ref must be declared in this package"
 
 //domain:constructors NewAlias
 type Alias = string // want "domain:constructors requires a defined type"

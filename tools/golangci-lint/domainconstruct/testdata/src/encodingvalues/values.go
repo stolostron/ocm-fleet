@@ -53,6 +53,9 @@ func (id *ID) Scan(raw any) error {
 	return id.UnmarshalText([]byte(value))
 }
 
+type IDPointer *ID
+type IDPointerAlias = *ID
+
 //domain:constructors NewByteLevel
 //domain:serialization json
 type ByteLevel uint8

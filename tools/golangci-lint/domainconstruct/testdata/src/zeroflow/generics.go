@@ -26,6 +26,78 @@ func CheckCapacityAfterNilAlternative(absent bool, index int, use func([]ID)) {
 	use(items[index:index][:1]) // want "argument may contain an empty zeroflow.ID"
 }
 
+func CopyFromOptionalAllocation(valid ID, absent bool) []ID {
+	source := allocatedOrNil[ID](absent)
+	copy(source, []ID{valid})
+	destination := make([]ID, 1)
+	copy(destination, source)
+	return destination // want "return may contain an empty zeroflow.ID"
+}
+
+func CopyBoxFromOptionalAllocation(absent bool) []any {
+	source := allocatedOrNil[any](absent)
+	copy(source, []any{"valid"})
+	destination := []any{ID("")}
+	copy(destination, source)
+	return destination // want "return .* an empty zeroflow.ID"
+}
+
+func FillOptionalAllocation(valid ID, absent bool) []ID {
+	source := allocatedOrNil[ID](absent)
+	copy(source, []ID{valid})
+	return source
+}
+
+func CopyOptionalAllocationBeforeReslice(valid ID, absent bool) []ID {
+	source := allocatedOrNil[ID](absent)
+	copy(source, []ID{valid})
+	return source[:2] // want "return may contain an empty zeroflow.ID"
+}
+
+func ReadFieldAfterCopyFromOptionalAllocation(valid ID, absent bool, use func(ID)) {
+	source := allocatedOrNil[projectedRow](absent)
+	copy(source, []projectedRow{{ID: valid}})
+	destination := make([]projectedRow, 1)
+	copy(destination, source)
+	use(destination[0].ID) // want "argument .* an empty zeroflow.ID"
+}
+
+func allocatedOneOrTwo[T any](short bool) []T {
+	if short {
+		return make([]T, 1)
+	}
+	return make([]T, 2)
+}
+
+func CopyGuaranteedPrefix(valid ID, short bool) []ID {
+	source := allocatedOneOrTwo[ID](short)
+	copy(source, []ID{valid, valid})
+	destination := make([]ID, 1)
+	copy(destination, source)
+	return destination
+}
+
+func CopyPartiallyWrittenChoice(valid ID, short bool) []ID {
+	source := allocatedOneOrTwo[ID](short)
+	copy(source, []ID{valid})
+	destination := []ID{valid, valid}
+	copy(destination, source)
+	return destination // want "return may contain an empty zeroflow.ID"
+}
+
+func AppendOptionalAllocationIntoSpareCapacity(valid ID, absent bool) []ID {
+	values := []ID{valid, valid}
+	_ = append(values[:0], allocatedOrNil[ID](absent)...)
+	return values // want "return .* an empty zeroflow.ID"
+}
+
+func AppendInitializedOptionalAllocation(valid ID, absent bool) []ID {
+	values := make([]ID, 0, 2)
+	source := allocatedOrNil[ID](absent)
+	copy(source, []ID{valid})
+	return append(values, source...)
+}
+
 func allocatedFromEitherLength[T any](first, second []T, chooseFirst bool) []T {
 	if chooseFirst {
 		return make([]T, len(first))

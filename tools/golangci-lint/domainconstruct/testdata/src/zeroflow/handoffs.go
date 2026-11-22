@@ -92,6 +92,29 @@ func FillAfterPrivateMapInsertion(valid ID, writes chan<- int, ack <-chan struct
 	return values
 }
 
+func FillAfterBorrowedMapKeyPublication(shared map[*ID]bool, valid ID, writes chan<- int, ack <-chan struct{}) []ID {
+	values := []ID{valid}
+	shared[&values[0]] = true
+	for index := range values {
+		values[index] = valid
+		writes <- index
+		<-ack
+	}
+	return values // want "return may contain an empty zeroflow.ID"
+}
+
+func FillAfterPrivateMapKeyInsertion(valid ID, writes chan<- int, ack <-chan struct{}) []ID {
+	values := []ID{valid}
+	private := make(map[*ID]bool)
+	private[&values[0]] = true
+	for index := range values {
+		values[index] = valid
+		writes <- index
+		<-ack
+	}
+	return values
+}
+
 func WaitedForErrorWrite() (ID, error) {
 	var lock sync.Mutex
 	var worker sync.WaitGroup

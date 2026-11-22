@@ -140,6 +140,12 @@ func (c *serializationChecker) checkBoxedValue(value ssa.Value, operand encoding
 		origin := storage.projectedReference(value.X, []int{value.Field}, make(map[valueVisit]bool), nil)
 		c.checkBoxedValue(origin, operand, point, walk)
 		return
+	case *ssa.Index:
+		if index, known := integerValue(value.Index); known {
+			origin := storage.projectedReference(value.X, []int{int(index)}, make(map[valueVisit]bool), nil)
+			c.checkBoxedValue(origin, operand, point, walk)
+		}
+		return
 	case *ssa.UnOp:
 		if value.Op == token.MUL {
 			if location, known := storage.collectionAddress(value.X); known {

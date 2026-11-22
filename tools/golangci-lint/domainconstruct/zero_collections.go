@@ -14,12 +14,15 @@ import (
 )
 
 // A view identifies a range in one backing allocation. Unknown ends are -1.
-// The dynamic upper bound is relative to lengthBase in the backing storage.
+// When summarized alternatives have different lengths, end is the possible
+// end and shortestEnd is the guaranteed end. A symbolic length is relative
+// to lengthBase in the backing storage.
 type collectionView struct {
 	storage      address
 	element      types.Type
 	start        int64
 	end          int64
+	shortestEnd  *int64
 	capEnd       int64
 	length       ssa.Value
 	lengthBase   int64
@@ -33,6 +36,28 @@ func (view collectionView) size() int64 {
 		return -1
 	}
 	return max(0, view.end-view.start)
+}
+
+func (view collectionView) guaranteedSize() int64 {
+	if view.shortestEnd == nil {
+		return view.size()
+	}
+	if *view.shortestEnd < 0 {
+		return -1
+	}
+	return max(0, minEnd(view.end, *view.shortestEnd)-view.start)
+}
+
+func (view collectionView) guaranteedEnd() int64 {
+	return endFromCount(view.start, view.guaranteedSize())
+}
+
+func (view *collectionView) setLengthBounds(shortest, longest int64) {
+	view.end, view.shortestEnd = endFromCount(view.start, longest), nil
+	if shortest != longest {
+		end := endFromCount(view.start, shortest)
+		view.shortestEnd = &end
+	}
 }
 
 // A dynamically shifted view has a length, but can reach any slot between
@@ -80,7 +105,7 @@ func (c *zeroChecker) checkCollectionBuiltin(instruction ssa.CallInstruction, po
 			return true
 		}
 		if builtin.Name() == "clear" {
-			if slice, ok := call.Args[0].Type().Underlying().(*types.Slice); ok {
+			if slice, ok := collectionOperandShape(call.Args[0].Type()).(*types.Slice); ok {
 				if problem := c.zeroType(slice.Elem(), "", wholeValue); problem != nil {
 					problem.reason = reasonCleared
 					c.report(zeroUse{pos: instruction.Pos(), call: call}, problem, "clear", call.Args[0])
@@ -93,8 +118,9 @@ func (c *zeroChecker) checkCollectionBuiltin(instruction ssa.CallInstruction, po
 				source, sourceKnown := c.collectionOf(argument)
 				if builtin.Name() == "copy" && destKnown && sourceKnown {
 					destination, source = boundedView(destination, context), boundedView(source, context)
-					definite := destination.size() >= 0 && source.size() >= 0
-					source.end = endFromCount(source.start, minEnd(destination.size(), source.size()))
+					count := minEnd(destination.size(), source.size())
+					definite := count >= 0 && copyGuaranteedEnd(destination, source)-destination.start >= count
+					source.end = endFromCount(source.start, count)
 					problem = c.collectionStorageProblem(source, point, context, make(map[valueVisit]bool), nil, make(map[collectionVisit]bool))
 					if !definite {
 						problem = problem.uncertain()
@@ -197,7 +223,7 @@ func (c *zeroChecker) elementAtProblem(value, index ssa.Value, projection []int,
 		view = boundedView(view, context)
 		if offset, known := integerValue(index); known {
 			view.start += offset
-			view.end = view.start + 1
+			view.end, view.shortestEnd = view.start+1, nil
 			if !view.dynamicStart && (len(projection) != 0 || !types.Identical(t, view.element)) {
 				// Inspect the requested field or converted type at this slot.
 				// The collection's element type may allow a zero representation.
@@ -237,11 +263,14 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 		}
 	case *ssa.Call:
 		if before, appended, ok := c.appendViews(&value.Call); ok {
-			end := before.end + appended.size()
-			if end > before.capEnd {
-				return collectionView{storage: address{root: value}, element: before.element, end: before.size() + appended.size(), capEnd: -1, value: value}, true
+			shortest, longest := before.size()+appended.guaranteedSize(), before.size()+appended.size()
+			if before.end+appended.size() > before.capEnd {
+				result := collectionView{storage: address{root: value}, element: before.element, capEnd: -1, value: value}
+				result.setLengthBounds(shortest, longest)
+				return result, true
 			}
-			before.end, before.length, before.value = end, nil, value
+			before.setLengthBounds(shortest, longest)
+			before.length, before.value = nil, value
 			return before, true
 		}
 		return c.sourceSliceView(value, 0, value)
@@ -290,7 +319,7 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 		if view, ok := c.collectionOf(value.X); ok {
 			// The conversion exposes exactly the prefix that fits in the array.
 			// The slice's remaining capacity is inaccessible through the pointer.
-			view.end = view.start + array.Len()
+			view.end, view.shortestEnd = view.start+array.Len(), nil
 			if !view.dynamicStart {
 				view.capEnd = view.end
 			}
@@ -305,7 +334,7 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 				low, known = integerValue(value.Low)
 				if !known {
 					if value.Low == value.High {
-						view.end, view.length, view.value = view.start, nil, value
+						view.end, view.shortestEnd, view.length, view.value = view.start, nil, nil, value
 						if view.dynamicStart {
 							view.offset = nil
 						} else {
@@ -318,6 +347,7 @@ func (c *zeroChecker) collectionOf(value ssa.Value) (collectionView, bool) {
 				}
 			}
 			if value.High != nil {
+				view.shortestEnd = nil // A successful reslice has its explicit upper bound.
 				if high, known := integerValue(value.High); known {
 					view.end = view.start + high
 					view.length = nil
@@ -436,7 +466,7 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 				}
 			}
 			problem := c.unfilledCollection(view, covered, reasonZeroStorage, context.use)
-			if problem != nil && view.end < 0 {
+			if problem != nil && view.guaranteedEnd() <= firstMissing(covered, view.start) {
 				if source, _, _, known := c.rootSource(allocation); known && source.Kind == sourceChoice {
 					problem = problem.uncertain()
 				}
@@ -467,6 +497,9 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 					if offset >= 0 && (offset < view.start || view.end >= 0 && offset >= view.end || rangeCovered(covered, offset, offset+1)) {
 						continue
 					}
+					if offset < 0 && rangeCovered(covered, view.start, view.end) {
+						return nil
+					}
 					remaining := destination.path[len(view.storage.path)+1:]
 					if len(remaining) == 0 {
 						if problem := c.problem(store.Val, nil, view.element, use, context, values); problem != nil {
@@ -482,6 +515,13 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 							problem.path = fieldPath(elementLabel(offset), problem.path)
 							return problem
 						}
+					} else if problem := c.projectedStorageProblem(view.element, remaining, context.use, func(field types.Type, useMode valueUse) *zeroProblem {
+						fieldContext := context
+						fieldContext.use = useMode
+						return c.problem(store.Val, nil, field, use, fieldContext, values)
+					}); problem != nil {
+						problem.path = fieldPath(elementLabel(offset), problem.path)
+						return problem.uncertain().step("assignment", store.Pos(), "assign field of a possibly overlapping element")
 					}
 					if offset < 0 {
 						before := flowPoint{point.block, index}
@@ -556,8 +596,9 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 						if destination.size() == 0 || !rangesOverlap(destination.start, destination.possibleEnd(), view.start, view.end) {
 							continue
 						}
-						if problem := c.unfilledCollection(intersectView(view, destination.start, destination.possibleEnd()), covered, reasonCleared, context.use); problem != nil {
-							if destination.end < 0 || destination.dynamicStart || execution.conditional {
+						written := intersectView(view, destination.start, destination.possibleEnd())
+						if problem := c.unfilledCollection(written, covered, reasonCleared, context.use); problem != nil {
+							if written.end < 0 || destination.guaranteedEnd() < written.end || destination.dynamicStart || execution.conditional {
 								problem = problem.uncertain()
 							}
 							return problem.step("source", call.Pos(), "clear sets collection elements to zero")
@@ -577,7 +618,11 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 							}
 							transferred := intersectView(view, destination.start, endFromCount(destination.start, minEnd(destination.size(), source.size())))
 							covers := !execution.conditional && copyCoversView(destination, source, view)
-							definite := !execution.conditional && (destination.end >= 0 && source.end >= 0 || covers)
+							guaranteedEnd := destination.start
+							if !execution.conditional {
+								guaranteedEnd = copyGuaranteedEnd(destination, source)
+							}
+							definite := covers || transferred.end >= 0 && guaranteedEnd >= transferred.end
 							if problem := c.copiedCollectionProblem(source, transferred, destination.start, before, use, context, values, covered, seen); problem != nil {
 								if !definite {
 									problem = problem.uncertain()
@@ -587,8 +632,13 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 							if covers {
 								return nil
 							}
-							if definite && transferred.start < transferred.end {
-								covered = coverRange(covered, transferred.start, transferred.end)
+							if end := minEnd(guaranteedEnd, transferred.end); transferred.start < end {
+								covered = coverRange(covered, transferred.start, end)
+							}
+							if !definite && transferred.size() != 0 && (source.shortestEnd != nil || destination.shortestEnd != nil) {
+								// A longer alternative can overwrite earlier contents
+								// even when it does not establish coverage on all paths.
+								return c.collectionAtProblem(view, before, use, context, values, covered, seen).uncertain()
 							}
 						} else {
 							problem, end := c.branchCopyProblem(common.Args[1], destination, view, before, use, context, values, covered, seen)
@@ -605,10 +655,22 @@ func (c *zeroChecker) collectionAtProblem(view collectionView, point, use flowPo
 						sameStorage(destination.storage, view.storage) && destination.size() != 0 {
 						transferred := intersectView(view, destination.start, destination.end)
 						if problem := c.copiedCollectionProblem(source, transferred, destination.start, before, use, context, values, covered, seen); problem != nil {
+							if destination.guaranteedEnd() < transferred.end {
+								problem = problem.uncertain()
+							}
 							return problem
 						}
-						if transferred.start < transferred.end {
-							covered = coverRange(covered, transferred.start, transferred.end)
+						end := destination.guaranteedEnd()
+						if result, ok := view.value.(*ssa.Call); ok && &result.Call == common {
+							// Each slot added to this result comes from the
+							// source, even when the result can be shorter.
+							end = destination.end
+						}
+						if end = min(end, transferred.end); transferred.start < end {
+							covered = coverRange(covered, transferred.start, end)
+						}
+						if transferred.start < transferred.end && end < transferred.end {
+							return c.collectionAtProblem(view, before, use, context, values, covered, seen).uncertain()
 						}
 					}
 				}
@@ -707,6 +769,12 @@ func uncoveredViews(view collectionView, covered []elementRange) []collectionVie
 }
 
 func copyCoversView(destination, source, view collectionView) bool {
+	// With the same slice header, a sufficiently long source writes every
+	// slot that exists, even when the destination length varies.
+	if destination.value == view.value && destination.start <= view.start && view.end >= 0 &&
+		view.end <= destination.end && source.guaranteedSize() >= destination.size() {
+		return true
+	}
 	if destination.start != 0 || source.start != 0 || destination.lengthBase != view.lengthBase {
 		return false
 	}
@@ -716,6 +784,10 @@ func copyCoversView(destination, source, view collectionView) bool {
 	}
 	builtin, ok := length.Call.Value.(*ssa.Builtin)
 	return ok && builtin.Name() == "len" && (destination.value == view.value || sameLength(destination.length, view.length))
+}
+
+func copyGuaranteedEnd(destination, source collectionView) int64 {
+	return destination.start + max(0, min(destination.guaranteedSize(), source.guaranteedSize()))
 }
 
 // A direct branch merge can select different backing storage and lengths. Only
@@ -737,7 +809,7 @@ func (c *zeroChecker) branchCopyProblem(value ssa.Value, destination, view colle
 		if problem := c.copiedCollectionProblem(source, transferred, destination.start, point, use, edge, values, covered, seen); problem != nil {
 			return problem.uncertain(), destination.start
 		}
-		end = min(end, writeEnd)
+		end = min(end, copyGuaranteedEnd(destination, source))
 	}
 	if !feasible || c.work.exhausted() {
 		return nil, destination.start
@@ -802,7 +874,7 @@ func (c *zeroChecker) collectionWriteProblem(execution executedCall, location ad
 		return nil, false, false
 	}
 	_, asynchronous := execution.call.(*ssa.Go)
-	definite = !execution.conditional && !asynchronous && !destination.dynamicStart && destination.end >= 0
+	definite = !execution.conditional && !asynchronous && !destination.dynamicStart && index < destination.guaranteedEnd()
 	if builtin.Name() == "clear" {
 		problem := c.zeroType(t, "", context.use)
 		if problem != nil {
@@ -820,7 +892,7 @@ func (c *zeroChecker) collectionWriteProblem(execution executedCall, location ad
 	}
 	source = boundedView(source, context)
 	problem, overlaps = c.copiedFieldProblem(source, destination, location, t, execution, use, values, seen)
-	return problem, definite && source.end >= 0 && overlaps && !c.work.exhausted(), overlaps
+	return problem, definite && index-destination.start < source.guaranteedSize() && overlaps && !c.work.exhausted(), overlaps
 }
 
 func (c *zeroChecker) branchCopyFieldProblem(value ssa.Value, destination collectionView, location address, t types.Type, execution executedCall,
@@ -840,7 +912,8 @@ func (c *zeroChecker) branchCopyFieldProblem(value ssa.Value, destination collec
 		if problem != nil {
 			return problem, false, true
 		}
-		covered = covered && written
+		index := int64(location.path[len(destination.storage.path)])
+		covered = covered && written && index-destination.start < source.guaranteedSize()
 		overlaps = overlaps || written
 	}
 	return nil, covered && overlaps && !c.work.exhausted(), overlaps
@@ -889,8 +962,11 @@ func (c *zeroChecker) appendViews(call *ssa.CallCommon) (collectionView, collect
 	}
 	before, beforeKnown := c.collectionOf(call.Args[0])
 	added, addedKnown := c.collectionOf(call.Args[1])
+	spare := before.capEnd - before.end
+	// Follow one backing allocation only when all lengths fit or all allocate.
 	known := beforeKnown && addedKnown && !before.dynamicStart && !added.dynamicStart &&
-		before.end >= 0 && before.capEnd >= 0 && added.end >= 0
+		before.end >= 0 && before.end == before.guaranteedEnd() && before.capEnd >= 0 && added.end >= 0 &&
+		(added.size() <= spare || added.guaranteedSize() > spare)
 	return before, added, known
 }
 
@@ -900,7 +976,9 @@ func (c *zeroChecker) appendWriteViews(call *ssa.CallCommon) (destination, sourc
 	if known {
 		destination.start = destination.end
 		if added := source.size(); added <= destination.capEnd-destination.start {
-			destination.end += added
+			destination.setLengthBounds(source.guaranteedSize(), added)
+		} else {
+			destination.setLengthBounds(0, 0)
 		}
 		destination.length = nil
 	}
@@ -923,12 +1001,14 @@ func (c *zeroChecker) builtinWriteView(call *ssa.CallCommon) (collectionView, bo
 	case "copy":
 		if source, known := c.collectionOf(call.Args[1]); known {
 			destination.end = endFromCount(destination.start, minEnd(destination.size(), source.size()))
+			destination.shortestEnd = nil
 		}
 	case "append":
 		if !destination.dynamicStart && destination.end >= 0 {
 			destination.start = destination.end
 		}
 		destination.end = destination.capEnd
+		destination.shortestEnd = nil
 	}
 	return destination, true
 }
@@ -953,7 +1033,7 @@ func boundedView(view collectionView, context flowContext) collectionView {
 	}
 	if view.end < 0 && view.length != nil {
 		if upper, known := guardedInteger(view.length, context); known {
-			view.end = view.lengthBase + upper
+			view.end, view.shortestEnd = view.lengthBase+upper, nil
 		}
 	}
 	return view

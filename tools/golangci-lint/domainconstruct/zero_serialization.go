@@ -125,7 +125,8 @@ func (c *zeroChecker) decoderInitializes(instruction ssa.CallInstruction, locati
 					}
 					expected = storageType(target)
 				}
-				if !c.decoderEstablishes(pointer.Elem(), expected, boundary.Codec) {
+				if (boundary.DefaultJSONDecode && isDefinedPointer(destination.value.Type())) ||
+					!c.decoderEstablishes(pointer.Elem(), expected, boundary.Codec) {
 					conflicting = true
 				} else if !destination.conditional {
 					initialized = true
@@ -185,38 +186,34 @@ func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, stora
 				if !known || target.root != storage.root || !storage.overlaps(target) {
 					continue
 				}
-				if pointer, ok := destination.value.Type().Underlying().(*types.Pointer); ok {
-					decoded := pointer.Elem()
-					if boundary.DefaultJSONDecode && storage.elements != nil && sameStorage(target, storage.address) {
-						// Default JSON decoding zeroes trailing slots when the
-						// input is short, bypassing their element decoders.
-						if array, ok := decoded.Underlying().(*types.Array); ok && array.Len() != 0 && !hasJSONDecoder(decoded) {
-							return reasonInputMayBeZero, nil
-						}
-					}
-					depth := len(target.path) - len(storage.path)
-					if storage.elements == nil && depth != 0 {
-						if depth < 0 && !types.Identical(decoded, storageType(target)) {
-							return reasonInputMayBeZero, nil
-						}
-						continue
-					}
-					if storage.elements != nil {
-						switch {
-						case depth < 1:
-							continue
-						case depth > 1:
-							path := target.path[len(storage.path):]
-							if problem := c.decodedFieldProblem(t, path[1:], decoded, boundary.Codec, context.use); problem != nil {
-								problem.path = fieldPath(elementLabel(int64(path[0])), problem.path)
-								return problem.reason, problem
-							}
-							continue
-						}
-					}
-					if c.decodeInvalidatesValue(decoded, t, boundary.Codec) {
+				destinationType := destination.value.Type()
+				pointer, ok := destinationType.Underlying().(*types.Pointer)
+				if !ok {
+					continue
+				}
+				depth := len(target.path) - len(storage.path)
+				if storage.elements == nil {
+					if depth < 0 && !types.Identical(pointer.Elem(), storageType(target)) ||
+						depth == 0 && c.decodeInvalidatesValue(destinationType, t, boundary) {
 						return reasonInputMayBeZero, nil
 					}
+					continue
+				}
+				if depth == 0 && boundary.DefaultJSONDecode && jsonCanZeroArray(destinationType) {
+					return reasonInputMayBeZero, nil
+				}
+				if depth < 1 {
+					continue
+				}
+				path := target.path[len(storage.path):]
+				if problem := c.projectedStorageProblem(t, path[1:], context.use, func(field types.Type, use valueUse) *zeroProblem {
+					if c.decodeInvalidatesValue(destinationType, field, boundary) {
+						return c.failedResultProblem(field, reasonInputMayBeZero, use, make(map[types.Type]valueUse))
+					}
+					return nil
+				}); problem != nil {
+					problem.path = fieldPath(elementLabel(int64(path[0])), problem.path)
+					return problem.reason, problem
 				}
 			}
 		}
@@ -224,51 +221,22 @@ func (c *zeroChecker) decoderInvalidation(instruction ssa.CallInstruction, stora
 	return "", nil
 }
 
-func (c *zeroChecker) decodeInvalidatesValue(decoded, expected types.Type, codec string) bool {
+func (c *zeroChecker) decodeInvalidatesValue(destination, expected types.Type, boundary codecBoundary) bool {
+	decoded := destination.Underlying().(*types.Pointer).Elem()
+	if boundary.DefaultJSONDecode && (jsonCanZeroArray(destination) ||
+		isDefinedPointer(destination) && c.policies.lookup(decoded) != nil) {
+		return true
+	}
 	_, scalar := decoded.Underlying().(*types.Basic)
-	return (scalar || !types.Identical(decoded, expected)) && !c.decoderEstablishes(decoded, expected, codec)
+	return (scalar || !types.Identical(decoded, expected)) && !c.decoderEstablishes(decoded, expected, boundary.Codec)
 }
 
-// A checked write to a member of an element only affects that member's contract.
-// Follow the same field selection as the use of the surrounding value.
-func (c *zeroChecker) decodedFieldProblem(t types.Type, path []int, decoded types.Type, codec string, use valueUse) *zeroProblem {
-	if !c.work.take() {
-		return nil
-	}
-	if len(path) == 0 {
-		if c.decodeInvalidatesValue(decoded, t, codec) {
-			return c.failedResultProblem(t, reasonInputMayBeZero, use, make(map[types.Type]valueUse))
-		}
-		return nil
-	}
-	use = c.useForType(t, use)
-	if array, ok := t.Underlying().(*types.Array); ok {
-		index := int64(path[0])
-		if array.Len() == 0 || index >= array.Len() {
-			return nil
-		}
-		problem := c.decodedFieldProblem(array.Elem(), path[1:], decoded, codec, use)
-		if problem != nil {
-			problem.path = fieldPath(elementLabel(index), problem.path)
-		}
-		return problem
-	}
-	if _, structure := t.Underlying().(*types.Struct); !structure {
-		return nil
-	}
-	for selected := range c.jsonShape.fields(t, use.json()) {
-		if !c.work.take() {
-			return nil
-		}
-		if pathPrefix(path, selected.indices) {
-			problem := c.decodedFieldProblem(selected.field.Type(), path[len(selected.indices):], decoded, codec, use.forField(selected))
-			if problem != nil {
-				problem.path = fieldPath(selected.path, problem.path)
-			}
-			return problem
-		}
-	}
-	return nil
+// Default JSON decoding zeroes trailing array slots when the input is short,
+// bypassing their element decoders.
+func jsonCanZeroArray(destination types.Type) bool {
+	decoded := destination.Underlying().(*types.Pointer).Elem()
+	array, ok := decoded.Underlying().(*types.Array)
+	return ok && array.Len() != 0 && !hasJSONDecoder(destination)
 }
 
 // Recover decode slots from local boxing and variadic storage. An unknown or

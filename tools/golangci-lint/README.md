@@ -108,10 +108,10 @@ type ResourceID string
 ```
 
 The space-separated names identify functions in the type's package that may
-construct its representation. Methods use `Receiver.Method`, for example
-`Alias.Ref`. Include a root hydration function or private compatibility helper
-only when it deliberately restores this type under the root's hydration
-contract. A function's name alone grants no permission, and permission applies
+construct its representation. Methods declared in that package use
+`Receiver.Method`, for example `Alias.Ref`. Include a root hydration function
+or private compatibility helper only when it deliberately restores this type
+under the root's hydration contract. A function's name alone grants no permission, and permission applies
 only to the listed type and function body, excluding nested closures. Tests
 receive the same checks as production code. For fixture construction and
 exceptions, see [Domain fixtures](../../server/docs/testing.md#domain-fixtures).
@@ -153,8 +153,10 @@ requires permission from its enclosing owners. Directly returning a protected
 map field, slice field, or slice view with accessible backing storage also
 exposes the representation. Straight-line local bindings of a slice or map
 retain that ownership within their block, including named results at a bare
-return. Each specification in a local `var` group is bound before the next
-initializer is checked. A closure or address-taking can invalidate earlier
+return. Bindings carry into bare blocks and `if` branches, with each branch
+seeing bindings created by the initializer and its own assignments. The
+checker discards these bindings at the join. Each specification in a local
+`var` group is bound before the next initializer is checked. A closure or address-taking can invalidate earlier
 bindings, and later assignments can establish new ones. Slice and map
 conversions preserve the owner when they share the original storage. The owner
 check covers constrained slice views and exact generic pointers to protected
@@ -274,8 +276,8 @@ field promoted from a protected embedded value also requires that owner's codec.
 An explicit promoted method call checks the selected receiver. Default field
 selection follows the encoder's breadth-first embedding and tag rules when the
 traversal completes within its budget. Boxed payloads in package initializers
-and their closures are checked alongside function bodies. A field selector can
-retain its boxed payload when the stored value is known.
+and their closures are checked alongside function bodies. Field selectors and
+constant array indexes can retain boxed payloads when the stored value is known.
 
 Decoder destinations accept zero output storage. A parameter selected for both
 encoding and decoding must already be valid. After the error is checked,
@@ -292,6 +294,8 @@ codec check. Default JSON decoding replaces non-pointer and nil pointer
 interface payloads. It can
 follow an existing non-nil pointer in an interface or pointer slot. Its pointee
 is a possible write target because inputs such as `null` can replace the slot.
+A defined pointer such as `type P *ID` can bypass a decoder declared on
+`*ID`. An ordinary pointer and an alias for it retain the decoder.
 Default JSON decoding of a base64 string into a slice of protected byte values
 can bypass the element decoder. Use a slice-level decoder that validates the
 decoded values. A short JSON array also zeroes trailing slots in a Go array
@@ -617,22 +621,23 @@ edge; a `continue` that skips an assignment or a `break` does not establish that
 contract. A complete fill also requires stable backing storage. Channel and
 recognized synchronization operations can hand control to another owner after
 a view has been published, including through a helper that stores it in a
-global or an insertion into a global or borrowed map. The same sharing evidence
-can invalidate earlier writes to collection slots, a guarded read, pre-handoff
+global or an insertion as a key or value into a global or borrowed map. The same
+sharing evidence can invalidate earlier writes to collection slots, a guarded read, pre-handoff
 `errors.Join` contents, and an iterator flag's earlier initialization. Later
 writes can reestablish validity in slots they
 replace. Guarded lengths and exact offsets narrow the backing range affected by
 a copy or clear.
 A slice-to-array pointer exposes the converted prefix. An array value records
 the elements at the copy, including when a later write changes the original
-slice. For a direct branch join with known source lengths, a copy replaces
-earlier values only in the range covered by every feasible source. A field
-written by a copy or by append into spare capacity is traced to its source
+slice. A copy whose source length varies replaces earlier values only in the
+prefix written by every feasible source. This covers direct branch joins and
+summarized slice allocations. A field written by a copy or by append into spare
+capacity is traced to its source
 at the write. Storage reached through references in copied, appended, or
 loop-filled elements is observed at the use. Exact indexed reads check the
 selected field or converted type, including possible writes from dynamic
-indices. Parsing each
-element and checking its error before continuing is supported, including
+indices. Collection reads also check the field written at a dynamic index.
+Parsing each element and checking its error before continuing is supported, including
 assigning the result to its slot before checking the error.
 Map writes check both keys and values; missing reads still need `ok` when zero
 is invalid. Element tracking uses ranges rather than expanding large arrays.

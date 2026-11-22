@@ -62,6 +62,19 @@ func TestContractInferenceBounds(t *testing.T) {
 				case "SmallComposition", "AtSourceDepth":
 					if contract == nil || len(contract.Sources) != 1 || contract.Sources[0].Value.Kind != sourceFields {
 						t.Errorf("%s lost its field sources: %v", name, contract)
+						continue
+					}
+					if name == "AtSourceDepth" {
+						source := contract.Sources[0].Value
+						for depth := range 8 {
+							if source.Kind != sourceFields || len(source.Values) != 1 {
+								t.Fatalf("field source lost at depth %d: %+v", depth, source)
+							}
+							source = source.Values[0]
+						}
+						if source.Kind != sourceParameter || source.Parameter != 0 || len(source.Path) != 0 {
+							t.Errorf("source at depth 8 = %+v, want parameter 0", source)
+						}
 					}
 				case "Simple":
 					if contract == nil || len(contract.Errors) != 1 || contract.Errors[0].Parameter != -1 {

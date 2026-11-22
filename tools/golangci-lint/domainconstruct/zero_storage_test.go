@@ -102,6 +102,32 @@ func TestUntouchedFieldTracingAllocations(t *testing.T) {
 	}
 }
 
+func TestStorageFieldTraversalStopsAtBudget(t *testing.T) {
+	var source strings.Builder
+	source.WriteString("package flow\ntype Row0 struct { Payload any }\n")
+	for depth := 1; depth <= 10; depth++ {
+		fmt.Fprintf(&source, "type Row%d struct { Left, Right Row%d }\n", depth, depth-1)
+	}
+	source.WriteString("func run(row *Row10) *Row10 { return row }")
+	function := buildFlowFunction(t, source.String())
+	checker := newFlowChecker(function)
+	storage := address{root: function.Params[0]}
+	point := flowPoint{block: function.Blocks[0]}
+	context := checker.contextAt(point.block)
+	work := workBudget(16)
+	checker.work = &work
+	allocations := testing.AllocsPerRun(3, func() {
+		work = 16
+		if problem := checker.memoryAtProblem(storage, storageType(storage), point, point, context,
+			make(map[valueVisit]bool), make(map[memoryVisit]bool)); problem != nil {
+			t.Fatalf("borrowed storage reported a problem: %#v", problem)
+		}
+	})
+	if allocations > 128 {
+		t.Errorf("storage expansion allocated %.0f times with a budget of 16", allocations)
+	}
+}
+
 func TestStoragePathOverlap(t *testing.T) {
 	for _, test := range []struct {
 		name          string

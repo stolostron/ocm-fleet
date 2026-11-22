@@ -171,17 +171,7 @@ func runContracts(pass *analysis.Pass) (any, error) {
 			return true
 		})
 	}
-	b.inferContracts()
-	for object, fact := range b.set.functions {
-		if object.Pkg() == pass.Pkg && fact != nil {
-			pass.ExportObjectFact(object, fact)
-		}
-	}
-	for object, nonNil := range b.set.sentinels {
-		if object.Pkg() == pass.Pkg && nonNil {
-			pass.ExportObjectFact(object, new(sentinelContract))
-		}
-	}
+	// Inferred wrapper contracts use the presence markers of their callees.
 	for _, imported := range pass.AllObjectFacts() {
 		switch fact := imported.Fact.(type) {
 		case *functionContract:
@@ -192,6 +182,17 @@ func runContracts(pass *analysis.Pass) (any, error) {
 			b.set.boundaries[imported.Object.(*types.Func).Origin()] = fact
 		case *presenceFact:
 			b.set.presences[imported.Object.(*types.Func).Origin()] = true
+		}
+	}
+	b.inferContracts()
+	for object, fact := range b.set.functions {
+		if object.Pkg() == pass.Pkg && fact != nil {
+			pass.ExportObjectFact(object, fact)
+		}
+	}
+	for object, nonNil := range b.set.sentinels {
+		if object.Pkg() == pass.Pkg && nonNil {
+			pass.ExportObjectFact(object, new(sentinelContract))
 		}
 	}
 	return b.set, nil

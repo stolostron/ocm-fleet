@@ -161,7 +161,9 @@ func (c *zeroChecker) storageSharedBefore(storage mutationTarget, point flowPoin
 					return true
 				}
 			case *ssa.MapUpdate:
-				if borrowedMap(instruction.Map) && c.mayReferenceStorage(instruction.Value, storage, before, make(map[ssa.Value]bool)) {
+				if borrowedMap(instruction.Map) &&
+					(c.mayReferenceStorage(instruction.Value, storage, before, make(map[ssa.Value]bool)) ||
+						c.mayReferenceStorage(instruction.Key, storage, before, make(map[ssa.Value]bool))) {
 					return true
 				}
 			}
@@ -268,7 +270,7 @@ func (c *zeroChecker) lengthCoversViewSeen(length ssa.Value, view collectionView
 				return true
 			}
 			if bound, ok := c.collectionOf(call.Call.Args[0]); ok && sameStorage(bound.storage, view.storage) && bound.start == 0 {
-				return bound.end >= 0 && view.end >= 0 && bound.end >= view.end ||
+				return view.end >= 0 && bound.guaranteedEnd() >= view.end ||
 					bound.lengthBase == view.lengthBase && sameLength(bound.length, view.length)
 			}
 			if producer, result, ok := sliceProducer(call.Call.Args[0]); ok {

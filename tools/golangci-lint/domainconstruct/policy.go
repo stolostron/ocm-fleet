@@ -127,6 +127,10 @@ func (c *checker) collectPolicy(spec *ast.TypeSpec, doc *ast.CommentGroup) {
 			c.reportPolicy(spec, "constructor-not-function", fmt.Sprintf("%s is not a function", name))
 			return
 		}
+		if function.Pkg() != c.pass.Pkg {
+			c.reportPolicy(spec, "constructor-not-local", fmt.Sprintf("%s must be declared in this package", name))
+			return
+		}
 		p.functions[function.Origin()] = true
 	}
 	// A declared hydration hook owns the same representation writes as a

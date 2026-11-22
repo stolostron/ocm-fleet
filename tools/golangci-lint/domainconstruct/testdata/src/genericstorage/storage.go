@@ -30,3 +30,11 @@ func MakeFilledSlice[S ~[]ID](valid ID) S {
 	values[0] = valid
 	return values
 }
+
+func ClearBorrowedSlice[S ~[]ID](values S) {
+	clear(values) // want "slice element after clear is an empty genericstorage.ID"
+}
+
+func ClearBorrowedMap[M ~map[int]ID](values M) {
+	clear(values)
+}
