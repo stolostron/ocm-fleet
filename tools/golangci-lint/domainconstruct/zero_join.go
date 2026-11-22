@@ -13,7 +13,7 @@ func (c *zeroChecker) joinedErrorTruth(value ssa.Value, point flowPoint, context
 	if literal, ok := value.(*ssa.Const); ok && literal.IsNil() {
 		return isZero
 	}
-	if view, ok := c.collectionOf(value); ok {
+	if view, ok := c.collectionOfIn(value, context); ok {
 		return c.joinedViewTruth(view, point, context, values, nil, make(map[collectionVisit]bool))
 	}
 	return unknown
@@ -96,7 +96,7 @@ func (c *zeroChecker) joinedViewTruth(view collectionView, point flowPoint, cont
 			}
 			_, synchronous := instruction.(*ssa.Call)
 			if synchronous && builtinCall && builtin.Name() == "clear" {
-				if target, ok := c.collectionOf(call.Common().Args[0]); ok && sameStorage(target.storage, view.storage) {
+				if target, ok := c.collectionOfIn(call.Common().Args[0], context); ok && sameStorage(target.storage, view.storage) {
 					target = boundedView(target, context)
 					if target.size() == 0 || !rangesOverlap(target.start, target.possibleEnd(), view.start, view.end) {
 						continue

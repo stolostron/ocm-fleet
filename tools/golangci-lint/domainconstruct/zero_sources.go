@@ -49,7 +49,7 @@ func (c *zeroChecker) sourceProblem(source valueSource, call *ssa.Call, result i
 	case sourceSlice:
 		if value := callResultValue(call, result); value != nil {
 			if slice, ok := value.Type().Underlying().(*types.Slice); ok {
-				if view, ok := c.sliceSourceView(source, call, value, slice); ok {
+				if view, ok := c.sliceSourceView(source, call, value, slice, context); ok {
 					return c.collectionStorageProblem(view, point, context, seen, nil, make(map[collectionVisit]bool))
 				}
 			}
@@ -142,7 +142,7 @@ func (c *zeroChecker) emptyStringSliceSource(source valueSource, call *ssa.CallC
 	if !basic || element.Kind() != types.Byte && element.Kind() != types.Rune {
 		return false
 	}
-	view, known := c.collectionOf(argument)
+	view, known := c.collectionOfIn(argument, context)
 	return known && boundedView(view, context).size() == 0
 }
 
@@ -186,7 +186,7 @@ func (c *zeroChecker) numericConversionProblem(source valueSource, call *ssa.Cal
 	return c.conditionalProblem(target, reasonConversion, use), true
 }
 
-func (c *zeroChecker) sourceSliceView(call *ssa.Call, result int, value ssa.Value) (collectionView, bool) {
+func (c *zeroChecker) sourceSliceView(call *ssa.Call, result int, value ssa.Value, context flowContext) (collectionView, bool) {
 	source, ok := c.resultSource(&call.Call, result)
 	if !ok {
 		return collectionView{}, false
@@ -195,17 +195,43 @@ func (c *zeroChecker) sourceSliceView(call *ssa.Call, result int, value ssa.Valu
 	if !ok {
 		return collectionView{}, false
 	}
-	return c.sliceSourceView(source, call, value, slice)
+	view, known := c.sliceSourceView(source, call, value, slice, context)
+	if !known || c.sliceResultChecked(call, result, context) {
+		return view, known
+	}
+	// A successful result's allocation may have a different length and
+	// capacity from a failed or absent result. Header facts cover every return.
+	view.capEnd, view.length, view.lengthBase = -1, nil, 0
+	view.setLengthBounds(0, -1)
+	if length, known := c.callResultLength(call, result); known {
+		view = c.sliceViewWithLength(view, call, length, context)
+	}
+	return view, true
 }
 
-func (c *zeroChecker) sliceSourceView(source valueSource, call *ssa.Call, value ssa.Value, slice *types.Slice) (collectionView, bool) {
+func (c *zeroChecker) sliceResultChecked(call *ssa.Call, result int, context flowContext) bool {
+	results := call.Call.Signature().Results()
+	if results.Len() < 2 {
+		return true
+	}
+	for index := range results.Len() {
+		if index != result && c.errorStatus(results.At(index).Type()) &&
+			(!context.possible || !c.tupleGuardChecked(call, index, isZero, context)) {
+			return false
+		}
+	}
+	return result != 0 || !c.contracts.hasPresence(callObject(&call.Call)) ||
+		context.possible && c.tupleGuardChecked(call, 1, notZero, context)
+}
+
+func (c *zeroChecker) sliceSourceView(source valueSource, call *ssa.Call, value ssa.Value, slice *types.Slice, context flowContext) (collectionView, bool) {
 	view := collectionView{storage: address{root: value}, element: slice.Elem(), value: value}
 	if source.Kind == sourceZero {
 		return view, true
 	}
 	if source.Kind == sourceChoice {
 		for index, alternative := range source.Values {
-			child, ok := c.sliceSourceView(alternative, call, value, slice)
+			child, ok := c.sliceSourceView(alternative, call, value, slice, context)
 			if !ok {
 				return collectionView{}, false
 			}
@@ -235,25 +261,35 @@ func (c *zeroChecker) sliceSourceView(source valueSource, call *ssa.Call, value 
 	length := source.Length
 	if length.Constant < 0 && length.Parameter < 0 {
 		// The header fact can still retain the length of a forwarded allocation.
-		if fact := c.callContract(&call.Call); fact != nil {
-			result := 0
-			if extract, ok := value.(*ssa.Extract); ok {
-				result = extract.Index
-			}
-			for _, bound := range fact.Lengths {
-				if bound.Result == result {
-					length = bound.Length
-					break
-				}
-			}
+		result := 0
+		if extract, ok := value.(*ssa.Extract); ok {
+			result = extract.Index
+		}
+		if bound, known := c.callResultLength(call, result); known {
+			length = bound
 		}
 	}
 	view.capEnd = -1
-	view.end = length.Constant
+	return c.sliceViewWithLength(view, call, length, context), true
+}
+
+func (c *zeroChecker) callResultLength(call *ssa.Call, result int) (sourceLength, bool) {
+	if fact := c.callContract(&call.Call); fact != nil {
+		for _, bound := range fact.Lengths {
+			if bound.Result == result {
+				return bound.Length, true
+			}
+		}
+	}
+	return sourceLength{}, false
+}
+
+func (c *zeroChecker) sliceViewWithLength(view collectionView, call *ssa.Call, length sourceLength, context flowContext) collectionView {
+	view.setLengthBounds(length.Constant, length.Constant)
 	if length.Parameter >= 0 {
 		argument := contractArgument(&call.Call, length.Parameter)
 		if length.FromLen {
-			if original, ok := c.collectionOf(argument); ok {
+			if original, ok := c.collectionOfIn(argument, context); ok {
 				view.setLengthBounds(original.guaranteedSize(), original.size())
 				view.length = original.length
 				view.lengthBase = original.lengthBase - original.start
@@ -264,7 +300,7 @@ func (c *zeroChecker) sliceSourceView(source valueSource, call *ssa.Call, value 
 			view.end, view.length = -1, argument
 		}
 	}
-	return view, true
+	return view
 }
 
 func callResultValue(call *ssa.Call, result int) ssa.Value {

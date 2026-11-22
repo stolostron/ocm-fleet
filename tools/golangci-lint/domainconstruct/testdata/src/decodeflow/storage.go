@@ -18,6 +18,56 @@ func AppendingAtCapacityKeepsDecoderDestination(data []byte, more []*encodingval
 	return id, nil
 }
 
+func AppendingAtDynamicLowCanReplaceDecoderDestination(data []byte, index int, valid encodingvalues.ID) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	slots := [2]*encodingvalues.ID{nil, &id}
+	_ = append(slots[index:1], &valid)
+	if err := json.Unmarshal(data, slots[1]); err != nil {
+		return "", err
+	}
+	return id, nil // want "return produces an empty encodingvalues.ID"
+}
+
+func AppendingAtDynamicLowKeepsDisjointDestination(data []byte, index int, valid encodingvalues.ID) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	slots := [2]*encodingvalues.ID{&id, nil}
+	_ = append(slots[index:1], &valid)
+	if err := json.Unmarshal(data, slots[0]); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func AppendingAtDynamicLowMustAllocate(data []byte, index int, valid encodingvalues.ID) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	slots := [2]*encodingvalues.ID{nil, &id}
+	_ = append(slots[index:2:2], &valid)
+	if err := json.Unmarshal(data, slots[1]); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func AppendingTooManyPointersMustAllocate(data []byte, index int, valid encodingvalues.ID) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	slots := [2]*encodingvalues.ID{nil, &id}
+	_ = append(slots[index:1], &valid, &valid)
+	if err := json.Unmarshal(data, slots[1]); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func AppendingOnePointerKeepsLaterDestination(data []byte, index int, valid encodingvalues.ID) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	slots := [3]*encodingvalues.ID{nil, nil, &id}
+	_ = append(slots[index:1], &valid)
+	if err := json.Unmarshal(data, slots[2]); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
 func SuccessfulRawDecodeCanInvalidateElement(valid encodingvalues.ID) []encodingvalues.ID {
 	values := []encodingvalues.ID{valid, valid}
 	if err := json.Unmarshal([]byte(`""`), (*string)(&values[0])); err != nil {
@@ -232,6 +282,55 @@ func DecodeAfterCaptureChangesSlot(data []byte) (encodingvalues.ID, error) {
 }
 
 func keepLocalSlot(**encodingvalues.ID) {}
+
+func replaceBoxedSlot(slot any, value *encodingvalues.ID) { *slot.(**encodingvalues.ID) = value }
+
+func DecodeAfterBoxedSlotChanges(data []byte, valid encodingvalues.ID) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	slots := [1]*encodingvalues.ID{&id}
+	replaceBoxedSlot(&slots[0], &valid) // want "argument contains an empty encodingvalues.ID"
+	if err := json.Unmarshal(data, slots[0]); err != nil {
+		return "", err
+	}
+	return id, nil // want "return may produce an empty encodingvalues.ID"
+}
+
+func DecodeAfterReadOnlySibling(data []byte, valid encodingvalues.ID) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	slots := [2]*encodingvalues.ID{&id, &valid}
+	keepLocalSlot(&slots[1])
+	if err := json.Unmarshal(data, slots[0]); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func DecodeAfterBoxedSiblingChanges(data []byte, first, second encodingvalues.ID) (encodingvalues.ID, error) {
+	var id encodingvalues.ID
+	slots := [2]*encodingvalues.ID{&id, &first}
+	replaceBoxedSlot(&slots[1], &second)
+	if err := json.Unmarshal(data, slots[0]); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+var globalDecoderSlot *encodingvalues.ID
+
+func replaceGlobalDecoderSlot(_ **encodingvalues.ID, next *encodingvalues.ID) {
+	globalDecoderSlot = next
+}
+
+func DecodeAfterGlobalSlotChanges(data []byte, valid encodingvalues.ID) (encodingvalues.ID, error) {
+	id := valid
+	globalDecoderSlot = &id
+	replaceGlobalDecoderSlot(&globalDecoderSlot, &valid)
+	id = ""
+	if err := json.Unmarshal(data, globalDecoderSlot); err != nil {
+		return "", err
+	}
+	return id, nil // want "return .* an empty encodingvalues.ID"
+}
 
 func DecodeAfterPrivateSlotHandoff(data []byte) (encodingvalues.ID, error) {
 	var id encodingvalues.ID

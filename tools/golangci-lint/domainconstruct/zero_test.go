@@ -22,6 +22,7 @@ func TestLateZeroOperands(t *testing.T) {
 	for index := range fields {
 		fmt.Fprintf(&declarations, "F%d ID\n", index)
 	}
+	values := strings.Repeat("valid,", fields)
 	source := fmt.Sprintf(`package callbudget
 
 //domain:constructors NewID
@@ -33,10 +34,24 @@ type Wide struct { %s }
 
 func first(Wide, ID) {}
 func reverse(ID, Wide) {}
+func collection(Wide, []ID) {}
+
+//domain:presence
+func lookupID(valid ID, found bool) (ID, bool) {
+	if found {
+		return valid, true
+	}
+	return "", false
+}
 
 func Use(valid ID) {
 	first(Wide{%s}, "") // want "argument is an empty callbudget.ID"
 	reverse("", Wide{%s}) // want "argument is an empty callbudget.ID"
+}
+
+func UseCollection(valid ID, found bool) {
+	id, _ := lookupID(valid, found)
+	collection(Wide{%s}, []ID{id}) // want "argument may contain an empty callbudget.ID"
 }
 
 func Store(m map[Wide]ID, valid ID) {
@@ -50,8 +65,7 @@ func Return(valid ID) (Wide, ID) {
 func ReturnReverse(valid ID) (ID, Wide) {
 	return "", Wide{%s} // want "return produces an empty callbudget.ID"
 }
-`, declarations.String(), strings.Repeat("valid,", fields), strings.Repeat("valid,", fields),
-		strings.Repeat("valid,", fields), strings.Repeat("valid,", fields), strings.Repeat("valid,", fields))
+`, declarations.String(), values, values, values, values, values, values)
 	dir, cleanup, err := analysistest.WriteFiles(map[string]string{"callbudget/callbudget.go": source})
 	if err != nil {
 		t.Fatal(err)
@@ -102,6 +116,9 @@ func TestZeroFlow(t *testing.T) {
 		"RawReceiverFieldMayBeZero":     {source: "s.Name", steps: []string{"source", "conversion", "use"}},
 	}
 	for _, result := range results {
+		if result.Err != nil || result.Pass == nil {
+			continue
+		}
 		if result.Pass.Pkg.Path() == "zeroflow" {
 			missing := map[string]bool{
 				"diagnostic_positions.go": true,

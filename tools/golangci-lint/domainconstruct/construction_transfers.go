@@ -121,7 +121,19 @@ func (c *checker) checkReturn(statement *ast.ReturnStmt, ancestors []ast.Node) {
 }
 
 func (c *checker) checkReturnedStorage(value ast.Expr, ancestors []ast.Node) {
-	if base := c.mutableStorageBase(value); base != nil {
+	operand := value
+	// Explicit interface conversion preserves the slice or map descriptor.
+	for {
+		call, ok := ast.Unparen(operand).(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 || !c.pass.TypesInfo.Types[call.Fun].IsType() {
+			break
+		}
+		if _, boxed := operandUnderlying(c.pass.TypesInfo.TypeOf(call)).(*types.Interface); !boxed {
+			break
+		}
+		operand = call.Args[0]
+	}
+	if base := c.mutableStorageBase(operand); base != nil {
 		if p := c.unapprovedOwner(base, ancestors); p != nil {
 			c.reportProtected(value, p, "domainconstruct.mutable-exposure", "return", "mutable-contents",
 				"do not expose mutable contents of "+p.name)

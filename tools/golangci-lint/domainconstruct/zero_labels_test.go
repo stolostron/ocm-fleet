@@ -2,6 +2,7 @@ package domainconstruct_test
 
 import (
 	"go/ast"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -126,9 +127,8 @@ func checkUseLabels(t *testing.T, result *analysistest.Result) {
 		},
 	}
 	for _, file := range result.Pass.Files {
-		filename := result.Pass.Fset.Position(file.Pos()).Filename
-		if !strings.HasSuffix(filename, "/diagnostic_positions.go") &&
-			!strings.HasSuffix(filename, "/diagnostic_labels.go") {
+		filename := filepath.Base(result.Pass.Fset.Position(file.Pos()).Filename)
+		if filename != "diagnostic_positions.go" && filename != "diagnostic_labels.go" {
 			continue
 		}
 		for _, declaration := range file.Decls {

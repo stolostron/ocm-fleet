@@ -3,6 +3,7 @@ package domainconstruct_test
 import (
 	"go/ast"
 	"go/token"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,7 +13,7 @@ import (
 func checkUsePositions(t *testing.T, result *analysistest.Result) {
 	t.Helper()
 	for _, file := range result.Pass.Files {
-		if !strings.HasSuffix(result.Pass.Fset.Position(file.Pos()).Filename, "/diagnostic_positions.go") {
+		if filepath.Base(result.Pass.Fset.Position(file.Pos()).Filename) != "diagnostic_positions.go" {
 			continue
 		}
 		// Each marker identifies the source expression the diagnostic should

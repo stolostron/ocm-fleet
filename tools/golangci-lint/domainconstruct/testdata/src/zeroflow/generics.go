@@ -62,6 +62,82 @@ func ReadFieldAfterCopyFromOptionalAllocation(valid ID, absent bool, use func(ID
 	use(destination[0].ID) // want "argument .* an empty zeroflow.ID"
 }
 
+func allocateOnSuccess[T any](fail bool) ([]T, error) {
+	if fail {
+		return nil, errors.New("unavailable")
+	}
+	return make([]T, 1), nil
+}
+
+func CopyFromUncheckedAllocation(valid ID, fail bool) []ID {
+	source, _ := allocateOnSuccess[ID](fail)
+	copy(source, []ID{valid})
+	destination := make([]ID, 1)
+	copy(destination, source[:])
+	return destination // want "return may contain an empty zeroflow.ID"
+}
+
+func CopyFromCheckedAllocation(valid ID, fail bool) ([]ID, error) {
+	source, err := allocateOnSuccess[ID](fail)
+	if err != nil {
+		return nil, err
+	}
+	copy(source, []ID{valid})
+	destination := make([]ID, 1)
+	copy(destination, source[:])
+	return destination, nil
+}
+
+func ReadFieldAfterCopyFromUncheckedAllocation(valid ID, fail bool, use func(ID)) {
+	source, _ := allocateOnSuccess[projectedRow](fail)
+	copy(source, []projectedRow{{ID: valid}})
+	destination := make([]projectedRow, 1)
+	copy(destination, source)
+	use(destination[0].ID) // want "argument may be an empty zeroflow.ID"
+}
+
+func allocateOnEitherResult[T any](fail bool) ([]T, error) {
+	if fail {
+		return make([]T, 1), errors.New("unavailable")
+	}
+	return make([]T, 1), nil
+}
+
+func CopyFromAllReturnLength(valid ID, fail bool) []ID {
+	source, _ := allocateOnEitherResult[ID](fail)
+	copy(source, []ID{valid})
+	destination := make([]ID, 1)
+	copy(destination, source)
+	return destination
+}
+
+//domain:presence
+func allocateWhenPresent[T any](found bool) ([]T, bool) {
+	if !found {
+		return nil, false
+	}
+	return make([]T, 1), true
+}
+
+func CopyWithoutCheckingPresence(valid ID, found bool) []ID {
+	source, _ := allocateWhenPresent[ID](found)
+	copy(source, []ID{valid})
+	destination := make([]ID, 1)
+	copy(destination, source)
+	return destination // want "return may contain an empty zeroflow.ID"
+}
+
+func CopyAfterCheckingPresence(valid ID, found bool) []ID {
+	source, present := allocateWhenPresent[ID](found)
+	if !present {
+		return nil
+	}
+	copy(source, []ID{valid})
+	destination := make([]ID, 1)
+	copy(destination, source)
+	return destination
+}
+
 func allocatedOneOrTwo[T any](short bool) []T {
 	if short {
 		return make([]T, 1)

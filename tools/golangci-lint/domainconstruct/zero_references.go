@@ -96,6 +96,12 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 		}
 	}()
 	possiblyChanged := false
+	slotType := storageType(location)
+	pointerSlot := false
+	if slotType != nil {
+		_, pointerSlot = slotType.Underlying().(*types.Pointer)
+	}
+	localSlot := pointerSlot && !borrowedRoot(location.root)
 	for index := point.index - 1; index >= 0; index-- {
 		if !c.work.take() {
 			return nil, false
@@ -108,7 +114,7 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 		if store, ok := instruction.(*ssa.Store); ok {
 			target, known := c.collectionAddress(store.Addr)
 			tracked := mutationTarget{address: location}
-			if !known && storeTypeMayOverwrite(store.Val.Type(), storageType(location)) &&
+			if !known && storeTypeMayOverwrite(store.Val.Type(), slotType) &&
 				c.storeMayOverlap(store.Addr, tracked, make(map[ssa.Value]bool)) {
 				return nil, false
 			}
@@ -144,7 +150,11 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 			if builtin, ok := common.Value.(*ssa.Builtin); ok {
 				switch builtin.Name() {
 				case "append", "clear", "copy":
-					if destination, known := c.builtinWriteView(common); known && destination.storage.root == location.root &&
+					destination, known := c.builtinWriteView(common)
+					if !known && pointerSlot && builtin.Name() == "append" {
+						destination, known = c.unresolvedAppendWriteView(common)
+					}
+					if known && destination.storage.root == location.root &&
 						storagePathsOverlap(destination.storage.path, location.path) && destination.size() != 0 {
 						if len(location.path) <= len(destination.storage.path) {
 							return nil, false
@@ -164,8 +174,16 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 					}
 				}
 			}
-			for _, argument := range common.Args {
+			for index, argument := range common.Args {
+				if pointerSlot {
+					argument = unboxSlotArgument(argument)
+				}
 				if target, ok := addressOf(argument); ok && target.root == location.root {
+					// Borrowed slots can also be reached through globals.
+					if localSlot && (!storagePathsOverlap(target.path, location.path) ||
+						c.callContract(common).effectForParameter(index-callArgumentIndex(common, 0)).Kind == mutationReadOnly) {
+						continue
+					}
 					return nil, false
 				}
 			}
@@ -190,6 +208,19 @@ func (c *zeroChecker) referenceOrigin(location address, point flowPoint, search 
 		result = incoming
 	}
 	return result, len(point.block.Preds) != 0 && !possiblyChanged
+}
+
+func unboxSlotArgument(value ssa.Value) ssa.Value {
+	for {
+		switch box := value.(type) {
+		case *ssa.MakeInterface:
+			value = box.X
+		case *ssa.ChangeInterface:
+			value = box.X
+		default:
+			return value
+		}
+	}
 }
 
 func storeTypeMayOverwrite(stored, tracked types.Type) bool {

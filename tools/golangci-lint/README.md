@@ -149,14 +149,15 @@ literals use their common signature or element types. Exact constraints
 retain the construction policy of the constrained type.
 Writing through an embedded field or exposing a pointer to it requires
 permission from its protected owners. Replacing an existing nested value
-requires permission from its enclosing owners. Directly returning a protected
-map field, slice field, or slice view with accessible backing storage also
-exposes the representation. Straight-line local bindings of a slice or map
-retain that ownership within their block, including named results at a bare
-return. Bindings carry into bare blocks and `if` branches, with each branch
-seeing bindings created by the initializer and its own assignments. The
-checker discards these bindings at the join. Each specification in a local
-`var` group is bound before the next initializer is checked. A closure or address-taking can invalidate earlier
+requires permission from its enclosing owners. Returning a protected map field,
+slice field, or slice view with accessible backing storage also exposes the
+representation, including through an explicit interface conversion. Straight-line
+local bindings of a slice or map retain that ownership within their block,
+including named results at a bare return. An `if` branch sees bindings created
+by its initializer and its own assignments. An outer binding survives a bare
+block or the join of an `if` statement when its owner stays the same along each
+path. Each specification in a local `var` group is bound before the next
+initializer is checked. A closure or address-taking can invalidate earlier
 bindings, and later assignments can establish new ones. Slice and map
 conversions preserve the owner when they share the original storage. The owner
 check covers constrained slice views and exact generic pointers to protected
@@ -164,8 +165,8 @@ arrays. Converting a protected slice to a nonempty array pointer exposes the
 same storage. Rebinding a local to fresh storage clears its prior owner.
 Appending into reusable capacity can modify protected storage. A full slice
 expression forces allocation when it leaves less spare capacity than the
-append needs. Read-only slice
-views are allowed as inputs to `len` and as sources of `copy`.
+append needs. Read-only slice views are allowed as inputs to `len` and as
+sources of `copy`.
 Simple generic helpers that convert a raw argument into a protected
 type are checked at their instantiated calls, including imported helpers.
 Retained conversions use their instantiated targets even when the final result
@@ -286,8 +287,11 @@ members when the runtime destination establishes the tracked type's policy and
 other destinations cannot overwrite it. Merged destinations can establish that
 proof when they agree on the storage and runtime pointer type. An overlapping
 write through a merged pointer or a helper can invalidate the supplying slot's
-earlier origin. This includes a handoff that can reassign a captured pointer
-slot. The checker keeps tracking required fields in an ordinary envelope.
+earlier origin. This includes writes through pointer-slot addresses boxed in an
+interface, possible appends to the slot's backing array, and handoffs that can
+reassign a captured pointer slot. For a local slot, a helper that writes through
+a disjoint argument or only reads the supplying slot can leave its origin
+intact. The checker keeps tracking required fields in an ordinary envelope.
 A custom `UnmarshalJSON` hook or a text decoder for quoted input can write
 fields omitted by default JSON decoding, so its destination gets a whole-value
 codec check. Default JSON decoding replaces non-pointer and nil pointer
@@ -632,20 +636,25 @@ the elements at the copy, including when a later write changes the original
 slice. A copy whose source length varies replaces earlier values only in the
 prefix written by every feasible source. This covers direct branch joins and
 summarized slice allocations. A field written by a copy or by append into spare
-capacity is traced to its source
-at the write. Storage reached through references in copied, appended, or
-loop-filled elements is observed at the use. Exact indexed reads check the
-selected field or converted type, including possible writes from dynamic
+capacity is traced to its source at the write. An append with an uncertain source
+length can write into available spare capacity. When the append may allocate,
+its possible writes cannot establish initialization on the original storage.
+Storage reached through references in copied, appended, or loop-filled elements
+is observed at the use. Reference-typed results of a call, including individual
+results of a tuple, can share storage with the arguments. Exact indexed reads
+check the selected field or converted type, including possible writes from dynamic
 indices. Collection reads also check the field written at a dynamic index.
 Parsing each element and checking its error before continuing is supported, including
 assigning the result to its slot before checking the error.
 Map writes check both keys and values; missing reads still need `ok` when zero
 is invalid. Element tracking uses ranges rather than expanding large arrays.
 Local and imported helper contracts preserve a returned slice's length when
-its body establishes a stable parameter or constant length. Element writes and
-unrelated cursor updates do not change that contract. Conditional allocation,
-header reassignment, address escapes, captured headers, and deferred recovery
-can defeat an exact length proof.
+its body establishes a stable parameter or constant length. Length bounds that
+hold only on success require the caller to establish the corresponding error
+or presence check. A header fact established across all return paths applies
+regardless of status. Element writes and unrelated cursor updates do not change
+that contract. Conditional allocation, header reassignment, address escapes,
+captured headers, and deferred recovery can defeat an exact length proof.
 
 Generic helper summaries retain zero factories, `*new(T)`, fresh `new(T)` and
 `make([]T, n)` results, simple struct construction, and forwarding until the call
@@ -713,9 +722,9 @@ Contract inference limits branch work, recursive source paths, and convergence
 rounds. Nested substitutions share a work budget and caps apply to the expanded
 facts before export. Independent facts can settle while unresolved contracts
 continue to converge. SSA queries share a work budget across paths, field
-traversals, and related lookups. A direct scalar zero in a later call argument,
-map value, or return result can still be checked after the instruction's budget
-is exhausted.
+traversals, and related lookups. Later call arguments share a small additional
+allowance after that budget is exhausted. Direct scalar zeros can still be
+checked in call arguments, map values, or return results after those limits.
 An incomplete proof leaves unknown state and can miss cases beyond that limit.
 Completed type, reference, and boxed-value traversals can reuse results at the
 same observation point. A query with a different set of facts analyzes that

@@ -8,19 +8,13 @@ import (
 )
 
 // Check straight-line alias bindings and retain them on entry to a bare block
-// or if branch. Rebinding affects only that path. Drop the outer bindings at
-// the join rather than infer which assignments ran.
+// or if branch. Keep an outer binding when it survives the scope unchanged.
 func (c *checker) checkBlock(block *ast.BlockStmt, ancestors []ast.Node) {
 	outer := c.storageAliases
 	c.storageAliases = maps.Clone(outer)
-	defer func() { c.storageAliases = outer }()
 	ancestors = append(ancestors, block)
 	for _, statement := range block.List {
 		switch statement := statement.(type) {
-		case *ast.BlockStmt, *ast.IfStmt:
-			c.walk(statement, ancestors)
-			clear(c.storageAliases)
-			continue
 		case *ast.DeclStmt:
 			if declaration, ok := statement.Decl.(*ast.GenDecl); ok && declaration.Tok == token.VAR {
 				declarationAncestors := append(ancestors, statement, declaration)
@@ -32,26 +26,43 @@ func (c *checker) checkBlock(block *ast.BlockStmt, ancestors []ast.Node) {
 				continue
 			}
 		case *ast.AssignStmt, *ast.ExprStmt, *ast.IncDecStmt, *ast.EmptyStmt,
-			*ast.ReturnStmt, *ast.SendStmt, *ast.DeferStmt, *ast.GoStmt:
+			*ast.ReturnStmt, *ast.SendStmt, *ast.DeferStmt, *ast.GoStmt,
+			*ast.BlockStmt, *ast.IfStmt:
 		default:
 			clear(c.storageAliases)
 		}
 		c.walkStorageStatement(statement, ancestors)
 	}
+	retainUnchangedAliases(outer, c.storageAliases)
+	c.storageAliases = outer
 }
 
 func (c *checker) checkIf(statement *ast.IfStmt, ancestors []ast.Node) {
 	outer := c.storageAliases
 	c.storageAliases = maps.Clone(outer)
-	defer func() { c.storageAliases = outer }()
 	ancestors = append(ancestors, statement)
 	if statement.Init != nil {
 		c.walkStorageStatement(statement.Init, ancestors)
 	}
 	c.walk(statement.Cond, ancestors)
-	c.walk(statement.Body, ancestors)
+	elseAliases := c.storageAliases
+	c.storageAliases = maps.Clone(elseAliases)
+	c.checkBlock(statement.Body, ancestors)
+	retainUnchangedAliases(outer, c.storageAliases)
+
+	c.storageAliases = elseAliases
 	if statement.Else != nil {
 		c.walk(statement.Else, ancestors)
+	}
+	retainUnchangedAliases(outer, c.storageAliases)
+	c.storageAliases = outer
+}
+
+func retainUnchangedAliases(outer, remaining map[*types.Var]*policy) {
+	for variable, owner := range outer {
+		if remaining[variable] != owner {
+			delete(outer, variable)
+		}
 	}
 }
 

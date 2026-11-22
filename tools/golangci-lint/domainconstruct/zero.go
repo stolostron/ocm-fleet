@@ -271,6 +271,9 @@ func (c *zeroChecker) checkCall(instruction ssa.CallInstruction, point flowPoint
 			return // Copy and clear observe captured backing storage at execution.
 		}
 	}
+	// A deep operand can exhaust the instruction's budget. Later arguments
+	// share a small allowance for checks that finish quickly.
+	lateWork := workBudget(maxLateCallWork)
 	check := func(value ssa.Value, operation string, index int) {
 		use := c.argumentUse(call, index)
 		if use == outputStorage || !c.interestingType(value.Type()) {
@@ -281,7 +284,13 @@ func (c *zeroChecker) checkCall(instruction ssa.CallInstruction, point flowPoint
 		}
 		useContext := context
 		useContext.use = use
-		if problem := c.operandProblem(value, point, useContext); problem != nil {
+		work := c.work
+		if work.exhausted() {
+			c.work = &lateWork
+		}
+		problem := c.operandProblem(value, point, useContext)
+		c.work = work
+		if problem != nil {
 			ref := zeroUse{pos: instructionPosition(instruction, point), call: call, argument: index}
 			c.report(ref, problem, operation, value)
 		}

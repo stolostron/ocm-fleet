@@ -60,6 +60,41 @@ func ShadowAliasesInsideIf(record Record, enabled bool) {
 	}
 }
 
+func WriteUnchangedAliasesAfterBlocks(record Record, enabled bool) {
+	items := record.items
+	if enabled {
+		items := []int{1}
+		items[0] = 7
+	}
+	items[0] = 8 // want "modify protection.Record through NewRecord"
+	keys := record.keys
+	{
+		_ = len(keys)
+	}
+	keys[0] = 1 // want "modify protection.Record through NewRecord"
+}
+
+func WriteAfterIndependentRebind(record Record, enabled bool) {
+	items := record.items
+	if enabled {
+		items = []int{1}
+	} else {
+		items = []int{2}
+	}
+	items[0] = 7
+}
+
+func WriteAfterScopedAliasEscapes(record Record, enabled bool) {
+	items := record.items
+	if enabled {
+		detach := func() { items = []int{1} }
+		detach()
+	} else {
+		items = []int{2}
+	}
+	items[0] = 7
+}
+
 func SwapLocalAliases(record Record) {
 	protected, independent := record.items, make([]int, 1)
 	protected, independent = independent, protected
@@ -70,6 +105,14 @@ func SwapLocalAliases(record Record) {
 func ReturnLocalAlias(record Record) []int {
 	items := record.items
 	return items // want "do not expose mutable contents of protection.Record"
+}
+
+func ReturnBoxedAliases(record Record) (any, any) {
+	return any(record.items), any(any(record.keys)) // want "do not expose mutable contents of protection.Record" "do not expose mutable contents of protection.Record"
+}
+
+func ReturnIndependentBoxedStorage(record Record) (any, any) {
+	return any(record.items[:0:0]), any(maps.Clone(record.keys))
 }
 
 func ReturnNamedSliceAlias(record Record) (items []int) {

@@ -291,6 +291,39 @@ func CallWithDisjointCopiedPointer(raw *string, use func(ID)) {
 	}
 }
 
+func pointerAndStatus(value *string) (*string, bool) { return value, true }
+
+func eraseString(value *string) { *value = "" }
+
+func CallAfterTupleAliasingPointer(raw *string, use func(ID)) {
+	alias, _ := pointerAndStatus(raw)
+	if *raw != "" {
+		eraseString(alias)
+		use(ID(*raw)) // want "argument may be an empty zeroflow.ID"
+	}
+}
+
+func CallAfterTupleDisjointPointer(raw *string, use func(ID)) {
+	other := "independent"
+	alias, _ := pointerAndStatus(&other)
+	if *raw != "" {
+		eraseString(alias)
+		use(ID(*raw))
+	}
+}
+
+func lengthAndStatus(value *string) (int, bool) { return len(*value), true }
+
+func observeLength(int) {}
+
+func CallWithTupleScalar(raw *string, use func(ID)) {
+	length, _ := lengthAndStatus(raw)
+	if *raw != "" {
+		observeLength(length)
+		use(ID(*raw))
+	}
+}
+
 func orderedStores(first, second *string) {
 	*first = ""
 	*second = "valid"

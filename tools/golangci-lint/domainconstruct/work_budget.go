@@ -3,6 +3,7 @@ package domainconstruct
 const (
 	maxInferenceWork = 2_048
 	maxFlowWork      = 4_096
+	maxLateCallWork  = 256
 )
 
 // A budget is shared across the branches of a query. Nil allows a caller

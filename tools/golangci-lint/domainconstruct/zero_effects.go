@@ -179,6 +179,15 @@ func (c *zeroChecker) mayReferenceStorage(value ssa.Value, storage mutationTarge
 				return true
 			}
 		}
+	case *ssa.Extract:
+		if call, ok := value.Tuple.(*ssa.Call); ok {
+			switch value.Type().Underlying().(type) {
+			case *types.Pointer, *types.Slice, *types.Map, *types.Interface, *types.Signature, *types.Chan:
+				if c.mayReferenceStorage(call, storage, point, seen) {
+					return true
+				}
+			}
+		}
 	case *ssa.Call:
 		// An opaque factory may retain references supplied to it.
 		for _, argument := range value.Call.Args {
@@ -333,7 +342,7 @@ func (c *zeroChecker) writtenReferenceSource(call *ssa.CallCommon, observed coll
 	var destination, source collectionView
 	var known bool
 	if call.Value.(*ssa.Builtin).Name() == "append" {
-		destination, source, known = c.appendWriteViews(call)
+		destination, source, known = c.appendWriteViews(call, flowContext{})
 	} else if destination, known = c.builtinWriteView(call); known {
 		source, known = c.collectionOf(call.Args[1])
 	}

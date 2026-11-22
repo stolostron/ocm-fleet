@@ -2,6 +2,7 @@ package domainconstruct_test
 
 import (
 	"go/ast"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -69,7 +70,7 @@ func checkValueNames(t *testing.T, result *analysistest.Result) {
 		"NameVariadicLiteral": {"", ""},
 	}
 	for _, file := range result.Pass.Files {
-		if !strings.HasSuffix(result.Pass.Fset.Position(file.Pos()).Filename, "/diagnostic_names.go") {
+		if filepath.Base(result.Pass.Fset.Position(file.Pos()).Filename) != "diagnostic_names.go" {
 			continue
 		}
 		for _, declaration := range file.Decls {

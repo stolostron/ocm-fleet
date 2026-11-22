@@ -58,6 +58,42 @@ func CopyEmptyAtShiftedOffset(index int, valid ID) []ID {
 	return values
 }
 
+func AppendUnknownLengthIntoSpareCapacity(valid ID, count int) []ID {
+	values := []ID{valid, valid}
+	_ = append(values[:1], make([]ID, count)...)
+	return values // want "return may contain an empty zeroflow.ID at path .1."
+}
+
+func AppendUnknownLengthWithoutSpareCapacity(valid ID, count int) []ID {
+	values := []ID{valid, valid}
+	_ = append(values[:1:1], make([]ID, count)...)
+	return values
+}
+
+func ReadFieldAfterAppendOfUnknownLength(valid ID, count int) ID {
+	values := []projectedRow{{ID: valid}, {ID: valid}}
+	_ = append(values[:1], make([]projectedRow, count)...)
+	return values[1].ID // want "return may produce an empty zeroflow.ID"
+}
+
+func clearToCapacity(values []string) { clear(values[:cap(values)]) }
+
+func CallWithNoAccessibleCapacity(raw string, index int, use func(ID)) {
+	values := [1]string{raw}
+	if values[0] != "" {
+		clearToCapacity(values[index:index:index])
+		use(ID(values[0]))
+	}
+}
+
+func CallWithAccessibleCapacity(raw string, index int, use func(ID)) {
+	values := [1]string{raw}
+	if values[0] != "" {
+		clearToCapacity(values[index:index])
+		use(ID(values[0])) // want "argument may be an empty zeroflow.ID"
+	}
+}
+
 func MakeWithGuardedLength(length int, valid ID) []ID {
 	if length == 0 {
 		return make([]ID, length)

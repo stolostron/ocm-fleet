@@ -103,28 +103,44 @@ func TestUntouchedFieldTracingAllocations(t *testing.T) {
 }
 
 func TestStorageFieldTraversalStopsAtBudget(t *testing.T) {
+	const depth = 10
+	lateField := strings.Repeat("Right.", depth) + "Payload"
 	var source strings.Builder
-	source.WriteString("package flow\ntype Row0 struct { Payload any }\n")
-	for depth := 1; depth <= 10; depth++ {
-		fmt.Fprintf(&source, "type Row%d struct { Left, Right Row%d }\n", depth, depth-1)
+	source.WriteString("package flow\ntype ID string\ntype Row0 struct { Payload any }\n")
+	for level := 1; level <= depth; level++ {
+		fmt.Fprintf(&source, "type Row%d struct { Left, Right Row%d }\n", level, level-1)
 	}
-	source.WriteString("func run(row *Row10) *Row10 { return row }")
+	fmt.Fprintf(&source, "func run(row *Row%d) *Row%d { row.%s = ID(\"\"); return row }", depth, depth, lateField)
 	function := buildFlowFunction(t, source.String())
 	checker := newFlowChecker(function)
+	object := function.Pkg.Pkg.Scope().Lookup("ID").(*types.TypeName)
+	checker.policies = policySet{object: {name: "flow.ID", typ: object.Type(), fact: &constructionFact{Constructors: []string{"NewID"}}}}
 	storage := address{root: function.Params[0]}
-	point := flowPoint{block: function.Blocks[0]}
+	block := function.Blocks[0]
+	point := flowPoint{block, len(block.Instrs) - 1}
 	context := checker.contextAt(point.block)
-	work := workBudget(16)
+	const budget = 16
+	var work workBudget
 	checker.work = &work
+	query := func() *zeroProblem {
+		return checker.memoryAtProblem(storage, storageType(storage), point, point, context,
+			make(map[valueVisit]bool), make(map[memoryVisit]bool))
+	}
 	allocations := testing.AllocsPerRun(3, func() {
-		work = 16
-		if problem := checker.memoryAtProblem(storage, storageType(storage), point, point, context,
-			make(map[valueVisit]bool), make(map[memoryVisit]bool)); problem != nil {
-			t.Fatalf("borrowed storage reported a problem: %#v", problem)
+		work = budget
+		if problem := query(); problem != nil {
+			t.Fatalf("the small budget reached the late field: %#v", problem)
 		}
 	})
+	if !work.exhausted() {
+		t.Errorf("the traversal left %d units of the small budget", work)
+	}
 	if allocations > 128 {
-		t.Errorf("storage expansion allocated %.0f times with a budget of 16", allocations)
+		t.Errorf("storage expansion allocated %.0f times with a budget of %d", allocations, budget)
+	}
+	work = 100_000
+	if problem := query(); problem == nil || problem.path != lateField {
+		t.Errorf("the larger budget found %#v, want %s", problem, lateField)
 	}
 }
 
