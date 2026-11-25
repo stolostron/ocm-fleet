@@ -465,6 +465,9 @@ func (r *stubRegistry) RegisterProvisionIdP(_ *domain.ProvisionIdPWorkflowSpec) 
 func (r *stubRegistry) RegisterCreateManagedResource(_ *domain.CreateManagedResourceWorkflowSpec) (domain.CreateManagedResourceWorkflow, error) {
 	return nil, nil
 }
+func (r *stubRegistry) RegisterUpdateManagedResource(_ *domain.UpdateManagedResourceWorkflowSpec) (domain.UpdateManagedResourceWorkflow, error) {
+	return nil, nil
+}
 
 func (r *stubRegistry) RegisterDeleteManagedResource(_ *domain.DeleteManagedResourceWorkflowSpec) (domain.DeleteManagedResourceWorkflow, error) {
 	return nil, nil

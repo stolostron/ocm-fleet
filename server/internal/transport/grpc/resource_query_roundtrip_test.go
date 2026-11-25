@@ -122,12 +122,12 @@ func setupResourceQueryHarness(t *testing.T, seeds []seedManagedCluster) *resour
 			spec = fmt.Sprintf(`{"name":%q}`, seed.ID)
 		}
 		er := domain.NewExtensionResource(domain.NewExtensionResourceUID(), cfg.ResourceType,
-			domain.ResourceName("clusters/"+seed.ID), now, domain.WithManagedState(fID))
+			domain.ResourceName("clusters/"+seed.ID), "create-"+domain.NewExtensionResourceUID().String(), nil, now, domain.WithManagedState(fID))
 		if _, err := er.RecordIntent(json.RawMessage(spec), now); err != nil {
 			tx.RollbackOnExit()
 			t.Fatalf("RecordIntent %s: %v", seed.ID, err)
 		}
-		if err := tx.ExtensionResources().Create(ctx, er); err != nil {
+		if _, err := tx.ExtensionResources().Create(ctx, er); err != nil {
 			tx.RollbackOnExit()
 			t.Fatalf("Create resource %s: %v", seed.ID, err)
 		}
@@ -674,7 +674,7 @@ func TestResourceQuery_PresenceRoundTrip(t *testing.T) {
 	}
 	managedUID := domain.NewExtensionResourceUID()
 	managed := domain.NewExtensionResource(managedUID, cfg.ResourceType,
-		domain.ResourceName("clusters/presence"), now,
+		domain.ResourceName("clusters/presence"), "create-"+managedUID.String(), nil, now,
 		domain.WithManagedState(fID),
 		domain.WithExtensionLabels(map[string]string{"team": "platform"}),
 	)
@@ -682,7 +682,7 @@ func TestResourceQuery_PresenceRoundTrip(t *testing.T) {
 		tx.RollbackOnExit()
 		t.Fatalf("RecordIntent: %v", err)
 	}
-	if err := tx.ExtensionResources().Create(ctx, managed); err != nil {
+	if _, err := tx.ExtensionResources().Create(ctx, managed); err != nil {
 		tx.RollbackOnExit()
 		t.Fatalf("Create managed: %v", err)
 	}
@@ -697,12 +697,12 @@ func TestResourceQuery_PresenceRoundTrip(t *testing.T) {
 	}
 	invUID := domain.NewExtensionResourceUID()
 	withInv := domain.NewExtensionResource(invUID, cfg.ResourceType,
-		domain.ResourceName("clusters/with-inv"), now, domain.WithManagedState(fID2))
+		domain.ResourceName("clusters/with-inv"), "create-"+invUID.String(), nil, now, domain.WithManagedState(fID2))
 	if _, err := withInv.RecordIntent(json.RawMessage(`{"name":"with-inv"}`), now); err != nil {
 		tx.RollbackOnExit()
 		t.Fatalf("RecordIntent 2: %v", err)
 	}
-	if err := tx.ExtensionResources().Create(ctx, withInv); err != nil {
+	if _, err := tx.ExtensionResources().Create(ctx, withInv); err != nil {
 		tx.RollbackOnExit()
 		t.Fatalf("Create with-inv: %v", err)
 	}

@@ -53,8 +53,8 @@ func TestQueryRepo_StringLabelFilterReusesNumberedBinds(t *testing.T) {
 		{"high", "8"},
 		{"low", "2"},
 	} {
-		if err := tx.ExtensionResources().Create(context.Background(), domain.NewExtensionResource(
-			domain.NewExtensionResourceUID(), rt, domain.ResourceName("clusters/"+row.id), at,
+		if _, err := tx.ExtensionResources().Create(context.Background(), domain.NewExtensionResource(
+			domain.NewExtensionResourceUID(), rt, domain.ResourceName("clusters/"+row.id), "create-"+domain.NewExtensionResourceUID().String(), nil, at,
 			domain.WithExtensionLabels(map[string]string{"priority": row.priority}),
 		)); err != nil {
 			t.Fatalf("Create %s: %v", row.id, err)

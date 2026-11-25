@@ -111,13 +111,92 @@ func TestNewManagementType_NilRelationRejected(t *testing.T) {
 // ExtensionResource construction and accessors
 // ---------------------------------------------------------------------------
 
+func TestExtensionResource_RevisionFollowsMutation(t *testing.T) {
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	for _, labelsFirst := range []bool{true, false} {
+		name := "intent then labels"
+		if labelsFirst {
+			name = "labels then intent"
+		}
+		t.Run(name, func(t *testing.T) {
+			r := NewExtensionResource(NewExtensionResourceUID(), "records.example.io/Record", "records/revision", "create-revision", nil, now, WithManagedState("revision"))
+			if _, err := r.RecordIntent(json.RawMessage(`{}`), now); err != nil {
+				t.Fatal(err)
+			}
+			r = ExtensionResourceFromSnapshot(r.Snapshot())
+			before := ExtensionResourceView{Resource: *r}.Etag()
+			loadedRevision := r.Revision()
+			setLabels := func() { r.SetLabels(map[string]string{"env": "prod"}, now) }
+			if labelsFirst {
+				setLabels()
+				if r.Revision() != loadedRevision+1 || r.Managed().CurrentVersion() != 1 || !r.UpdatedAt().Equal(now) {
+					t.Fatal("labels alone must advance the revision without inventing an intent or timestamp change")
+				}
+			}
+			if _, err := r.RecordIntent(json.RawMessage(`{"changed":true}`), now); err != nil {
+				t.Fatal(err)
+			}
+			if !labelsFirst {
+				setLabels()
+			}
+			if r.Revision() != loadedRevision+1 {
+				t.Fatal("aggregate mutations must advance the revision once before persistence")
+			}
+			if (ExtensionResourceView{Resource: *r}).Etag() == before {
+				t.Fatal("aggregate mutations must change the etag before persistence")
+			}
+			r = ExtensionResourceFromSnapshot(r.Snapshot())
+			if r.Revision() != loadedRevision+1 {
+				t.Fatal("snapshot hydration lost the saved revision")
+			}
+			r.SetLabels(map[string]string{"env": "dev"}, now)
+			if r.Revision() != loadedRevision+2 || r.Managed().CurrentVersion() != 2 {
+				t.Fatal("hydration must establish the baseline for the next mutation")
+			}
+		})
+	}
+}
+
+func TestExtensionResource_UnmanagedLabelRoundTripChangesEtag(t *testing.T) {
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	r := NewExtensionResource(NewExtensionResourceUID(), "inventory.example.io/Object", "objects/labels", "create-labels", nil, now,
+		WithExtensionLabels(map[string]string{"phase": "original"}))
+	before := ExtensionResourceView{Resource: *r}.Etag()
+	r.SetLabels(map[string]string{"phase": "temporary"}, now)
+	r.SetLabels(map[string]string{"phase": "original"}, now)
+	if r.Revision() != 1 || r.Snapshot().LoadedRevision != 0 {
+		t.Fatal("label mutations must advance once relative to the loaded root revision")
+	}
+	if (ExtensionResourceView{Resource: *r}).Etag() == before {
+		t.Fatal("label mutations must retire the original revision without managed state")
+	}
+	if r.Managed() != nil || len(r.Snapshot().PendingIntents) != 0 {
+		t.Fatal("label mutations introduced managed state or intent")
+	}
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored ExtensionResource
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.Revision() != 1 || restored.Snapshot().LoadedRevision != 1 {
+		t.Fatal("JSON hydration lost the root revision or its persistence baseline")
+	}
+	restored.SetLabels(nil, now)
+	if restored.Revision() != 2 {
+		t.Fatal("a hydrated ER without managed state must advance from its saved revision")
+	}
+}
+
 func TestNewExtensionResource(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	uid := NewExtensionResourceUID()
 	rt := ResourceType("kind.open-cluster-management.io/Cluster")
 	name := ResourceName("clusters/dev")
 
-	r := NewExtensionResource(uid, rt, name, now)
+	r := NewExtensionResource(uid, rt, name, "create-"+uid.String(), nil, now)
 
 	assertEq(t, "UID", r.UID(), uid)
 	assertEq(t, "ResourceType", r.ResourceType(), rt)
@@ -137,7 +216,7 @@ func TestExtensionResource_WithLabels(t *testing.T) {
 	uid := NewExtensionResourceUID()
 	labels := map[string]string{"env": "dev", "tier": "test"}
 
-	r := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", now,
+	r := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", "create-"+uid.String(), nil, now,
 		WithExtensionLabels(labels),
 	)
 
@@ -150,7 +229,7 @@ func TestExtensionResource_SetLabels(t *testing.T) {
 	r := NewExtensionResource(
 		NewExtensionResourceUID(),
 		"kind.open-cluster-management.io/Cluster",
-		"clusters/dev",
+		"clusters/dev", "create-"+NewExtensionResourceUID().String(), nil,
 		now,
 		WithExtensionLabels(map[string]string{"env": "dev"}),
 	)
@@ -177,7 +256,7 @@ func TestExtensionResource_WithManagedState(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	uid := NewExtensionResourceUID()
 
-	r := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", now,
+	r := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", "create-"+uid.String(), nil, now,
 		WithManagedState("fulfillment-1"),
 	)
 
@@ -196,7 +275,7 @@ func TestExtensionResource_RecordIntent(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	uid := NewExtensionResourceUID()
 
-	r := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", now,
+	r := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", "create-"+uid.String(), nil, now,
 		WithManagedState("fulfillment-1"),
 	)
 
@@ -216,7 +295,7 @@ func TestExtensionResource_RecordIntent_Increments(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	uid := NewExtensionResourceUID()
 
-	r := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", now,
+	r := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", "create-"+uid.String(), nil, now,
 		WithManagedState("fulfillment-1"),
 	)
 
@@ -232,7 +311,7 @@ func TestExtensionResource_RecordIntent_WithoutManagedState(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	uid := NewExtensionResourceUID()
 
-	r := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", now)
+	r := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", "create-"+uid.String(), nil, now)
 
 	_, err := r.RecordIntent(json.RawMessage(`{}`), now)
 	if err == nil {

@@ -134,6 +134,28 @@ func (f *Fulfillment) Touch(now time.Time) {
 	f.advanceGeneration()
 }
 
+// UpdateIntent refreshes delivery credentials and provenance for changed
+// desired state. Signed intent must be re-signed; deletion is irreversible.
+func (f *Fulfillment) UpdateIntent(auth DeliveryAuth, provenance *Provenance, attestRef *AttestationRef, now time.Time) error {
+	if f.state == FulfillmentStateDeleting {
+		return fmt.Errorf("%w: fulfillment is deleting", ErrInvalidArgument)
+	}
+	if f.provenance != nil && provenance == nil {
+		return fmt.Errorf("%w: changing signed intent requires replacement provenance", ErrInvalidArgument)
+	}
+	if provenance != nil && attestRef == nil {
+		return fmt.Errorf("%w: signed intent requires an attestation reference", ErrInvalidArgument)
+	}
+	f.auth = auth
+	f.provenance = provenance
+	f.attestationRef = attestRef
+	f.pauseReason = ""
+	f.statusReason = ""
+	f.updatedAt = now
+	f.advanceGeneration()
+	return nil
+}
+
 // TransitionToDeleting moves the fulfillment into the
 // [FulfillmentStateDeleting] lifecycle state and advances the
 // generation so orchestration picks up the transition.
@@ -210,13 +232,28 @@ func (f *Fulfillment) ApplyReconciliationResult(r ReconciliationResult) {
 	f.auth = r.Auth
 }
 
+// MergeReconciliationResult retains the effects of a completed pass while
+// preserving newer lifecycle and credential decisions. Its target history is
+// still needed for a subsequent removal, even if intent advanced meanwhile.
+// Replayed observations older than an already completed pass are ignored.
+func (f *Fulfillment) MergeReconciliationResult(r ReconciliationResult, reconciledGen Generation) {
+	if reconciledGen < f.observedGeneration {
+		return
+	}
+	f.resolvedTargets = r.ResolvedTargets
+	if reconciledGen == f.generation {
+		f.ApplyReconciliationResult(r)
+	}
+}
+
 // CompleteReconciliation advances observedGeneration to reconciledGen
 // and stamps updatedAt. If generation has advanced past reconciledGen,
 // needsRestart is true, indicating the caller should loop. When
 // converged (!needsRestart), the orchestration lock
 // (activeWorkflowGen) is cleared.
 func (f *Fulfillment) CompleteReconciliation(reconciledGen Generation, now time.Time) (needsRestart bool) {
-	f.observedGeneration = reconciledGen
+	// Replaying a completed activity must never move the observation backwards.
+	f.observedGeneration = max(f.observedGeneration, reconciledGen)
 	f.updatedAt = now
 	needsRestart = f.generation > reconciledGen
 	if !needsRestart {
@@ -235,6 +272,13 @@ func (f *Fulfillment) AcquireOrchestrationLock() bool {
 	gen := f.generation
 	f.activeWorkflowGen = &gen
 	return true
+}
+
+// DeletionReconciled reports successful deletion reconciliation, after delivery
+// cleanup but before the abstraction-specific resource row is removed. Paused
+// attempts may also have an observed generation, so that alone is insufficient.
+func (f *Fulfillment) DeletionReconciled() bool {
+	return f.State() == FulfillmentStateDeleting && !f.Paused() && f.ObservedGeneration() >= f.Generation()
 }
 
 // ReleaseOrchestrationLock clears activeWorkflowGen without
@@ -304,12 +348,11 @@ func (f *Fulfillment) State() FulfillmentState { return f.state }
 // Paused reports whether orchestration is paused for this fulfillment.
 func (f *Fulfillment) Paused() bool { return f.pauseReason != "" }
 
-// Reconciling reports whether the fulfillment is in a transitional
-// lifecycle state (creating or deleting) and is not paused. A paused
-// fulfillment is not actively reconciling even if its lifecycle state
-// has not yet settled.
+// Reconciling reports whether an unpaused fulfillment has an unsettled
+// lifecycle or a desired generation that has not yet been observed.
+// Updating an active fulfillment is also reconciliation.
 func (f *Fulfillment) Reconciling() bool {
-	return (f.state == FulfillmentStateCreating || f.state == FulfillmentStateDeleting) && f.pauseReason == ""
+	return (f.state == FulfillmentStateCreating || f.state == FulfillmentStateDeleting || f.generation > f.observedGeneration) && f.pauseReason == ""
 }
 
 // PauseReason returns the human-readable reason for the pause, or

@@ -17,10 +17,12 @@ type registeredWorkflows struct {
 	deleteWf      domain.DeleteDeploymentWorkflow
 	resumeWf      domain.ResumeDeploymentWorkflow
 	createMRWf    domain.CreateManagedResourceWorkflow
+	updateMRWf    domain.UpdateManagedResourceWorkflow
 	deleteMRWf    domain.DeleteManagedResourceWorkflow
 	resumeMRWf    domain.ResumeManagedResourceWorkflow
 	authMethodSvc *application.AuthMethodService
 	provenanceSvc *domain.ProvenanceService
+	maintenance   *application.ManagedResourceMaintenance
 }
 
 // registerWorkflows registers every production workflow before Start on the
@@ -88,6 +90,7 @@ func registerWorkflows(
 	if err != nil {
 		return out, fmt.Errorf("register delete-managed-resource: %w", err)
 	}
+	out.maintenance = application.NewManagedResourceMaintenance(store, orchWf, mrCleanupWf, reg)
 
 	provSpec := &domain.ProvisionIdPWorkflowSpec{
 		AuthMethods:      authMethodRepo,
@@ -125,6 +128,12 @@ func registerWorkflows(
 	})
 	if err != nil {
 		return out, fmt.Errorf("register resume-managed-resource: %w", err)
+	}
+	out.updateMRWf, err = reg.RegisterUpdateManagedResource(&domain.UpdateManagedResourceWorkflowSpec{
+		Store: store, Orchestration: orchWf, ProvenanceSvc: out.provenanceSvc,
+	})
+	if err != nil {
+		return out, fmt.Errorf("register update-managed-resource: %w", err)
 	}
 
 	return out, nil

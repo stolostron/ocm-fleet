@@ -171,7 +171,7 @@ func TestFulfillment_Etag_ResolvedTargetCountMatters(t *testing.T) {
 func extensionView() ExtensionResourceView {
 	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	uid := NewExtensionResourceUID()
-	er := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", now,
+	er := NewExtensionResource(uid, "kind.open-cluster-management.io/Cluster", "clusters/dev", "create-"+uid.String(), nil, now,
 		WithManagedState("f-1"))
 	er.RecordIntent(json.RawMessage(`{"replicas":3}`), now)
 
@@ -197,6 +197,18 @@ func TestExtensionResourceView_Etag_Deterministic(t *testing.T) {
 	e2 := v.Etag()
 	if e1 != e2 {
 		t.Errorf("etag is not deterministic: %q != %q", e1, e2)
+	}
+}
+
+func TestExtensionResourceView_Etag_SpecEncoding(t *testing.T) {
+	view := extensionView()
+	view.Intent.Spec = json.RawMessage(`{"values":{"z":"last","a":"first"}}`)
+	written := view.Etag()
+	// PostgreSQL's JSONB representation changes whitespace and key order,
+	// without changing the intent or any other concurrency-relevant field.
+	view.Intent.Spec = json.RawMessage(`{"values": {"a": "first", "z": "last"}}`)
+	if persisted := view.Etag(); persisted != written {
+		t.Fatalf("persistence changed the etag without changing intent: %s != %s", persisted, written)
 	}
 }
 
@@ -315,11 +327,11 @@ func TestExtensionResourceView_Etag_FieldBoundariesAreUnambiguous(t *testing.T) 
 	// ("svc.io/Foobars/x") but different field boundaries, so they
 	// would collide if hashString stopped length-prefixing.
 	a := ExtensionResourceView{
-		Resource: *NewExtensionResource(sharedUID, "svc.io/Foo", "bars/x", now,
+		Resource: *NewExtensionResource(sharedUID, "svc.io/Foo", "bars/x", "create-"+sharedUID.String(), nil, now,
 			WithManagedState("f-1")),
 	}
 	b := ExtensionResourceView{
-		Resource: *NewExtensionResource(sharedUID, "svc.io/Foobar", "s/x", now,
+		Resource: *NewExtensionResource(sharedUID, "svc.io/Foobar", "s/x", "create-"+sharedUID.String(), nil, now,
 			WithManagedState("f-1")),
 	}
 	if a.Etag() == b.Etag() {

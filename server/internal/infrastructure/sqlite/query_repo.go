@@ -165,6 +165,7 @@ func scanQueryResourceRow(s scanner) (queryResourceRow, error) {
 	var uidStr, extServiceName, extTypeName, extCollectionName, extResourceID string
 	var extLabels, extReportedAliases string
 	var extCreatedAt, extUpdatedAt string
+	var extRevision domain.ExtensionResourceRevision
 	var extCurrentVersion sql.NullInt64
 	var extFulfillmentID sql.NullString
 	var riSpec, riCreatedAt sql.NullString
@@ -177,7 +178,7 @@ func scanQueryResourceRow(s scanner) (queryResourceRow, error) {
 		&collectionName, &resourceID, &serviceName, &typeName,
 
 		&uidStr, &extServiceName, &extTypeName, &extCollectionName, &extResourceID, &extLabels, &extReportedAliases,
-		&extCreatedAt, &extUpdatedAt,
+		&extCreatedAt, &extUpdatedAt, &extRevision,
 		&extCurrentVersion, &extFulfillmentID,
 		&riSpec, &riCreatedAt,
 	}, fCols.dests()...),
@@ -194,7 +195,7 @@ func scanQueryResourceRow(s scanner) (queryResourceRow, error) {
 	view, err := extensionResourceViewFromColumns(
 		uid, extServiceName, extTypeName, extCollectionName, extResourceID,
 		extLabels, extReportedAliases,
-		extCreatedAt, extUpdatedAt,
+		extCreatedAt, extUpdatedAt, extRevision,
 		extCurrentVersion, extFulfillmentID,
 		riSpec, riCreatedAt,
 		fCols,

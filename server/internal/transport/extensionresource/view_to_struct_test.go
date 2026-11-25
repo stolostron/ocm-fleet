@@ -26,7 +26,7 @@ func TestViewToStruct_MatchesViewToResourceProtoJSON(t *testing.T) {
 		Resource: *domain.NewExtensionResource(
 			domain.NewExtensionResourceUID(),
 			cfg.ResourceType,
-			name,
+			name, "create-"+domain.NewExtensionResourceUID().String(), nil,
 			now,
 			domain.WithExtensionLabels(map[string]string{"env": "prod"}),
 		),
@@ -76,7 +76,7 @@ func TestViewToStruct_RequiresDescriptorsAndConfig(t *testing.T) {
 		Resource: *domain.NewExtensionResource(
 			domain.NewExtensionResourceUID(),
 			"kind.open-cluster-management.io/Cluster",
-			"clusters/x",
+			"clusters/x", "create-"+domain.NewExtensionResourceUID().String(), nil,
 			time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 		),
 	}
@@ -102,7 +102,7 @@ func TestViewToResource_ReturnsDynamicMessage(t *testing.T) {
 		Resource: *domain.NewExtensionResource(
 			domain.NewExtensionResourceUID(),
 			cfg.ResourceType,
-			"clusters/dyn",
+			"clusters/dyn", "create-"+domain.NewExtensionResourceUID().String(), nil,
 			time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 		),
 	}
@@ -164,7 +164,7 @@ func TestViewToResource_ManagedAndInventoryNoReport(t *testing.T) {
 		Resource: *domain.NewExtensionResource(
 			domain.NewExtensionResourceUID(),
 			cfg.ResourceType,
-			"clusters/no-report",
+			"clusters/no-report", "create-"+domain.NewExtensionResourceUID().String(), nil,
 			now,
 			domain.WithExtensionLabels(map[string]string{"env": "dev"}),
 			domain.WithManagedState("f-1"),
@@ -330,7 +330,7 @@ func TestViewToResource_LabelsOnAllShapes(t *testing.T) {
 				Resource: *domain.NewExtensionResource(
 					domain.NewExtensionResourceUID(),
 					tc.cfg.ResourceType,
-					"clusters/labeled",
+					"clusters/labeled", "create-"+domain.NewExtensionResourceUID().String(), nil,
 					now,
 					domain.WithExtensionLabels(map[string]string{"a": "1"}),
 				),

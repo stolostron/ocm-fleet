@@ -20,7 +20,8 @@ func (v DeploymentView) Etag() Etag {
 
 // Etag returns a weak domain-state concurrency token (RFC 9110 Section
 // 8.8.1) that changes whenever any API-visible field of the extension
-// resource view changes. The value is opaque, W/-prefixed, and quoted.
+// resource view changes, or an Update attempt is fenced. The value is opaque,
+// W/-prefixed, and quoted. A fence can invalidate an etag without changing intent.
 func (v ExtensionResourceView) Etag() Etag {
 	h := sha256.New()
 	hashExtensionResourceFields(h, v)
@@ -38,9 +39,16 @@ func hashExtensionResourceFields(h hash.Hash, v ExtensionResourceView) {
 	if v.Resource.managed != nil {
 		binary.Write(h, binary.BigEndian, int64(v.Resource.managed.currentVersion))
 	}
+	binary.Write(h, binary.BigEndian, int64(v.Resource.revision))
 	if v.Intent != nil {
 		binary.Write(h, binary.BigEndian, int64(v.Intent.Version))
-		hashBytes(h, v.Intent.Spec)
+		// PostgreSQL JSONB can reorder object keys. Persisting the same
+		// immutable intent must not invalidate the write response's etag.
+		spec, err := canonicalJSON(v.Intent.Spec)
+		if err != nil {
+			spec = v.Intent.Spec
+		}
+		hashBytes(h, spec)
 	}
 	// TODO: If the capability is no longer active, we should either:
 	// - Not return this from repository queries at all (ideal)
@@ -75,7 +83,9 @@ func hashDeploymentFields(h hash.Hash, v DeploymentView) {
 
 func hashFulfillmentFields(h hash.Hash, f Fulfillment) {
 	binary.Write(h, binary.BigEndian, int64(f.generation))
+	binary.Write(h, binary.BigEndian, int64(f.observedGeneration))
 	hashString(h, string(f.state))
+	hashString(h, f.pauseReason)
 	hashString(h, f.statusReason)
 	binary.Write(h, binary.BigEndian, int64(len(f.resolvedTargets)))
 	for _, t := range f.resolvedTargets {

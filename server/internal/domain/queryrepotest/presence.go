@@ -76,8 +76,8 @@ func runPresenceFilterTests(t *testing.T, factory Factory) {
 		// Inventory-capable type, resource exists, no report yet.
 		unreportedUID := domain.NewExtensionResourceUID()
 		unreportedName := domain.ResourceName("nodes/unreported")
-		unreported := domain.NewExtensionResource(unreportedUID, fx.InventoryType, unreportedName, fixedTime)
-		if err := tx.ExtensionResources().Create(context.Background(), unreported); err != nil {
+		unreported := domain.NewExtensionResource(unreportedUID, fx.InventoryType, unreportedName, "create-"+unreportedUID.String(), nil, fixedTime)
+		if _, err := tx.ExtensionResources().Create(context.Background(), unreported); err != nil {
 			t.Fatalf("Create unreported: %v", err)
 		}
 		assertResultNames(t, queryAll(t, tx,

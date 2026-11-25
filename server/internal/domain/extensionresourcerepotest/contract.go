@@ -14,9 +14,8 @@ import (
 	"github.com/stolostron/ocm-fleet/server/internal/domain"
 )
 
-// Factory creates a fresh [domain.Tx] for each test. The Tx is needed
-// because extension resources reference fulfillments (foreign key in
-// managed state).
+// Factory creates a fresh [domain.Tx] for each test. The Tx also lets view tests
+// create the fulfillment linked by a resource's managed state.
 type Factory func(t *testing.T) domain.Tx
 
 // Run exercises the [domain.ExtensionResourceRepository] contract.
@@ -26,6 +25,13 @@ func Run(t *testing.T, factory Factory) {
 	t.Run("Intents", func(t *testing.T) { runIntentTests(t, factory) })
 	t.Run("Views", func(t *testing.T) { runViewTests(t, factory) })
 	t.Run("Inventory", func(t *testing.T) { runInventoryTests(t, factory) })
+	t.Run("Update", func(t *testing.T) { runUpdateTests(t, factory) })
+	t.Run("UpdateLabelsWithoutManagedState", func(t *testing.T) { runUpdateLabelsWithoutManagedStateTests(t, factory) })
+	t.Run("UpdateFenceWithoutManagedState", func(t *testing.T) { runUpdateFenceWithoutManagedStateTests(t, factory) })
+	t.Run("UpdateRepeatedSaves", func(t *testing.T) { runUpdateRepeatedSavesTests(t, factory) })
+	t.Run("UpdateFence", func(t *testing.T) { runUpdateFenceTests(t, factory) })
+	t.Run("CreationDecisions", func(t *testing.T) { runCreationDecisionTests(t, factory) })
+	t.Run("ManagedResourceWork", func(t *testing.T) { runManagedResourceWorkTests(t, factory) })
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +110,7 @@ func seedType(t *testing.T, tx domain.Tx, rt domain.ResourceType) domain.Extensi
 // recorded intent, ready for Create to drain.
 func newER(rt domain.ResourceType, name domain.ResourceName, fID domain.FulfillmentID) *domain.ExtensionResource {
 	r := domain.NewExtensionResource(
-		domain.NewExtensionResourceUID(), rt, name, fixedTime,
+		domain.NewExtensionResourceUID(), rt, name, "create-"+domain.NewExtensionResourceUID().String(), nil, fixedTime,
 		domain.WithManagedState(fID),
 	)
 	r.RecordIntent(json.RawMessage(`{"provider":"kind"}`), fixedTime)
@@ -292,7 +298,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 		seedFulfillment(t, tx, fID, fixedTime)
 
 		r := newER("test.open-cluster-management.io/Cluster", "clusters/prod", fID)
-		if err := repo.Create(ctx, r); err != nil {
+		if _, err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 
@@ -323,7 +329,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 		r := newER("test.open-cluster-management.io/Cluster", "clusters/by-uid", fID)
 		uid := r.UID()
-		if err := repo.Create(ctx, r); err != nil {
+		if _, err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 
@@ -354,13 +360,13 @@ func runInstanceTests(t *testing.T, factory Factory) {
 		seedFulfillment(t, tx, fID, fixedTime)
 
 		r1 := newER("test.open-cluster-management.io/Cluster", "clusters/dup", fID)
-		if err := repo.Create(ctx, r1); err != nil {
+		if _, err := repo.Create(ctx, r1); err != nil {
 			t.Fatalf("first: %v", err)
 		}
 		r2 := newER("test.open-cluster-management.io/Cluster", "clusters/dup", fID)
-		err := repo.Create(ctx, r2)
-		if !errors.Is(err, domain.ErrAlreadyExists) {
-			t.Fatalf("second: got %v, want ErrAlreadyExists", err)
+		result, err := repo.Create(ctx, r2)
+		if err != nil || result != domain.ExtensionResourceCreateRejected {
+			t.Fatalf("second: got %v, %v, want a persisted rejection", result, err)
 		}
 	})
 
@@ -379,14 +385,14 @@ func runInstanceTests(t *testing.T, factory Factory) {
 		seedFulfillment(t, tx, fID, fixedTime)
 
 		r1 := newER("test.open-cluster-management.io/Cluster", "resources/shared-name", fID)
-		if err := repo.Create(ctx, r1); err != nil {
+		if _, err := repo.Create(ctx, r1); err != nil {
 			t.Fatalf("first (Cluster): %v", err)
 		}
 
 		r2 := newER("test.open-cluster-management.io/Database", "resources/shared-name", fID)
-		err := repo.Create(ctx, r2)
-		if !errors.Is(err, domain.ErrAlreadyExists) {
-			t.Fatalf("second (Database, same name): got %v, want ErrAlreadyExists", err)
+		result, err := repo.Create(ctx, r2)
+		if err != nil || result != domain.ExtensionResourceCreateRejected {
+			t.Fatalf("second (Database, same name): got %v, %v, want a persisted rejection", result, err)
 		}
 	})
 
@@ -400,7 +406,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 			fID := domain.FulfillmentID(fmt.Sprintf("f-list-%d", i))
 			seedFulfillment(t, tx, fID, fixedTime)
 			r := newER("test.open-cluster-management.io/Cluster", name, fID)
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create %s: %v", name, err)
 			}
 		}
@@ -434,7 +440,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 		seedFulfillment(t, tx, fID, fixedTime)
 
 		r := newER("test.open-cluster-management.io/Cluster", "clusters/del", fID)
-		if err := repo.Create(ctx, r); err != nil {
+		if _, err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		if err := repo.Delete(ctx, "//test.open-cluster-management.io/clusters/del"); err != nil {
@@ -466,7 +472,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 		seedFulfillment(t, tx, fID, fixedTime)
 
 		r := newER("test.open-cluster-management.io/Cluster", "clusters/managed", fID)
-		if err := repo.Create(ctx, r); err != nil {
+		if _, err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 
@@ -494,7 +500,7 @@ func runInstanceTests(t *testing.T, factory Factory) {
 			t.Fatalf("CreateType: %v", err)
 		}
 		r := newInventoryER(rt, "nodes/inv-rt")
-		if err := repo.Create(ctx, r); err != nil {
+		if _, err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 
@@ -561,12 +567,12 @@ func runInstanceTests(t *testing.T, factory Factory) {
 
 		r := domain.NewExtensionResource(
 			domain.NewExtensionResourceUID(),
-			"test.open-cluster-management.io/Cluster", "clusters/labeled", fixedTime,
+			"test.open-cluster-management.io/Cluster", "clusters/labeled", "create-"+domain.NewExtensionResourceUID().String(), nil, fixedTime,
 			domain.WithManagedState(fID),
 			domain.WithExtensionLabels(map[string]string{"env": "prod", "tier": "1"}),
 		)
 		r.RecordIntent(json.RawMessage(`{}`), fixedTime)
-		if err := repo.Create(ctx, r); err != nil {
+		if _, err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 
@@ -596,7 +602,7 @@ func runIntentTests(t *testing.T, factory Factory) {
 		seedFulfillment(t, tx, fID, fixedTime)
 
 		r := newER("test.open-cluster-management.io/Cluster", "clusters/intent", fID)
-		if err := repo.Create(ctx, r); err != nil {
+		if _, err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 
@@ -633,7 +639,7 @@ func runIntentTests(t *testing.T, factory Factory) {
 
 		r := newER("test.open-cluster-management.io/Cluster", "clusters/intent-del", fID)
 		uid := r.UID()
-		if err := repo.Create(ctx, r); err != nil {
+		if _, err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		if err := repo.Delete(ctx, "//test.open-cluster-management.io/clusters/intent-del"); err != nil {
@@ -664,7 +670,7 @@ func runViewTests(t *testing.T, factory Factory) {
 		seedFulfillment(t, tx, fID, fixedTime)
 
 		r := newER("test.open-cluster-management.io/Cluster", "clusters/view", fID)
-		if err := repo.Create(ctx, r); err != nil {
+		if _, err := repo.Create(ctx, r); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 
@@ -706,7 +712,7 @@ func runViewTests(t *testing.T, factory Factory) {
 			fID := domain.FulfillmentID(fmt.Sprintf("f-lv-%d", i))
 			seedFulfillment(t, tx, fID, fixedTime)
 			r := newER("test.open-cluster-management.io/Cluster", name, fID)
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create %s: %v", name, err)
 			}
 		}
@@ -745,7 +751,7 @@ func sampleInventoryType(rt domain.ResourceType) domain.ExtensionResourceType {
 
 func newInventoryER(rt domain.ResourceType, name domain.ResourceName) *domain.ExtensionResource {
 	return domain.NewExtensionResource(
-		domain.NewExtensionResourceUID(), rt, name, fixedTime)
+		domain.NewExtensionResourceUID(), rt, name, "create-"+domain.NewExtensionResourceUID().String(), nil, fixedTime)
 }
 
 func runInventoryTests(t *testing.T, factory Factory) {
@@ -819,7 +825,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 			}
 
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/n1")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -859,7 +865,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 			seedFulfillment(t, tx, fID, fixedTime)
 
 			r := newER(rt, "gadgets/g1", fID)
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -892,7 +898,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/replace1")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -950,7 +956,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/replace2")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -997,7 +1003,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 			r1 := newInventoryER("inv.open-cluster-management.io/Node", "nodes/batch1")
 			r2 := newInventoryER("inv.open-cluster-management.io/Node", "nodes/batch2")
 			for _, r := range []*domain.ExtensionResource{r1, r2} {
-				if err := repo.Create(ctx, r); err != nil {
+				if _, err := repo.Create(ctx, r); err != nil {
 					t.Fatalf("Create %s: %v", r.Name(), err)
 				}
 			}
@@ -1052,7 +1058,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/replace-remove-cond")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1098,7 +1104,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/replace-remove-label")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1145,7 +1151,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/replace-nil-obs")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1186,7 +1192,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/replace-null-literal-obs")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1253,7 +1259,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/replace-receivedat")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1290,7 +1296,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-labels")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1355,7 +1361,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-labels-upsert")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1403,7 +1409,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-labels-clear")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1443,7 +1449,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-replace-conds")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1492,7 +1498,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-conds-clear")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1532,7 +1538,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-obs-unchanged")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1574,7 +1580,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-obs-replace")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1616,7 +1622,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-obs-null-literal")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1660,7 +1666,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-conditions")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1724,7 +1730,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-heartbeat")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -1798,7 +1804,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-label-contradiction")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 			t1 := fixedTime.Add(time.Minute)
@@ -1850,7 +1856,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-label-upsert-delete")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 			t1 := fixedTime.Add(time.Minute)
@@ -1891,7 +1897,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-replace-cond-contradiction")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 			t1 := fixedTime.Add(time.Minute)
@@ -1933,7 +1939,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-condition-contradiction")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 			t1 := fixedTime.Add(time.Minute)
@@ -1983,7 +1989,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-alias-delete-unimplemented")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 			original, _ := domain.NewAlias("gcp", "instance_id", "delta-alias-delete-unimplemented-original")
@@ -2028,7 +2034,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-alias-replace-unimplemented")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 			replaceAlias, _ := domain.NewAlias("gcp", "instance_id", "delta-alias-replace-unimplemented-value")
@@ -2052,7 +2058,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/delta-receivedat")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -2089,7 +2095,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/view1")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -2131,7 +2137,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 			}
 			for _, name := range []domain.ResourceName{"nodes/lv1", "nodes/lv2"} {
 				r := newInventoryER("inv.open-cluster-management.io/Node", name)
-				if err := repo.Create(ctx, r); err != nil {
+				if _, err := repo.Create(ctx, r); err != nil {
 					t.Fatalf("Create %s: %v", name, err)
 				}
 			}
@@ -2179,7 +2185,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 			seedFulfillment(t, tx, fID, fixedTime)
 
 			r := newER(rt, "things/t1", fID)
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -2220,7 +2226,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 			seedFulfillment(t, tx, fID, fixedTime)
 
 			r := newER("test.open-cluster-management.io/Cluster", "clusters/managed-v", fID)
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -2265,7 +2271,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/history-replace")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -2323,7 +2329,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/history-delta")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -2384,10 +2390,10 @@ func runInventoryTests(t *testing.T, factory Factory) {
 			}
 			r1 := newInventoryER("inv.open-cluster-management.io/Node", "nodes/multi-a")
 			r2 := newInventoryER("inv.open-cluster-management.io/Node", "nodes/multi-b")
-			if err := repo.Create(ctx, r1); err != nil {
+			if _, err := repo.Create(ctx, r1); err != nil {
 				t.Fatalf("Create r1: %v", err)
 			}
-			if err := repo.Create(ctx, r2); err != nil {
+			if _, err := repo.Create(ctx, r2); err != nil {
 				t.Fatalf("Create r2: %v", err)
 			}
 
@@ -2457,7 +2463,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/cross-path")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -2554,7 +2560,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			r := newInventoryER("inv.open-cluster-management.io/Node", "nodes/already-exists")
-			if err := repo.Create(ctx, r); err != nil {
+			if _, err := repo.Create(ctx, r); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 
@@ -2596,7 +2602,7 @@ func runInventoryTests(t *testing.T, factory Factory) {
 				t.Fatalf("CreateType: %v", err)
 			}
 			existing := newInventoryER("inv.open-cluster-management.io/Node", "nodes/mix-existing")
-			if err := repo.Create(ctx, existing); err != nil {
+			if _, err := repo.Create(ctx, existing); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 

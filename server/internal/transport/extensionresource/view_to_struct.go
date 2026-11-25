@@ -141,6 +141,12 @@ func populateManagementFields(descs *ExtensionServiceDescriptors, resource *dyna
 	if genField := descs.Resource.Fields().ByName("generation"); genField != nil {
 		resource.Set(genField, protoreflect.ValueOfInt64(int64(f.Generation())))
 	}
+	if field := descs.Resource.Fields().ByName("observed_generation"); field != nil {
+		resource.Set(field, protoreflect.ValueOfInt64(int64(f.ObservedGeneration())))
+	}
+	if field := descs.Resource.Fields().ByName("status_reason"); field != nil {
+		resource.Set(field, protoreflect.ValueOfString(f.StatusReason()))
+	}
 	return nil
 }
 
