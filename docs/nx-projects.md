@@ -72,7 +72,8 @@ provide Buf `fmt`/`lint` commands and a no-op `fix:lint`, as in the example.
 
 Run `fix` before staging a commit and review its edits. It runs the same checks
 as `verify` after applying fixes. Use `verify` when you only want formatting and
-checks, or `check` when the source must stay untouched.
+checks, or `check` when the source must stay untouched. Both `verify` and `fix`
+require a configured `check` target for the selected project.
 
 Leave common commands and ordering in `nx.json`. Source-rewriting targets and
 `verify` must not be cached. Start a fresh Nx invocation for checks after source

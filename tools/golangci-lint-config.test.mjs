@@ -8,6 +8,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { domainFinding, writeDomainReports } from "./domain-audit.mjs";
+
 const run = promisify(execFile);
 const binary = fileURLToPath(
   new URL("../bin/tools/golangci-lint", import.meta.url),
@@ -34,6 +36,296 @@ test("validates the shared config with our pinned linter", async () => {
 test("accepts formatted Go code with checked errors", async (t) => {
   const { lint } = await fixture(t);
   await assert.doesNotReject(lint());
+});
+
+test("standard lint checks domain types as they are enrolled", async (t) => {
+  const { directory, lint, issues, format } = await fixture(t);
+  const path = join(directory, "main.go");
+  const source = `package lintfixture
+
+import "encoding/json"
+
+type ID string
+
+func NewID(raw string) ID { return ID(raw) }
+func Check(raw string) ID { return ID(raw) }
+func Missing() ID { var id ID; return id }
+func Encode(id ID) ([]byte, error) { return json.Marshal(id) }
+`;
+  const expected = ["domainconstruct", "domainserialization", "domainzero"];
+  const reportedLinters = async () =>
+    [...new Set((await issues()).map((finding) => finding.FromLinter))].sort();
+
+  await writeFile(path, source);
+  await format();
+  await assert.doesNotReject(lint());
+
+  await writeFile(
+    path,
+    source.replace(
+      "type ID string",
+      "// ID is constructed explicitly.\n//domain:constructors NewID\ntype ID string",
+    ),
+  );
+  await format();
+  await assert.rejects(lint(), { code: 1 });
+  assert.deepEqual(await reportedLinters(), expected);
+
+  await assert.doesNotReject(
+    lint({
+      args: ["--disable=domainconstruct,domainzero,domainserialization"],
+    }),
+  );
+  await assert.rejects(
+    lint({
+      args: ["--enable-only=domainconstruct,domainzero,domainserialization"],
+    }),
+    {
+      code: 1,
+    },
+  );
+  assert.deepEqual(await reportedLinters(), expected);
+});
+
+test("focused domain lint preserves same-line findings and provenance in JSON", async (t) => {
+  const { directory, lint, issues } = await fixture(t);
+  await mkdir(join(directory, "value"));
+  await writeFile(
+    join(directory, "value/id.go"),
+    `package value
+
+// ID is constructed explicitly.
+//domain:constructors NewID
+type ID string
+
+func NewID(raw string) ID { return ID(raw) }
+`,
+  );
+  await writeFile(
+    join(directory, "main_test.go"),
+    `package lintfixture
+
+import "github.com/stolostron/ocm-fleet/lintfixture/value"
+
+func uncheckedID(raw string) value.ID {
+	return value.ID(raw)
+}
+`,
+  );
+
+  await assert.rejects(
+    lint({
+      args: ["--enable-only=domainconstruct,domainzero,domainserialization"],
+    }),
+    { code: 1 },
+  );
+  const raw = await issues();
+  assert.equal(raw.length, 2, JSON.stringify(raw));
+  const findings = raw.map(domainFinding);
+  const construction = findings.find(
+    (finding) => finding?.Rule === "domainconstruct.constructor-bypass",
+  );
+  const zero = findings.find(
+    (finding) => finding?.Rule === "domainzero.invalid-zero",
+  );
+  assert.ok(construction, "expected a structured constructor finding");
+  assert.ok(zero, "expected a structured zero-value finding");
+  assert.match(construction.Pos.Filename, /[/\\]main_test\.go$/);
+  assert.equal(zero.Pos.Filename, construction.Pos.Filename);
+  assert.equal(zero.Pos.Line, construction.Pos.Line);
+  assert.ok(
+    zero.Provenance.some(
+      ({ Kind, Pos }) =>
+        Kind === "source" &&
+        Pos.Filename.endsWith("main_test.go") &&
+        Pos.Line > 0 &&
+        Pos.Line < zero.Pos.Line,
+    ),
+    "expected the zero-value finding to retain its source location",
+  );
+});
+
+test("domain audit decodes explicit metadata independently of wording and whitespace", async () => {
+  const issue = {
+    FromLinter: "domainzero",
+    Pos: { Filename: "agent.go", Line: 105, Column: 2 },
+    Text: `Wording can change without changing the finding.
+  | rule: domainzero.invalid-zero; certainty: possible; reason: input-may-be-zero
+  | operation: return; value: "s.Name"; type: "example.com/fleet/domain.ResourceID"; path: ""
+  | source: s.Name enters this method as a plain string ("agent.go", line 101, column 7)
+  | conversion: ResourceID(s.Name) changes the type without validation ("agent.go", line 105, column 26)
+  | use: return ("agent.go", line 105, column 2)`,
+  };
+  for (const text of [issue.Text, issue.Text.replace(/\s+/g, " ")]) {
+    const finding = domainFinding({ ...issue, Text: text });
+    assert.equal(finding.Rule, "domainzero.invalid-zero");
+    assert.equal(finding.Certainty, "possible");
+    assert.equal(finding.Reason, "input-may-be-zero");
+    assert.equal(finding.Operation, "return");
+    assert.equal(finding.Value, "s.Name");
+    assert.equal(finding.Type, "example.com/fleet/domain.ResourceID");
+    assert.equal(finding.Path, "");
+    assert.deepEqual(finding.Pos, issue.Pos);
+    assert.equal(finding.Category, "possible-zero");
+    assert.deepEqual(
+      finding.Provenance.map((step) => step.Kind),
+      ["source", "conversion", "use"],
+    );
+    assert.equal(finding.Provenance[0].Pos.Line, 101);
+  }
+});
+
+test("domain audit preserves quoted expressions, field paths, and escaped provenance", async () => {
+  const value = 'NewID("x; | rule: y")\n';
+  const filename = 'a | rule: "source".go';
+  const quote = (text) => JSON.stringify(text).replaceAll("|", "\\u007c");
+  const finding = domainFinding({
+    FromLinter: "domainzero",
+    Pos: { Filename: "use.go", Line: 12, Column: 2 },
+    Text: `return may contain an empty domain.ID at path Reports[0].ID
+  | rule: domainzero.invalid-zero; certainty: known; reason: zero-value
+  | operation: return; value: ${quote(value)}; type: "example.com/domain.ID"; path: "Reports[0].ID"
+  | source: a \\| b\\nuses \\\\ representation (${quote(filename)}, line 1, column 1)`,
+  });
+  assert.equal(finding.Value, value);
+  assert.equal(finding.Path, "Reports[0].ID");
+  assert.equal(finding.Provenance[0].Pos.Filename, filename);
+  assert.equal(finding.Provenance[0].Message, "a | b\nuses \\ representation");
+});
+
+test("domain audit rejects invalid metadata without guessing from prose", async () => {
+  for (const text of [
+    "argument may use known invalid zero of domain.ID",
+    `construct domain.ID through NewID
+  | rule: domainconstruct.constructor-bypass; certainty: known; reason: constructor-required
+  | operation: construction; value: "ID(raw)"; type: "example.com/domain.ID"; path: ""`,
+    `return produces an empty domain.ID
+  | rule: domainzero.invalid-zero; certainty: not-applicable; reason: zero-value
+  | operation: return; value: "ID(0)"; type: "example.com/domain.ID"; path: ""`,
+    `return produces an empty domain.ID
+  | rule: domainzero.invalid-zero; certainty: known; reason: zero-value
+  | operation: return; value: "invalid\\q"; type: "example.com/domain.ID"; path: ""`,
+  ]) {
+    assert.equal(
+      domainFinding({ FromLinter: "domainzero", Text: text }),
+      undefined,
+    );
+  }
+});
+
+test("domain audit preserves headline delimiters and Unicode provenance", () => {
+  const finding = domainFinding({
+    FromLinter: "domainzero",
+    Pos: { Filename: "value.go", Line: 5, Column: 2 },
+    Text: `a headline \\| rule: stays literal
+  | rule: domainzero.invalid-zero; certainty: known; reason: zero-value
+  | operation: return; value: "raw"; type: "domain.ID"; path: ""
+  | source: previous\u2028value ("source.go", line 2, column 4)`,
+  });
+  assert.equal(finding.Message, "a headline | rule: stays literal");
+  assert.equal(finding.Provenance[0].Message, "previous\u2028value");
+});
+
+test("domain audit keeps a completed report after a typecheck failure", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "domain-audit-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const reportPath = join(directory, "server.json");
+  const previous = '{"Issues": []}\n';
+  await writeFile(reportPath, previous);
+  await assert.rejects(
+    writeDomainReports({
+      workspace: directory,
+      reportPath,
+      report: { Issues: [{ FromLinter: "typecheck" }] },
+    }),
+    /domain audit incomplete because type checking failed/,
+  );
+  assert.equal(await readFile(reportPath, "utf8"), previous);
+});
+
+test("domain audit separates application and test helpers and writes navigable provenance", async (t) => {
+  const { directory } = await fixture(t);
+  const reportPath = join(directory, ".nx/reports/domainconstruct/server.json");
+  const issue = (filename, text) => ({
+    FromLinter: "domainzero",
+    Text: text,
+    Pos: { Filename: filename, Line: 12, Column: 3 },
+  });
+  const text = (
+    message,
+    certainty = "known",
+    reason = "zero-value",
+    rule = "domainzero.invalid-zero",
+  ) => `${message}
+  | rule: ${rule}; certainty: ${certainty}; reason: ${reason}
+  | operation: argument; value: "raw"; type: "example.com/domain.ID"; path: ""`;
+  await writeDomainReports({
+    workspace: directory,
+    moduleRoot: "server",
+    reportPath,
+    report: {
+      Issues: [
+        issue(
+          "server/internal/application/service.go",
+          text(
+            "argument may be an empty domain.ID; empty values are invalid",
+            "possible",
+            "zero-initialized-storage",
+          ) +
+            `\n  | source: raw storage starts at zero ("internal/application/service.go", line 4, column 2)\n  | mutation: Scan may modify raw; nonzero initialization afterward is unproven (${JSON.stringify(join(directory, "server/internal/application/service.go"))}, line 8, column 2)`,
+        ),
+        issue(
+          "server/internal/application/service_test.go",
+          text("argument is an empty domain.ID; empty values are invalid"),
+        ),
+        issue(
+          "server/internal/domain/queryrepotest/contract.go",
+          text(
+            "zero comparison for domain.ID",
+            "known",
+            "zero-check-on-required-value",
+            "domainzero.zero-comparison",
+          ),
+        ),
+        issue(
+          "server/internal/infrastructure/postgres/testdb.go",
+          text("argument is an empty domain.ID; empty values are invalid"),
+        ),
+        issue(
+          "server/internal/testutil/fixtures.go",
+          text("argument is an empty domain.ID; empty values are invalid"),
+        ),
+      ],
+    },
+  });
+  const main = JSON.parse(
+    await readFile(reportPath.replace(".json", "-main.json"), "utf8"),
+  );
+  const tests = JSON.parse(
+    await readFile(reportPath.replace(".json", "-test.json"), "utf8"),
+  );
+  assert.equal(main.Issues.length, 1);
+  assert.equal(tests.Issues.length, 4);
+  assert.equal(
+    main.Issues[0].Pos.Filename,
+    join(directory, "server/internal/application/service.go"),
+  );
+  assert.deepEqual(main.Issues[0].Domain.Pos, main.Issues[0].Pos);
+  assert.equal(main.Issues[0].Domain.Provenance[1].Kind, "mutation");
+  assert.equal(
+    main.Issues[0].Domain.Provenance[0].Pos.Filename,
+    join(directory, "server/internal/application/service.go"),
+  );
+  const markdown = await readFile(
+    reportPath.replace(".json", "-main.md"),
+    "utf8",
+  );
+  assert.match(
+    markdown,
+    /\]\(\.\.\/\.\.\/\.\.\/server\/internal\/application\/service\.go\)/,
+  );
+  assert.match(markdown, /line 8/);
+  assert.doesNotMatch(markdown, /service\.go:\d+\)/);
 });
 
 test("formatting preserves registration comments and produces lint-clean, stable imports", async (t) => {
@@ -372,6 +664,11 @@ async function fixture(t, { project = "" } = {}) {
   );
   return {
     directory,
+    format: () =>
+      run(binary, ["fmt", "--config", configuration, "./..."], {
+        cwd: directory,
+        env: { ...process.env, GOWORK: "off" },
+      }),
     issues: async () => JSON.parse(await readFile(report, "utf8")).Issues ?? [],
     lint: ({ env = {}, args = [] } = {}) =>
       run(

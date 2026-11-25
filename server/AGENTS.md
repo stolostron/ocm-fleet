@@ -1,13 +1,17 @@
-Read the relevant docs below **before** writing or modifying code in this module. They contain design rules that are easy to violate without context. Paths are relative to this folder (server/).
+Before designing or changing server code, read the linked guidance for every
+row that applies.
 
-For how to...
-
-- decide what logic to put where (layering, service boundaries, method signatures), see docs/internal-architecture.md
-- implement instrumentation (observability: tracing, logging, metrics), see docs/observer-pattern.md
-- decide what package to use, see docs/package-structure.md
-- write tests, see docs/testing.md
-- write durable workflows and integrate with durable computing libraries, see docs/durable-workflows.md
-- write or modify constructors, see docs/constructors.md
-- write domain objects (aggregates, entities, values, where invariants belong, snapshot persistence), see docs/domain.md
+| When the task touches                                                    | Read                                                                      |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| Values, entities, aggregates, transitions, or mutable ownership          | [Domain](docs/domain.md)                                                  |
+| Valid zeros, absence, or result guards                                   | [Zero values and optionality](docs/domain.md#zero-values-and-optionality) |
+| Constructors, parser signatures, options, commands, or parameter structs | [Constructors](docs/constructors.md)                                      |
+| Raw DTOs, SQL scans, snapshots, codecs, or workflow payloads             | [Domain serialization](docs/serialization.md)                             |
+| Durable execution, replay, or engine integration                         | [Durable workflows](docs/durable-workflows.md)                            |
+| Domain directives, type enrollment, or lint findings                     | [Domain audits](../tools/golangci-lint/README.md#domain-audits)           |
+| Layer boundaries or service responsibilities                             | [Internal architecture](docs/internal-architecture.md)                    |
+| Package placement                                                        | [Package organization](docs/package-structure.md)                         |
+| Tracing, logging, or metrics                                             | [Observer pattern](docs/observer-pattern.md)                              |
+| Tests or fixtures                                                        | [Testing](docs/testing.md)                                                |
 
 When changes affect integration-tested behavior, also run `npx nx run server:test-integration` (requires a container runtime).

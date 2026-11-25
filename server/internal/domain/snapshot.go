@@ -12,7 +12,7 @@ import (
 // snapshot DTO: an all-exported, anemic struct used as the explicit
 // serialization boundary between the domain and persistence layers.
 //
-// See docs/domain.md ("Snapshots and persistence") for the full pattern.
+// See docs/serialization.md ("Snapshots and persistence") for the full pattern.
 // ---------------------------------------------------------------------------
 
 // FulfillmentSnapshot is the persistence DTO for [Fulfillment].

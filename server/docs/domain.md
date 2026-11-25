@@ -1,179 +1,84 @@
 # Domain
 
-The domain package (see [internal-architecture.md](./internal-architecture.md)) is where the bulk of the business logic lives.
-
-Logic should be pushed down as much as possible, without creating undue coupling. Domain objects are the lowest level with which to push down logic.
-
-Logic about an object, like its state transitions, should be pushed to that struct. A struct's fields should almost never be manipulated directly, except by that struct's methods, if that struct lives in the domain model. Encode invariants in these methods to help reduce bugs and security issues in the code.
+The domain package owns the business rules. Push each rule down to the value
+or aggregate that has the context to enforce it. Accepting a checked domain
+value means trusting its documented invariants without revalidating.
 
 ## Aggregates, entities, and value objects
 
-There are three kinds of domain objects, each with different ownership and
-identity semantics. All objects should be valid on construction, following the "parse, don't validate" principle. "Normalization" is also an acceptable behavior during construction.
+**Value objects** are defined by their data and have no lifecycle. Prefer
+values wherever possible. A simple immutable scalar can use a defined type,
+such as `ResourceID`, with checked construction. Use private-field structs for
+composite values and values with mutable backing data. For closed enums, use
+typed constants and check raw inputs against the allowed values. Use
+interfaces and function types directly for behavior.
 
-Accepting a domain object means it is valid. You do not need to redundantly validate or re-parse it because the type communicates what "valid" means already.
+**Entities** have identity and a lifecycle. They can change state while
+remaining the same entity. Child entities belong to an aggregate and are
+accessed through its root.
 
-As such, types are never "empty" unless "empty" has semantic meaning for the type. If an argument is optional, a pointer is used.
+**Aggregates** are transactional consistency boundaries. The root owns its
+values and child entities and enforces the rules that span them. Change
+aggregate state through the root's methods. For example,
+`PlatformResource` owns its `ResourceRepresentation` entities and checks that
+a representation's collection matches its own. Load and save the whole
+aggregate as a unit. Discard the aggregate outside of its transaction, 
+whether commit or rolled back.
 
-**Value objects** are the simplest and most preferred. A value is defined
-entirely by its data — two values with the same fields are equal. Values have
-no lifecycle and are freely copied. They enforce their own invariants through
-constructors, even when they are just type aliases over primitives (e.g.
-`NewServiceName`, `NewCollectionID`). Prefer values wherever possible.
-
-**Entities** have identity and a lifecycle but do not form a consistency
-boundary on their own. They are always owned by an aggregate and accessed
-through it. For example, `ResourceRepresentation` is an entity within the
-`PlatformResource` aggregate — it has identity (service + collection_name +
-resource_id) and mutable state, but is never loaded or persisted independently.
-
-**Aggregates** are consistency boundaries. An aggregate owns its entities and
-values, and all mutations go through the aggregate root's methods. External
-code never reaches into an aggregate to mutate a child entity directly. The
-aggregate enforces invariants that span multiple fields or child entities (e.g.
-"a representation's collection must match the aggregate's collection"). The
-repository loads and saves entire aggregates, not individual child entities.
-
-Fields are always private and encapsulated with getters and methods named for the relevant operation or behavior.
-
-### Where logic belongs
-
-- **Value object constructors** enforce the invariant of that single value
-  (format, non-emptiness, allowed characters). Callers must use the
-  constructor; the type system prevents constructing invalid values.
-- **Aggregate methods** enforce invariants that require looking across multiple
-  fields or entities within the aggregate. For example, role exclusivity rules,
-  cross-entity uniqueness within the aggregate, or collection matching.
-- **Repositories** enforce storage-level constraints: cross-aggregate
-  uniqueness (e.g. alias ownership across different platform resources),
-  referential integrity, and transactional consistency. Repository logic should
-  be storage-oriented — translating aggregate state into SQL, handling
-  conflicts, reconciling — not business logic.
-- **Application services** coordinate work that spans an aggregate and
-  something else, or orchestrate several composable aggregate methods into a
-  higher-level use case (e.g. claim-or-get with alias attachment). Services
-  should not duplicate logic that the aggregate already enforces.
-
-If logic can live in a value constructor, it should. If it requires aggregate
-context, it belongs on the aggregate. Only when it truly spans aggregates or
-requires external coordination does it belong in a service.
-
-### Self-enforcing invariants at each layer
-
-Each layer trusts that layers below it have already enforced their invariants.
-A value object, once constructed, is known to be valid. An aggregate method
-does not re-validate value objects passed to it — it only checks cross-field
-invariants that the values cannot enforce alone. An application service does
-not re-validate what the aggregate already checks — it only enforces cross-
-aggregate or coordination-level invariants. The transport layer constructs
-value objects and commands from raw input, and those constructors are the first
-line of validation.
-
-## Snapshots and persistence
-
-Every domain aggregate that participates in a repository has a corresponding
-**snapshot** type — an all-exported, anemic DTO used as the explicit
-serialization boundary between the domain and persistence layers. The pattern
-eliminates two problems: (1) domain types no longer need exported fields,
-preserving encapsulation; (2) hydration logic lives in one factory per type
-rather than scattered across repository scan functions.
-
-### Anatomy of the pattern
-
-Each aggregate `Foo` has:
-
-| Piece | Location | Purpose |
-|---|---|---|
-| `FooSnapshot` | `snapshot.go` | All-exported struct with primitives, value objects, or nested DTOs. No behavior. |
-| `(f *Foo) Snapshot()` | `snapshot.go` | Captures current state (including pending write buffers) into a snapshot. |
-| `FooFromSnapshot(s)` | `snapshot.go` | Factory: hydrates a domain object from a snapshot. Pending buffers start empty; internal baselines (e.g. `loadedGeneration`) are derived from persisted state. |
-| `MarshalJSON / UnmarshalJSON` | `snapshot.go` | Delegates to `Snapshot()` / `FromSnapshot()` so domain objects survive `encoding/json` round-trips (required by the memworkflow fidelity pass). |
-| Accessor methods | aggregate source file | Read-only access to private fields for external callers. |
-
-### Rules
-
-- **Snapshot fields are pure data.** Primitives, type aliases, value objects,
-  or slices/maps thereof. Never embed a domain object inside a snapshot.
-- **Pending buffers are write-path only.** `Snapshot()` captures pending
-  objects non-mutatively. `FromSnapshot()` always initializes them symmetrically.
-  Of course, pending state is not likely to be hydrated on read, so this state is typically
-  never provided to FromSnapshot in the first place. In other words, **an aggregate is only valid within its transaction boundary.** After commit, it should be discarded. Trying to use an aggregate from one transaction into another is an error with undefined behavior.
-- **Repositories use snapshots for both reads and writes.** Write paths call
-  `obj.Snapshot()` and read individual fields. Read paths scan into a snapshot
-  struct and call `FooFromSnapshot(s)` to produce the domain object.
-- **External callers use constructors and accessors.** Code outside the `domain`
-  package must never construct aggregates via struct literals. Use `NewFoo(...)`
-  for creation and `FooFromSnapshot(s)` for reconstitution; use `obj.Field()`
-  for reads.
-- **JSON marshaling is snapshot-based.** All aggregates implement
-  `MarshalJSON` / `UnmarshalJSON` via snapshots. This is critical for the
-  memworkflow engine's JSON fidelity pass and for any future durable engine
-  that serializes activity inputs/outputs. Use value receivers for
-  `MarshalJSON` so non-addressable struct values (e.g. fields inside a view
-  passed by value) can still be marshaled.
+For rules that span aggregates or require external coordination, see
+[Internal architecture](./internal-architecture.md#when-to-introduce-a-service).
 
 ## Field access and getters
 
-Within a struct's own methods, direct private field access is natural and fine.
-Outside of that — even within the same package — prefer the public getter
-methods. This keeps the call sites honest about encapsulation and makes it
-straightforward to add lazy computation, caching, or invariant checks to a
-getter later without auditing every caller. The rule applies to production code
-and tests equally.
+Keep fields private. Within a type's own methods, use direct field access.
+Elsewhere, including tests in the same package, use accessors and methods
+named for the behavior. Constructors, snapshot and codec implementations,
+and ETag computation may access the representation directly.
 
-Intentional exceptions:
+Own mutable data. Copy maps, slices, or pointed-to values when retaining them
+would let callers change the object's state. Apply the same rule when returning
+data from accessors and snapshots.
 
-- **Snapshot / FromSnapshot / JSON marshaling** in `snapshot.go` — these are
-  the explicit serialization boundary and must touch raw fields.
-- **Constructors** (`NewFoo(...)`) — struct-literal initialization is the
-  whole point.
-- **Etag computation** (`etag.go`) — these functions hash raw aggregate state
-  to produce opaque tokens and are tightly coupled to the serialization shape
-  by design.
+## Zero values and optionality
 
-## Constructors vs snapshots
+Enrolled types have invalid zeros by default. Use `//domain:zero-valid` only
+when zero satisfies the type's invariants, including the requirements of nested
+fields. Document the meaning of that zero, such as an empty `AliasSet`.
 
-Domain aggregates have **two** construction paths:
+Construct required values with invalid zeros before use. Temporary zero storage
+is fine during initialization. A failed result can carry a typed zero such as
+`Foo{}` or `var zero Foo` with a known non-nil error. Check constructor errors
+and the `ok` results of map lookups or channel receives before using a required
+value.
 
-| Path | Function | When |
-|---|---|---|
-| `NewFoo(...)` | Creates a brand-new object that has never been persisted. | Creation workflows, factory methods. |
-| `FooFromSnapshot(s)` | Reconstitutes an existing object from persisted state. | Repository read paths, JSON deserialization. |
+Use `optional.Optional[T]` for values that may be absent outside constructor
+options. Its zero is absent. `Some` takes an already-valid value, including a
+valid zero or nil, and copies it with Go's ordinary shallow-copy semantics.
+Check `Get`'s presence result before consuming the payload.
 
-The `New*` constructors enforce creation-time invariants (e.g. initial state,
-required fields) at compile time via their parameter list. They leave internal
-persistence baselines (like `loadedGeneration`) at zero since the object has
-never been loaded from storage. After construction, callers use domain methods
-(e.g. `AdvanceManifestStrategy`) to complete initialization.
+```go
+name := optional.Some(validName)
+if value, ok := name.Get(); ok {
+    consume(value)
+}
+```
 
-`FromSnapshot` is reserved exclusively for the persistence boundary — it
-assumes the data has already been validated and sets internal baselines from
-the stored values.
+Use nil pointers to express absence where reference semantics are appropriate.
+Use `//domain:presence` for an optional `(T, bool)` or `(T, bool, error)`
+result. Declare it on both the interface method and its implementation when
+applicable. Use the payload once presence is true and any error is nil.
+An inactive payload may be zero. Booleans such as `created` or `changed`
+keep their ordinary meaning. See
+[zero-value flow checks](../../tools/golangci-lint/README.md#zero-value-flow).
 
-### Zero-value returns
-
-Within the domain package, error-path returns that need a typed zero value
-should use the Go zero literal directly (`AuthMethod{}`, `SignerEnrollment{}`)
-rather than `FooFromSnapshot(FooSnapshot{})`. Outside the domain package (where
-private fields prevent struct-literal construction), callers should declare a
-named return or use `var zero Foo`.
+See the [optional representation benchmarks](../pkg/optional/benchmarks.md) for
+the storage tradeoffs.
 
 ## Adding a new aggregate
 
-1. Define the private-field struct in its source file with accessor methods.
-2. Add a `NewFoo(...)` constructor for the creation path.
-3. Add `FooSnapshot` to `snapshot.go`.
-4. Add `Snapshot()`, `FooFromSnapshot()`, `MarshalJSON`, and `UnmarshalJSON`
-   to `snapshot.go`.
-5. Add a round-trip test in `snapshot_test.go`.
-6. Have repositories scan into the snapshot and call `FooFromSnapshot`.
-
-## Test helpers
-
-When test helpers need to seed a domain object, tests should avoid trying to
-"force" the desired state. Prefer to simply set up the desired state exactly
-as the application is designed to set it up. If the state is unreachable, then
-it must not matter to test by definition. If the state is reachable, then use
-the conventional contracts of the objects to reach it. Example: if you want to
-test an object at a later generation N, perform N - 1 read, modify, write 
-cycles to get to that generation.
+Apply these rules to new domain types. For a new root, follow the
+[constructor guide](./constructors.md) for creation, the
+[snapshot contract](./serialization.md#snapshots-and-persistence) for persisted
+state, and the [fixture guide](./testing.md#domain-fixtures) for tests. Use
+[domain lint enrollment](../../tools/golangci-lint/README.md#enrolling-domain-types)
+to check the model and its boundaries.

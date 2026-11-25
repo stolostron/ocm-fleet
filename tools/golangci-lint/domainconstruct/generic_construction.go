@@ -1,0 +1,117 @@
+package domainconstruct
+
+import (
+	"go/ast"
+	"go/constant"
+	"go/types"
+)
+
+func (c *checker) checkGenericConstruction(call *ast.CallExpr, ancestors []ast.Node) bool {
+	function, ok := expressionObject(c.pass.TypesInfo, call.Fun).(*types.Func)
+	if !ok {
+		return true
+	}
+	fact := c.contracts.functions[function.Origin()]
+	if fact == nil {
+		return true
+	}
+	for _, sources := range [][]resultSource{fact.Sources, fact.FailedSources} {
+		for _, result := range sources {
+			target := c.pass.TypesInfo.TypeOf(call)
+			if tuple, ok := target.(*types.Tuple); ok {
+				target = tuple.At(result.Result).Type()
+			}
+			if !c.checkGenericSource(result.Value, target, call, function, ancestors) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (c *checker) checkGenericSource(source valueSource, target types.Type, call *ast.CallExpr, function *types.Func, ancestors []ast.Node) bool {
+	if source.Kind == sourceConversion {
+		if concrete := calledTypeArgument(c.pass.TypesInfo, call, source.ConversionType); concrete != nil {
+			target = concrete
+		}
+		argument := source.Values[0]
+		if literalZeroConversion(argument, target) || c.genericIdentityConversion(argument, target, call) {
+			return true
+		}
+		if p := c.policy(target); p != nil && !c.approved(p, ancestors) && !constructorCall(p, target, function) {
+			c.reportConstruction(call, p)
+			return false
+		}
+	}
+	for index, child := range source.Values {
+		childType := target
+		switch source.Kind {
+		case sourceFields:
+			if structure, ok := target.Underlying().(*types.Struct); ok && index < structure.NumFields() {
+				childType = structure.Field(index).Type()
+			}
+		case sourcePointer:
+			if pointer, ok := target.Underlying().(*types.Pointer); ok {
+				childType = pointer.Elem()
+			}
+		}
+		if !c.checkGenericSource(child, childType, call, function, ancestors) {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *checker) genericIdentityConversion(source valueSource, target types.Type, call *ast.CallExpr) bool {
+	if source.Kind != sourceParameter {
+		return false
+	}
+	if argument := callParameter(c.pass.TypesInfo, call, source.Parameter); argument.expression != nil {
+		t := projectedType(argument.actual, source.Path)
+		return t != nil && types.Identical(t, target)
+	}
+	return false
+}
+
+func literalZeroConversion(source valueSource, target types.Type) bool {
+	if source.Kind != sourceZero {
+		return false
+	}
+	if _, pointer := target.Underlying().(*types.Pointer); pointer {
+		return source.ZeroKind == constant.Unknown
+	}
+	if basic, ok := target.Underlying().(*types.Basic); ok {
+		switch source.ZeroKind {
+		case constant.String:
+			return basic.Info()&types.IsString != 0
+		case constant.Bool:
+			return basic.Info()&types.IsBoolean != 0
+		case constant.Int, constant.Float, constant.Complex:
+			return basic.Info()&types.IsNumeric != 0
+		}
+	}
+	return false
+}
+
+func constructorCall(p *policy, target types.Type, function *types.Func) bool {
+	named := domainType(target)
+	if named == nil || function.Pkg() != named.Obj().Pkg() {
+		return false
+	}
+	name := function.Name()
+	if receiver := function.Type().(*types.Signature).Recv(); receiver != nil {
+		typeName := receiver.Type()
+		if pointer, ok := typeName.(*types.Pointer); ok {
+			typeName = pointer.Elem()
+		}
+		if named, ok := typeName.(*types.Named); ok {
+			name = named.Obj().Name() + "." + name
+		}
+	}
+	for _, constructor := range p.fact.Constructors {
+		if name == constructor {
+			return true
+		}
+	}
+	return false
+}

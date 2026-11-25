@@ -307,7 +307,7 @@ async function runNx(target, cwd, env, signal, formatPaths) {
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
     child.once("error", reject);
-    child.once("exit", (code, termination) => {
+    child.once("close", (code, termination) => {
       signal?.removeEventListener("abort", abort);
       if (signal?.aborted || termination)
         reject(

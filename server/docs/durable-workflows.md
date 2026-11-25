@@ -33,6 +33,13 @@ The port surface (application-visible)
 
 These types live in internal/domain/workflow.go:
 
+Workflow inputs, activity inputs/results, signals, continuation inputs, and
+awaited workflow results cross JSON serialization boundaries. Use the
+[serialization guide](serialization.md#native-encoding-contracts) to choose
+payload types. Follow the
+[lint tooling guide](../../tools/golangci-lint/README.md#serialization-contracts)
+when declaring serialized ports, including forwarding ports.
+
 1. Activity definition
 
 Has a stable name, typed input/output, and runs with context.Context (activity side always does).
