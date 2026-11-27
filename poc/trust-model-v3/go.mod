@@ -2,7 +2,7 @@ module github.com/stolostron/ocm-fleet/poc/trust-model-v3
 
 go 1.26.0
 
-toolchain go1.26.10
+toolchain go1.26.11
 
 require (
 	github.com/google/trillian v1.7.3
