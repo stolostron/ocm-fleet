@@ -2,7 +2,7 @@ module github.com/stolostron/ocm-fleet/poc/ocm-work-agent-adapter
 
 go 1.26.3
 
-toolchain go1.26.10
+toolchain go1.26.11
 
 require (
 	k8s.io/apimachinery v0.35.4

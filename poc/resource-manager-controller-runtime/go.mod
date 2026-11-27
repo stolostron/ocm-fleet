@@ -2,7 +2,7 @@ module github.com/stolostron/ocm-fleet/poc/resource-manager-controller-runtime
 
 go 1.26.4
 
-toolchain go1.26.10
+toolchain go1.26.11
 
 require (
 	github.com/go-logr/logr v1.4.3

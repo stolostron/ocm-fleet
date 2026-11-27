@@ -2,7 +2,7 @@ module github.com/stolostron/ocm-fleet/poc/inventory-write-path
 
 go 1.26.0
 
-toolchain go1.26.10
+toolchain go1.26.11
 
 require (
 	github.com/jackc/pgx/v5 v5.9.2

@@ -2,7 +2,7 @@ module github.com/stolostron/ocm-fleet/tools/golangci-lint
 
 go 1.26.0
 
-toolchain go1.26.6
+toolchain go1.26.11
 
 tool golang.org/x/tools/cmd/goimports
 
